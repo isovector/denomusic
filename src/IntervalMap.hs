@@ -3,6 +3,7 @@
 
 module IntervalMap where
 
+import Control.Monad (ap)
 import Control.Arrow ((***))
 import Test.QuickCheck
 import Test.QuickCheck.Checkers
@@ -12,6 +13,7 @@ data IntervalMap a
   = Empty
   | Full a
   | Interval [IntervalMap a]
+  | Par (IntervalMap a) (IntervalMap a)
   deriving stock (Show, Functor, Foldable, Traversable)
 
 instance Semigroup (IntervalMap a) where
@@ -23,18 +25,19 @@ instance Semigroup (IntervalMap a) where
 instance Monoid (IntervalMap a) where
   mempty = Interval []
 
-mu :: IntervalMap a -> Rational -> Maybe a
-mu Empty _ = Nothing
-mu (Full a) _ = Just a
-mu (Interval []) _ = Nothing
-mu _ n | n >= 1 = Nothing
-mu _ n | n < 0 = Nothing
+mu :: IntervalMap a -> Rational -> [a]
+mu Empty _ = []
+mu (Full a) _ = pure a
+mu (Interval []) _ = []
+mu _ n | n >= 1 = []
+mu _ n | n < 0 = []
 mu (Interval as) n =
   let sz = length as
       width = recip $ fromIntegral sz
       offset = floor $ n * fromIntegral sz
       left = n - fromIntegral offset
    in mu (as !! offset) $ left / width
+mu (Par a b) n = mu a n <> mu b n
 
 
 data Durated a = Durated
@@ -57,6 +60,7 @@ foldInterval (Interval as) =
       sz = recip $ fromIntegral $ length as
    in flip foldMap (zip [0..] ds) $ uncurry $ \ix d ->
         fmap ((+ sz * ix) . (* sz) *** mapDuration (* sz)) d
+foldInterval (Par as bs) = foldInterval as <> foldInterval bs
 
 
 joinNotes :: Eq a => [(Rational, Durated a)] -> [(Rational, Durated a)]
@@ -84,12 +88,14 @@ instance Applicative IntervalMap where
      in Interval $ zipWith (liftA2 f)
           (replicate (div sz al) =<< as)
           (replicate (div sz bl) =<< bs)
+  -- liftA2 f x y = f <$> x <*> y
 
 instance Monad IntervalMap where
   return = pure
   Full a >>= f = f a
   Empty >>= _ = Empty
   Interval as >>= f = Interval $ fmap (>>= f) as
+  Par as bs >>= f = Par (as >>= f) (bs >>= f)
 
 instance (EqProp a) => EqProp (IntervalMap a) where
   a =-= b = mu a =-= mu b
