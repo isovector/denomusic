@@ -7,6 +7,22 @@ import Euterpea
 import Euterpea.IO.MIDI.Play
 
 
+maj :: PitchClass -> Octave -> [Pitch]
+maj = curry $ \r ->
+  [ r
+  , trans 4 r
+  , trans 7 r
+  ]
+
+
+minor :: PitchClass -> Octave -> [Pitch]
+minor = curry $ \r ->
+  [ r
+  , trans 3 r
+  , trans 7 r
+  ]
+
+
 maj7 :: PitchClass -> Octave -> [Pitch]
 maj7 = curry $ \r ->
   [ r

@@ -9,7 +9,8 @@ import Euterpea.IO.MIDI.Play
 import IntervalMap
 import Euterpea (PitchClass (..), Octave, Pitch(..))
 import Euterpea qualified as E
-import Legacy (maj7, min7, dom7)
+import Legacy hiding (main)
+import Data.Semigroup
 
 
 renormalize :: Rational -> [(Rational, Durated a)] -> [(Rational, Durated a)]
@@ -29,14 +30,37 @@ foldMusic =
 main :: IO ()
 main =
   playDev @Pitch 2 $
-    foldMusic song
+    bind (\d a -> chord $ fmap (note d) a) $
+    foldMusic $
+      renormalize (1 % 4) $
+        foldInterval song
 
-song :: [(Rational, Durated Pitch)]
-song = renormalize (1 % 4) $
-  foldInterval $ do
-    x <-
-      liftA2 (,)
-        (Interval [pure G, pure A, pure B])
-        (Interval [pure 4, pure 5])
-    Interval [pure x, Empty]
+im :: [a] -> IntervalMap a
+im = Interval . fmap pure
+
+
+
+song :: IntervalMap [Pitch]
+song =
+  mconcat
+    -- [ do
+    --     c <- im [E]
+    --     oct <- im [0, 1]
+    --     stimes 2 $ do
+    --       f <- im [minor, maj]
+    --       hand <- im [2, 3]
+    --       pure $ f c (oct + hand)
+    [ do
+      c <- im [F]
+      oct <- im [0]
+      f <- im [minor]
+      hand <- im [2, 3]
+      pure $ f c (oct + hand)
+    ]
+
+    -- x <-
+    --   liftA2 (,)
+    --     (Interval [pure G, pure A, pure B])
+    --     (Interval [pure 4, pure 5])
+    -- Interval [pure x, Empty]
 

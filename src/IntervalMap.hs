@@ -7,14 +7,21 @@ import Control.Arrow ((***))
 import Test.QuickCheck
 import Test.QuickCheck.Checkers
 import Test.QuickCheck.Classes
-import Data.Monoid
 
 data IntervalMap a
   = Empty
   | Full a
   | Interval [IntervalMap a]
   deriving stock (Show, Functor, Foldable, Traversable)
-  deriving (Semigroup, Monoid) via Ap IntervalMap a
+
+instance Semigroup (IntervalMap a) where
+  Interval xs <> Interval ys = Interval $ xs <> ys
+  Interval xs <> y = Interval $ xs <> pure y
+  x <> Interval ys = Interval $ x : ys
+  x <> y = Interval [x, y]
+
+instance Monoid (IntervalMap a) where
+  mempty = Interval []
 
 mu :: IntervalMap a -> Rational -> Maybe a
 mu Empty _ = Nothing
