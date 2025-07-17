@@ -1,0 +1,21 @@
+compiler: ghc-9.8.4
+resolver: lts-23.26
+allow-newer: true
+
+ghc-options:
+  "$everything": -j
+
+packages:
+- .
+
+notify-if-nix-on-path: false
+
+extra-deps:
+- Euterpea-2.0.7
+- PortMidi-0.2.0.0
+
+
+nix:
+  packages:
+    - pkg-config
+    - alsa-lib

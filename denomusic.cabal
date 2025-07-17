@@ -1,0 +1,42 @@
+cabal-version: 2.2
+
+-- This file has been generated from package.yaml by hpack version 0.38.0.
+--
+-- see: https://github.com/sol/hpack
+
+name:           denomusic
+version:        0.1.0.0
+description:    Please see the README on GitHub at <https://github.com/githubuser/denomusic#readme>
+homepage:       https://github.com/githubuser/denomusic#readme
+bug-reports:    https://github.com/githubuser/denomusic/issues
+author:         Author name here
+maintainer:     example@example.com
+copyright:      2025 Author name here
+license:        BSD-3-Clause
+license-file:   LICENSE
+build-type:     Simple
+extra-source-files:
+    README.md
+    CHANGELOG.md
+
+source-repository head
+  type: git
+  location: https://github.com/githubuser/denomusic
+
+library
+  exposed-modules:
+      Legacy
+      Music
+  other-modules:
+      Paths_denomusic
+  autogen-modules:
+      Paths_denomusic
+  hs-source-dirs:
+      src
+  ghc-options: -Wall -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints
+  build-depends:
+      Euterpea
+    , QuickCheck
+    , base >=4.7 && <5
+    , checkers
+  default-language: GHC2021
