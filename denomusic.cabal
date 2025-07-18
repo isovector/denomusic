@@ -26,7 +26,7 @@ source-repository head
 library
   exposed-modules:
       Example
-      IntervalMap
+      Rhythm
       Legacy
   other-modules:
       Paths_denomusic
@@ -40,5 +40,6 @@ library
     , QuickCheck
     , base >=4.7 && <5
     , checkers
+    , containers
     , split
   default-language: GHC2021

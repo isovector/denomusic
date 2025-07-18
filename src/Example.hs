@@ -7,7 +7,7 @@ import Control.Arrow
 import Data.Ratio
 import Debug.Trace
 import Euterpea.IO.MIDI.Play
-import IntervalMap
+import Rhythm
 import Euterpea (PitchClass (..), Octave, Pitch(..), Music (..), note, rest)
 import Euterpea qualified as E
 import Legacy hiding (main)
@@ -35,11 +35,11 @@ main =
       renormalize (1 % 8) $
         foldInterval song
 
-im :: [a] -> IntervalMap a
+im :: [a] -> Rhythm a
 im = Interval . fmap pure
 
 
-chord :: [a] -> IntervalMap a
+chord :: [a] -> Rhythm a
 chord [] = mempty
 chord xs = foldr1 Par $ fmap pure xs
 
@@ -60,9 +60,9 @@ bar5 = do
     im [ch, E.trans 12 ch]
 
 section10gen
-  :: IntervalMap [Pitch]
-  -> IntervalMap [Pitch]
-  -> IntervalMap Pitch
+  :: Rhythm [Pitch]
+  -> Rhythm [Pitch]
+  -> Rhythm Pitch
 section10gen top bot =
   (chord =<<) $
     Par
@@ -76,7 +76,7 @@ invert :: [Pitch] -> [Pitch]
 invert [] = []
 invert ((pc, o) : xs) = xs <> pure (pc, o + 1)
 
-song :: IntervalMap Pitch
+song :: Rhythm Pitch
 song =
   let
     b1 = section10gen (pure $ minor F 4) (pure $ minor F 3)

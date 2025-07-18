@@ -26,6 +26,7 @@ dependencies:
 - checkers
 - QuickCheck
 - split
+- containers
 
 default-extensions: []
 
