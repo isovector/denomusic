@@ -14,6 +14,13 @@ maj = curry $ \r ->
   , trans 7 r
   ]
 
+power :: PitchClass -> Octave -> [Pitch]
+power = curry $ \r ->
+  [ r
+  , trans 7 r
+  , trans 12 r
+  ]
+
 
 minor :: PitchClass -> Octave -> [Pitch]
 minor = curry $ \r ->
@@ -21,6 +28,15 @@ minor = curry $ \r ->
   , trans 3 r
   , trans 7 r
   ]
+
+
+dim :: PitchClass -> Octave -> [Pitch]
+dim = curry $ \r ->
+  [ r
+  , trans 3 r
+  , trans 6 r
+  ]
+
 
 
 maj7 :: PitchClass -> Octave -> [Pitch]

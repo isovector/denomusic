@@ -98,7 +98,8 @@ song =
                 ]
             ])
   in Interval
-    [ b1
+    [ -- section 10
+      b1
     , b2
     , section10gen
         (pure $ invert $ invert $ maj Af 3)
@@ -106,11 +107,12 @@ song =
     , section10gen
         (im
           [ invert $ maj C 4
-          , [(C, 4), (E, 4), (Bf, 4)]
+          , dim E 4
           ]
           )
         (pure $ invert $ maj C 3)
-    , b1
+    , -- section 11
+      b1
     , b2
     , section10gen
         (pure $ invert $ maj Ef 4)
@@ -118,9 +120,49 @@ song =
     , section10gen
         (im
           [ invert $ invert $ maj C 4
-          , [(G, 4), (Bf, 4), (E, 5)]
+          , invert $ dim E 4
           ]
           )
         (pure $ invert $ invert $ maj C 2)
+    , -- section 12
+      section10gen
+        (pure $ invert $ minor F 4)
+        (pure $ invert $ minor F 2)
+    , section10gen
+        (Interval
+          [ pure $ invert $ invert $ maj Df 4
+            -- NOTE second bar of section 12 has a nonstandard pattern here
+            -- which we can't express via section10gen
+          ]
+          )
+        (pure $ invert $ invert $ maj Df 2)
+    , section10gen
+        (pure $ invert $ maj Ef 4)
+        (pure $ invert $ maj Ef 2)
+    , section10gen
+        (im
+          [ invert $ invert $ maj C 4
+          , invert $ dim E 4
+          ])
+        (pure $ invert $ maj C 2)
+    , -- section 13 line 1
+      section10gen
+        (pure $ minor F 4)
+        (pure $ power F 2)
+   ,  section10gen
+        (pure [ (E, 4), (Af, 4), (C, 5)  ])
+        (pure [ (E, 2), (C, 3), (E, 3) ] )
+   ,  section10gen
+        (pure $ invert $ maj Df 4)
+        (pure $ power Df 2)
+   ,  section10gen
+        (im
+          [ [(E, 4), (G, 4), (Ef, 5)]
+          , [(E, 4), (G, 4), (Df, 5)]
+          ]
+        )
+        (pure $ power C 2)
+
+
     ]
 
