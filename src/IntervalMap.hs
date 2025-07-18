@@ -1,8 +1,14 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DerivingVia        #-}
+{-# LANGUAGE ViewPatterns       #-}
 
 module IntervalMap where
 
+import Data.Foldable
+import Data.Traversable
+import Data.Functor.Identity
+import Debug.Trace
+import Data.List.Split (chunksOf)
 import Control.Monad (ap)
 import Control.Arrow ((***))
 import Test.QuickCheck
@@ -76,19 +82,41 @@ joinNotes (n1@(o1, Durated d1 a1) : n2@(o2, Durated d2 a2) : xs)
 
 instance Applicative IntervalMap where
   pure = Full
-  liftA2 _ Empty _ = Empty
-  liftA2 _ _ Empty = Empty
-  liftA2 f (Full a) (Full b) = Full $ f a b
-  liftA2 f (Full a) (Interval b) = Interval $ fmap (fmap (f a)) b
-  liftA2 f (Interval a) (Full b) = Interval $ fmap (fmap (flip f b)) a
-  liftA2 f (Interval as) (Interval bs) =
-    let al = length as
-        bl = length bs
-        sz = lcm al bl
-     in Interval $ zipWith (liftA2 f)
-          (replicate (div sz al) =<< as)
-          (replicate (div sz bl) =<< bs)
-  -- liftA2 f x y = f <$> x <*> y
+  (<*>) = ap
+
+
+overlay :: (Show a, Show b, Show c) => (a -> b -> c) -> IntervalMap a -> IntervalMap b -> IntervalMap c
+overlay _ Empty _ = Empty
+overlay _ _ Empty = Empty
+overlay f (Full a) b = fmap (f a) b
+overlay f a (Full b) = fmap (flip f b) a
+overlay f (Par a b) c = Par (overlay f a c) (overlay f b c)
+overlay f a (Par b c) = Par (overlay f a b) (overlay f a c)
+overlay f (Interval [a]) b = overlay f a b
+overlay f a (Interval [b]) = overlay f a b
+overlay f (Interval as) (Interval bs) = do
+  let al = length as
+      bl = length bs
+      sz = lcm al bl
+  -- !_ <- traceM $ show (al, bl, sz)
+  case gcd al bl of
+        1 -> trace ("gcd1: " <> show (as, bs)) $
+          Interval $ zipWith (overlay f)
+              (replicate (div sz al) =<< as)
+              (replicate (div sz bl) =<< bs)
+        d -> do
+          let !ax = div al d
+              !bx = div bl d
+
+          let
+              !asx = chunksOf ax as
+              !bsx = chunksOf bx bs
+
+          Interval $ zipWith ( \xs ys ->
+            overlay f (Interval xs) (Interval ys)
+            ) (chunksOf ax as) (chunksOf bx bs)
+-- [Full (),Full (),Full ()],
+-- [Interval [Full [(F,4),(Af,4),(Ef,5)],Full [(F,4),(Af,4),(Ef,5)],Full [(F,4),(Gs,4),(Cs,5)]]]
 
 instance Monad IntervalMap where
   return = pure
@@ -118,5 +146,31 @@ test = Interval [pure "a", pure "b", pure "c"]
 test2 :: IntervalMap String
 test2 = Interval [pure "1", pure "2"]
 
+type Music = IntervalMap
+
+test3 :: Music String
+test3 = Interval $ replicate 6 $ pure "."
+
+test4 :: Music String
+test4 = Interval
+  [ pure "a"
+  , Interval $ fmap pure
+    [ "b"
+    , "b"
+    , "a"
+    ]
+  ]
+
+test5 :: Music String
+test5 = Interval $ fmap pure
+  [ "a."
+  , "a."
+  , "a."
+  , "b."
+  , "b."
+  , "a."
+  ]
+
+
 _main :: IO ()
-_main = quickBatch $ monad @IntervalMap @Int @Int @Int undefined
+_main = quickCheck $ property $ overlay (<>) test4 test3 =-= test5
