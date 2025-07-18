@@ -28,6 +28,7 @@ dependencies:
 - split
 - containers
 - step-function
+- hspec
 
 default-extensions: []
 

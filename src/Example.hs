@@ -68,14 +68,33 @@ section10gen
   -> Rhythm [Pitch]
   -> Rhythm Pitch
 section10gen top bot =
-  fmap head $ -- (chord =<<) $
+  fmap last $ -- (chord =<<) $
     -- Par
-      (overlay (const id) (im $ replicate 6 ()) top)
-      -- ( do
-      --     n <- overlay (const id) (im $ replicate 4 ()) bot
-      --     im [take 2 n, drop 2 n]
-      -- )
-      --
+      (overlay (const) top (im $ replicate 6 ()))
+       -- ( do
+       --     n <- overlay (const id) (im $ replicate 4 ()) bot
+       --     im [take 2 n, drop 2 n]
+       -- )
+
+
+
+wtf :: Rhythm String
+wtf =
+  overlay (<>)
+    (im $ replicate 4 ".")
+    (evenly
+      [ pure "a"
+      , im
+          [ "b", "a" ]
+      ])
+
+debug :: Rhythm String
+debug = trim (Closed $ 1 % 3, Open $ 2 % 3) $ im ["a", "b", "c"]
+
+-- ([(Open (1 % 4),Full ".a")
+--  ,(Open (1 % 2),Full ".a")
+--  ,(Open (3 % 4),Interval (fromList [(Open (1 % 2),Full ".b")] (Full ".a")))]
+--   (Interval (fromList [(Open (1 % 2),Full ".b")] (Full ".a"))))
 
 -- Interval
 --  (fromList

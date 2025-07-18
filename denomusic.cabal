@@ -26,7 +26,6 @@ source-repository head
 library
   exposed-modules:
       Example
-      IntervalMap
       Legacy
       Rhythm
   other-modules:
@@ -42,6 +41,7 @@ library
     , base >=4.7 && <5
     , checkers
     , containers
+    , hspec
     , split
     , step-function
   default-language: GHC2021
