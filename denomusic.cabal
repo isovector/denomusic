@@ -26,8 +26,9 @@ source-repository head
 library
   exposed-modules:
       Example
-      Rhythm
+      IntervalMap
       Legacy
+      Rhythm
   other-modules:
       Paths_denomusic
   autogen-modules:
@@ -42,4 +43,5 @@ library
     , checkers
     , containers
     , split
+    , step-function
   default-language: GHC2021

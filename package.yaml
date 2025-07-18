@@ -27,6 +27,7 @@ dependencies:
 - QuickCheck
 - split
 - containers
+- step-function
 
 default-extensions: []
 
