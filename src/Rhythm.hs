@@ -8,6 +8,7 @@ module Rhythm
 , SF (..)
 ) where
 
+import Data.Bool
 import Data.List (unsnoc)
 import Data.Maybe
 import Data.Foldable
@@ -170,7 +171,7 @@ getSpan bs (Interval sf) = do
           False -> do
             -- otherwise we need to trim the underlying span
             let intersected' =
-                  (renormalize bs $ fst intersected, renormalize bs $ snd intersected)
+                  (renormalize b $ fst intersected, renormalize b $ snd intersected)
             pure (hi', getSpan intersected' a)
   case unsnoc spanning of
     Just ([], def) -> snd def
@@ -195,7 +196,21 @@ intersection (al, ar) (bl, br) = do
     GT -> Nothing
 
 
-
+test :: String
+test = unlines $ do
+  let bs = (Closed 0, Open 0.5)
+      Interval sf = evenly [Full "x", evenly [Full "y1", Full "y2"], Full "z"]
+  (b@(_, hi), a) <- intervals sf
+  intersected <- maybeToList $ intersection bs b
+  let intersected' =
+        bool (show (renormalize b $ fst intersected, renormalize b $ snd intersected))
+              "unchanged"
+          $ b == intersected
+  pure $ mconcat
+    [ show intersected
+    , " => "
+    , intersected'
+    ]
 
 
 
@@ -272,8 +287,8 @@ instance Arbitrary a => Arbitrary (Rhythm a) where
         False -> pure xx
 
 
-test :: Rhythm String
-test = evenly [pure "a", pure "b", pure "c"]
+-- test :: Rhythm String
+-- test = evenly [pure "a", pure "b", pure "c"]
 
 test2 :: Rhythm String
 test2 = evenly [pure "1", pure "2"]
@@ -349,7 +364,7 @@ main = hspec $ modifyMaxSuccess (const 100000) $ do
         counterexample ("lhs: " <> show lhs) $
           lhs =-= r
 
-    focus $ it "cover three unit" $ do
+    it "cover three unit" $ do
       let r = evenly [Full "x", evenly [Full "y1", Full "y2"], Full "z"]
       let lhs =
             evenly
