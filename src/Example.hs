@@ -110,31 +110,35 @@ invert :: [Pitch] -> [Pitch]
 invert [] = []
 invert ((pc, o) : xs) = xs <> pure (pc, o + 1)
 
+noFifth :: [Pitch] -> [Pitch]
+noFifth (x:y:_:z) = x:y:z
+noFifth xs = xs
+
 song :: Rhythm Pitch
 song = do
   let
     b1 = section10gen (pure $ minor F 4) (pure $ minor F 3)
-    b2 = section10gen
+  evenly
+    [ -- section 10
+      b1
+    , section10gen
           (evenly
             [ pure $ maj Cs 4
             , im
-              [ [(F, 4), (Af, 4), (Ef, 5)]
-              , [(F, 4), (Af, 4), (Ef, 5)]
+              [ noFifth $ min7 F 4
+              , noFifth $ min7 F 4
               , invert $ maj Cs 4
               ]
             ])
           (evenly
             [ pure $ invert $ maj Cs 3
-            , evenly
-                [ pure [(F, 3), (Af, 3), (Ef, 4)]
-                , pure $ invert $ maj Cs 3
+            , im
+                [ noFifth $ min7 F 3
+                , invert $ maj Cs 3
 
                 ]
             ])
-  evenly
-    [ -- section 10
-      b1
-    , b2
+
     , section10gen
         (pure $ invert $ invert $ maj Af 3)
         (pure $ invert $ invert $ maj Af 2)
@@ -147,7 +151,18 @@ song = do
         (pure $ invert $ maj C 3)
     , -- section 11
       b1
-    , b2
+    , section10gen
+          (evenly
+            [ pure $ maj Cs 4
+            , im
+              [ noFifth $ min7 F 4
+              , noFifth $ min7 F 4
+              , invert $ maj Cs 4
+              ]
+            ])
+          (pure $ maj Df 3)
+
+
     , section10gen
         (pure $ invert $ maj Ef 4)
         (pure $ invert $ maj Ef 2)
@@ -196,6 +211,22 @@ song = do
           ]
         )
         (pure $ power C 2)
+   , -- section 13 line 2
+      section10gen
+        (pure $ minor F 4)
+        (pure $ power F 2)
+   ,  section10gen
+        (pure [ (E, 4), (Af, 4), (C, 5)  ])
+        (pure [ (E, 2), (C, 3), (E, 3) ] )
+    , -- first go around
+      section10gen
+      (pure $ invert $ maj Ef 4)
+      (pure $ invert $ invert $ maj Ef 2 )
+    , section10gen
+      (im
+        [ invert $ invert $ maj C 4
+        , invert $ dim E 4
+        ])
+      (pure $ invert $ maj C 2 )
     ]
-
 
