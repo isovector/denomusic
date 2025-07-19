@@ -25,7 +25,9 @@ source-repository head
 
 library
   exposed-modules:
-      Example
+      Etude11
+      Etude17
+      Funky
       Legacy
       Rhythm
   other-modules:
@@ -42,6 +44,9 @@ library
     , checkers
     , containers
     , hspec
+    , mtl
+    , random
     , split
     , step-function
+    , transformers
   default-language: GHC2021

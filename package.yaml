@@ -29,6 +29,9 @@ dependencies:
 - containers
 - step-function
 - hspec
+- mtl
+- transformers
+- random
 
 default-extensions: []
 
