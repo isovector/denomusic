@@ -1,17 +1,16 @@
 {-# LANGUAGE LambdaCase           #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# OPTIONS_GHC -fno-warn-x-partial       #-}
 
 module Etude17 where
 
 import Control.Arrow
 import Data.Ratio
-import Debug.Trace
 import Euterpea.IO.MIDI.Play
 import Rhythm hiding (renormalize, main)
-import Euterpea (PitchClass (..), Octave, Pitch(..), Music (..), note, rest)
+import Euterpea (PitchClass (..), Pitch, Music (..), note, rest)
 import Euterpea qualified as E
 import Legacy hiding (main)
-import Data.Semigroup
 
 
 renormalize :: Rational -> [(Rational, Durated a)] -> [(Rational, Durated a)]
@@ -47,6 +46,7 @@ chord :: [a] -> Rhythm a
 chord [] = Empty
 chord xs = foldr1 Par $ fmap pure xs
 
+bar1to4 :: Rhythm Pitch
 bar1to4 = do
   c <- im [E]
   oct <- im [0, 1]
@@ -55,6 +55,7 @@ bar1to4 = do
     hand <- im [2, 3]
     chord $ f c (oct + hand)
 
+bar5 :: Rhythm Pitch
 bar5 = do
   rtimes 4 $ do
     c <- im [F]
