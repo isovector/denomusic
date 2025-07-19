@@ -8,15 +8,12 @@ module Rhythm
 , SF (..)
 ) where
 
-import Data.Bool
 import Data.List (unsnoc)
 import Data.Maybe
 import Data.Foldable
-import Debug.Trace
 import Data.Ratio
 import qualified Data.Map as M
 import Data.Function.Step (SF(..), Bound(..), fromList)
-import Data.Function.Step qualified as SF
 import Control.Monad (ap, guard)
 import Control.Arrow ((***), (&&&))
 import Test.QuickCheck
@@ -113,7 +110,7 @@ trim bs (Interval sf) =
 
 
 trimSF :: (Bound Rational, Bound Rational) -> SF Rational (Rhythm a) -> Rhythm a
-trimSF (lo, hi) sf@(SF m def) = do
+trimSF (lo, hi) (SF m def) = do
   let biggest = maybe def snd $ M.lookupGE hi m
       pieces = do
         let size = unbound hi - unbound lo
@@ -133,18 +130,27 @@ overlay f (Full a) b = fmap (f a) b
 overlay f a (Full b) = fmap (flip f b) a
 overlay f (Par a b) c = Par (overlay f a c) (overlay f b c)
 overlay f a (Par b c) = Par (overlay f a b) (overlay f a c)
-overlay f (Interval as) (Interval bs) = do
-  let spans = overlappingSpans as bs
-  Interval $ flip SF undefined $ M.fromAscList $ do
-    (lo, hi) <- spans
-    undefined
+overlay f ar@(Interval as) br@(Interval bs) = do
+  let spans = do
+        bound <- overlappingSpans as bs
+        let a = getSpan bound ar
+            b = getSpan bound br
+        pure (snd bound, overlay f a b)
+  case unsnoc spans of
+    Nothing -> Empty
+    Just ([], d) -> snd d
+    Just (pieces, d) ->
+      Interval $ SF (M.fromAscList pieces) $ snd d
+  -- Interval $ flip SF undefined $ M.fromAscList $ do
+  --   (lo, hi) <- spans
+  --   undefined
 
 
 overlappingSpans :: SF Rational a -> SF Rational b -> [(Bound Rational, Bound Rational)]
 overlappingSpans (SF sfa _) (SF sfb _) =
-    go (Closed 0) (fmap fst $ M.toList sfa) (fmap fst $ M.toList sfb)
+    go (Closed 0) (fmap fst (M.toList sfa) <> pure (Closed 1)) (fmap fst (M.toList sfb) <> pure (Closed 1))
   where
-    go acc [] [] = []
+    go _ [] [] = []
     go acc (i : as) [] = (acc, i) : go (swapBound i) as []
     go acc [] (i : bs) = (acc, i) : go (swapBound i) [] bs
     go acc as@(ia : as') bs@(ib : bs') = do
@@ -195,22 +201,6 @@ intersection (al, ar) (bl, br) = do
     EQ -> Just (l, l)
     GT -> Nothing
 
-
-test :: String
-test = unlines $ do
-  let bs = (Closed 0, Open 0.5)
-      Interval sf = evenly [Full "x", evenly [Full "y1", Full "y2"], Full "z"]
-  (b@(_, hi), a) <- intervals sf
-  intersected <- maybeToList $ intersection bs b
-  let intersected' =
-        bool (show (renormalize b $ fst intersected, renormalize b $ snd intersected))
-              "unchanged"
-          $ b == intersected
-  pure $ mconcat
-    [ show intersected
-    , " => "
-    , intersected'
-    ]
 
 
 
@@ -293,8 +283,6 @@ instance Arbitrary a => Arbitrary (Rhythm a) where
 test2 :: Rhythm String
 test2 = evenly [pure "1", pure "2"]
 
-
-zz = Interval zz2
 
 
 zz2 :: SF Rational (Rhythm Int)
@@ -383,12 +371,56 @@ main = hspec $ modifyMaxSuccess (const 100000) $ do
         l =-= z
 
 
---   prop "overlay" $ \(z :: Rhythm Int) -> do
---     let l = overlay const z z
---         r = z
---     counterexample ("lhs: " <> show l) $
---       counterexample ("rhs: " <> show r) $
---         l =-= r
+  describe "overlappingSpans" $ do
+    prop "id" $ \x y -> do
+      let Interval sf = evenly @Int [x, y]
+          lhs = fmap fst $ intervals sf
+      lhs === overlappingSpans sf sf
+
+    prop "many" $ do
+      n <- fmap ((+ 2) . abs) arbitrary
+      pure $
+        counterexample ("n: " <> show n) $ do
+          let Interval sf = evenly @Int $ replicate n Empty
+              lhs = fmap fst $ intervals sf
+          lhs === overlappingSpans sf sf
+
+
+  describe "overlay" $ do
+    prop "const same" $ \(z :: Rhythm Int) -> do
+      let l = overlay const z z
+          r = z
+      counterexample ("lhs: " <> show l) $
+        counterexample ("rhs: " <> show r) $
+          l =-= r
+
+    prop "const different" $ \(x :: Rhythm Int) (y :: Rhythm Int) -> do
+      let l = overlay const x y
+          r = x
+      ix <- arbitrary
+      pure $
+        counterexample ("lhs: " <> show l) $
+          counterexample ("rhs: " <> show r) $
+            counterexample ("at: " <> show ix) $
+              case mu y ix of
+                [] -> mu l ix === []
+                _ -> mu l ix === mu r ix
+
+    prop "everywhere vs pure" $ \(Fn2 (f :: Int -> Int -> Int)) x y -> do
+      nx <- fmap ((+ 2) . abs) arbitrary
+      ny <- fmap ((+ 2) . abs) arbitrary
+      let l = overlay f (evenly $ replicate nx $ pure x) (evenly $ replicate ny $ pure y)
+          r = pure $ f x y
+      pure $
+        counterexample ("lhs: " <> show l) $
+          counterexample ("rhs: " <> show r) $
+            l =-= r
+
+    prop "pointwise" $ \(Fn2 (f :: Int -> Int -> Int)) x y -> do
+      r <- arbitrary
+      pure $
+        mu (overlay f x y) r === (f <$> (mu x r) <*> (mu y r))
+
 
   prop "trim" $ \(NonEmpty (as :: [Rhythm Int])) -> do
     let len = fromIntegral $ length as
@@ -412,14 +444,14 @@ main = hspec $ modifyMaxSuccess (const 100000) $ do
   prop "simple trim r" $ \(a :: Rhythm String) (b :: Rhythm String) ->
     trim (Closed 0.5, Open 1) (evenly [a, b]) =-= b
 
---   prop "wtf case" $ \(Fn2 (f :: Int -> Int -> Int)) a1 a2 b1 b2 b3 -> do
---     let l = overlay f (evenly $ fmap pure [a1, a2]) (evenly $ fmap pure [b1, b2, b3])
---         r = evenly $ fmap pure
---               [ f a1 b1, f a1 b1
---               , f a1 b2, f a2 b2
---               , f a2 b2, f a2 b3
---               ]
---     counterexample ("lhs: " <> show l) $
---       counterexample ("rhs: " <> show r) $
---         l =-= r
+  focus $ prop "wtf case" $ \(Fn2 (f :: Int -> Int -> Int)) a1 a2 b1 b2 b3 -> do
+    let l = overlay f (evenly $ fmap pure [a1, a2]) (evenly $ fmap pure [b1, b2, b3])
+        r = evenly $ fmap pure
+              [ f a1 b1, f a1 b1
+              , f a1 b2, f a2 b2
+              , f a2 b2, f a2 b3
+              ]
+    counterexample ("lhs: " <> show l) $
+      counterexample ("rhs: " <> show r) $
+        l =-= r
 
