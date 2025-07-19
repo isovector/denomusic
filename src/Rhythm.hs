@@ -8,6 +8,7 @@ module Rhythm
 , SF (..)
 ) where
 
+import Data.List (unsnoc)
 import Data.Maybe
 import Data.Foldable
 import Debug.Trace
@@ -47,31 +48,6 @@ mu (Interval as) n =
 mu (Par a b) n = mu a n <> mu b n
 
 
-liftA2SF
-  :: forall k a b c
-   . (k ~ Rational)
-  => ((Bound k, Bound k) -> a -> b -> c)
-  -> SF k a
-  -> SF k b
-  -> SF k c
-liftA2SF f (SF (M.toList -> as0) defa) (SF (M.toList -> bs0) defb) =
-  SF (M.fromAscList $ go (Closed 0) as0 bs0) (f (hi, Closed 1) defa defb)
-  where
-    hi = maybe (error "no bounds whatsoever") swapBound $ max
-          (maximum $ Nothing : fmap (Just . fst) as0)
-          (maximum $ Nothing : fmap (Just . fst) bs0)
-
-    go :: Bound k -> [(Bound k, a)] -> [(Bound k, b)] -> [(Bound k, c)]
-    go acc [] [] = []
-    go acc ((i, a) : as) [] = (i, f (acc, i) a defb) : go (swapBound i) as []
-    go acc [] ((i, b) : bs) = (i, f (acc, i) defa b) : go (swapBound i) [] bs
-    go acc as@((ia, a) : as') bs@((ib, b) : bs') = do
-      let bounds = (acc, min ia ib)
-      case compare ia ib of
-        LT -> (ia, f bounds a b) : go (swapBound ia) as' bs
-        EQ -> (ia, f bounds a b) : go (swapBound ia) as' bs'
-        GT -> (ib, f bounds a b) : go (swapBound ib) as bs'
-
 
 unbound :: Bound a -> a
 unbound (Open a) = a
@@ -94,7 +70,7 @@ intervals :: SF Rational a -> [((Bound Rational, Bound Rational), a)]
 intervals (SF m def) = go (Closed 0) $ M.toAscList m
   where
     go lo [] = pure ((lo, Closed 1), def)
-    go lo ((hi, a) : as) = ((lo, hi), a) : go hi as
+    go lo ((hi, a) : as) = ((lo, hi), a) : go (swapBound hi) as
 
 data Durated a = Durated
   { getDuration :: Rational
@@ -156,15 +132,89 @@ overlay f (Full a) b = fmap (f a) b
 overlay f a (Full b) = fmap (flip f b) a
 overlay f (Par a b) c = Par (overlay f a c) (overlay f b c)
 overlay f a (Par b c) = Par (overlay f a b) (overlay f a c)
-overlay f (Interval as) (Interval bs) =
-  -- the bug here is that liftA2 sees the whole value that overlaps
-  -- but the overlap here is only partial given by the intersection of the
-  -- intervals
-  -- so we actually want to do a recursive call on the intersecting bits
-  --
-  -- ok new bug
-  -- we want to trim only when the bounds dont actually line up
-  Interval $ liftA2SF (\bounds ar br -> overlay f (trim bounds ar) (trim bounds br)) as bs
+overlay f (Interval as) (Interval bs) = do
+  let spans = overlappingSpans as bs
+  Interval $ flip SF undefined $ M.fromAscList $ do
+    (lo, hi) <- spans
+    undefined
+
+
+overlappingSpans :: SF Rational a -> SF Rational b -> [(Bound Rational, Bound Rational)]
+overlappingSpans (SF sfa _) (SF sfb _) =
+    go (Closed 0) (fmap fst $ M.toList sfa) (fmap fst $ M.toList sfb)
+  where
+    go acc [] [] = []
+    go acc (i : as) [] = (acc, i) : go (swapBound i) as []
+    go acc [] (i : bs) = (acc, i) : go (swapBound i) [] bs
+    go acc as@(ia : as') bs@(ib : bs') = do
+      let bounds = (acc, min ia ib)
+      case compare ia ib of
+        LT -> bounds : go (swapBound ia) as' bs
+        EQ -> bounds : go (swapBound ia) as' bs'
+        GT -> bounds : go (swapBound ib) as bs'
+
+
+getSpan :: (Bound Rational, Bound Rational) -> Rhythm a -> Rhythm a
+getSpan _ Empty = Empty
+getSpan _ (Full a) = Full a
+getSpan bs (Par x y) = Par (getSpan bs x) (getSpan bs y)
+getSpan bs (Interval sf) = do
+  let spanning = do
+        (b@(_, hi), a) <- intervals sf
+        intersected <- maybeToList $ intersection bs b
+        let hi' = renormalize bs hi
+        case b == intersected of
+          True -> do
+            -- can keep span intact, just need to renormalize hi
+            pure (hi', a)
+          False -> do
+            -- otherwise we need to trim the underlying span
+            let intersected' =
+                  (renormalize bs $ fst intersected, renormalize bs $ snd intersected)
+            pure (hi', getSpan intersected' a)
+  case unsnoc spanning of
+    Just ([], def) -> snd def
+    Just (pieces, def) ->
+      Interval $ SF (M.fromAscList pieces) $ snd def
+    Nothing -> Empty
+
+renormalize :: (Bound Rational, Bound Rational) -> Bound Rational -> Bound Rational
+renormalize (unbound -> lo, hib) x =
+  -- case x == hib of
+  --   True -> Closed 1
+  --   False ->
+      fmap ((/ (unbound hib - lo)) . (subtract lo)) x
+
+intersection :: Ord k => (Bound k, Bound k) -> (Bound k, Bound k) -> Maybe (Bound k, Bound k)
+intersection (al, ar) (bl, br) = do
+  let l = max al bl
+      r = min ar br
+  case compare l r of
+    LT -> Just (l, r)
+    EQ -> Just (l, l)
+    GT -> Nothing
+
+
+
+
+
+
+
+
+
+-- liftA2SF
+--   :: forall k a b c
+--    . (k ~ Rational)
+--   => (a -> b -> c)
+--   -> SF k a
+--   -> SF k b
+--   -> SF k c
+-- liftA2SF f (SF (M.toList -> as0) defa) (SF (M.toList -> bs0) defb) =
+--   SF (M.fromAscList $ go (Closed 0) as0 bs0) (f (hi, Closed 1) defa defb)
+--   where
+--     hi = maybe (error "no bounds whatsoever") swapBound $ max
+--           (maximum $ Nothing : fmap (Just . fst) as0)
+--           (maximum $ Nothing : fmap (Just . fst) bs0)
 
 instance Applicative Rhythm where
   pure = Full
@@ -238,25 +288,92 @@ zz2 =
     (pure (Open (1 % 2), Interval $ fromList [(Open (2 % 3),Full 0)] Empty))
     Empty
 
-zz3 :: IO ()
-zz3 = traverse_ print $ liftA2SF (\b z _ -> (b, z, trim b z)) zz2 zz2
+-- zz3 :: IO ()
+-- zz3 = traverse_ print $ liftA2SF (\b z _ -> (b, z, trim b z)) zz2 zz2
 
 
 
 main :: IO ()
 main = hspec $ modifyMaxSuccess (const 100000) $ do
+  describe "intersection" $ do
+    prop "commutative" $ \x y ->
+      intersection @Rational x y === intersection y x
+
+    prop "idempotent" $ \x y -> do
+      let r = intersection @Rational x y
+      r === (r >>= intersection x)
+
+    it "unit test" $
+      intersection (Open @Rational 0, Closed 0.5) (Open 0.25, Closed 1)
+        === Just (Open 0.25, Closed 0.5)
+
+  describe "getSpan" $ do
+    prop "identity" $ \x ->
+      getSpan @Int (Closed 0, Closed 1) x =-= x
+
+    prop "get one" $ \x y -> do
+      let lhs =
+            getSpan @Int (Closed 0, Open 0.5)
+              (evenly [x, y])
+      counterexample ("lhs: " <> show lhs) $
+        lhs =-= x
+
+    prop "get two" $ \x y -> do
+      let evened = evenly [x, y]
+          lhs =
+            getSpan @Int (Closed 0.5, Closed 1)
+              evened
+      counterexample ("evened: " <> show evened) $
+        counterexample ("lhs: " <> show lhs) $
+          lhs =-= y
+
+
+    prop "cover two" $ \x y -> do
+      let r = evenly @Int [x, y]
+      let lhs =
+            evenly
+              [ getSpan (Closed 0, Open 0.5) r
+              , getSpan (Closed 0.5, Closed 1) r
+              ]
+      counterexample ("lhs: " <> show lhs) $
+        lhs =-= r
+
+    prop "cover three" $ \x y z -> do
+      let r = evenly @Int [x, y, z]
+      let lhs =
+            evenly
+              [ getSpan (Closed 0, Open 0.5) r
+              , getSpan (Closed 0.5, Closed 1) r
+              ]
+      counterexample ("even: " <> show r) $
+        counterexample ("lhs: " <> show lhs) $
+          lhs =-= r
+
+    focus $ it "cover three unit" $ do
+      let r = evenly [Full "x", evenly [Full "y1", Full "y2"], Full "z"]
+      let lhs =
+            evenly
+              [ getSpan (Closed 0, Open 0.5) r
+              , getSpan (Closed 0.5, Closed 1) r
+              ]
+      counterexample ("evenly: " <> show r) $
+        counterexample ("lhs: " <> show lhs) $
+          lhs =-= r
+
+
+
   prop "trim id" $ \(z :: Rhythm Int) -> do
     let l = trim (Closed 0, Closed 1) z
     counterexample ("lhs: " <> show l) $
         l =-= z
 
 
-  focus $ prop "overlay" $ \(z :: Rhythm Int) -> do
-    let l = overlay const z z
-        r = z
-    counterexample ("lhs: " <> show l) $
-      counterexample ("rhs: " <> show r) $
-        l =-= r
+--   prop "overlay" $ \(z :: Rhythm Int) -> do
+--     let l = overlay const z z
+--         r = z
+--     counterexample ("lhs: " <> show l) $
+--       counterexample ("rhs: " <> show r) $
+--         l =-= r
 
   prop "trim" $ \(NonEmpty (as :: [Rhythm Int])) -> do
     let len = fromIntegral $ length as
@@ -280,14 +397,14 @@ main = hspec $ modifyMaxSuccess (const 100000) $ do
   prop "simple trim r" $ \(a :: Rhythm String) (b :: Rhythm String) ->
     trim (Closed 0.5, Open 1) (evenly [a, b]) =-= b
 
-  prop "wtf case" $ \(Fn2 (f :: Int -> Int -> Int)) a1 a2 b1 b2 b3 -> do
-    let l = overlay f (evenly $ fmap pure [a1, a2]) (evenly $ fmap pure [b1, b2, b3])
-        r = evenly $ fmap pure
-              [ f a1 b1, f a1 b1
-              , f a1 b2, f a2 b2
-              , f a2 b2, f a2 b3
-              ]
-    counterexample ("lhs: " <> show l) $
-      counterexample ("rhs: " <> show r) $
-        l =-= r
+--   prop "wtf case" $ \(Fn2 (f :: Int -> Int -> Int)) a1 a2 b1 b2 b3 -> do
+--     let l = overlay f (evenly $ fmap pure [a1, a2]) (evenly $ fmap pure [b1, b2, b3])
+--         r = evenly $ fmap pure
+--               [ f a1 b1, f a1 b1
+--               , f a1 b2, f a2 b2
+--               , f a2 b2, f a2 b3
+--               ]
+--     counterexample ("lhs: " <> show l) $
+--       counterexample ("rhs: " <> show r) $
+--         l =-= r
 
