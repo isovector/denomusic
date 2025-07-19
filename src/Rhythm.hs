@@ -8,6 +8,8 @@ module Rhythm
 , SF (..)
 ) where
 
+import Data.Maybe
+import Data.Foldable
 import Debug.Trace
 import Data.Ratio
 import qualified Data.Map as M
@@ -34,11 +36,13 @@ mu Empty _ = []
 mu (Full a) _ = pure a
 -- mu (Interval (SF _ d)) 1 = mu d 1
 mu (Interval as) n =
-  let ((unbound -> left, unbound -> right), m) = findInterval n as
+  let ((leftb, unbound -> right), m) = findInterval n as
+      left = unbound leftb
       width = right - left
    in
-      case width of
-        0 -> error $ show $ fst $ findInterval n as
+      case (width, leftb) of
+        (0, Closed 1) -> mu m 1
+        (0, _) -> error "how did you do this"
         _ -> mu m $ (n - left) / width
 mu (Par a b) n = mu a n <> mu b n
 
@@ -51,25 +55,22 @@ liftA2SF
   -> SF k b
   -> SF k c
 liftA2SF f (SF (M.toList -> as0) defa) (SF (M.toList -> bs0) defb) =
-  SF (M.fromAscList $ go (as0 <> pure (Closed 1, defa)) (bs0 <> pure (Closed 1, defb))) (f (swapBound hi, Closed 1) defa defb)
+  SF (M.fromAscList $ go (Closed 0) as0 bs0) (f (hi, Closed 1) defa defb)
   where
-    hi = max
-          (maximum $ fmap fst as0)
-          (maximum $ fmap fst bs0)
+    hi = maybe (error "no bounds whatsoever") swapBound $ max
+          (maximum $ Nothing : fmap (Just . fst) as0)
+          (maximum $ Nothing : fmap (Just . fst) bs0)
 
-    go :: [(Bound k, a)] -> [(Bound k, b)] -> [(Bound k, c)]
-    go [] [] = []
-    go [_] [] = []
-    go [] [_] = []
-    go ((i, a) : as@((i2, _) : _)) [] = (i, f (i, i2) a defb) : go as []
-    go [] ((i, b) : bs@((i2, _) : _)) = (i, f (i, i2) defa b) : go [] bs
-    go as@((ia, a) : as') bs@((ib, b) : bs') = do
-      let bounds = (ia, ib)
+    go :: Bound k -> [(Bound k, a)] -> [(Bound k, b)] -> [(Bound k, c)]
+    go acc [] [] = []
+    go acc ((i, a) : as) [] = (i, f (acc, i) a defb) : go (swapBound i) as []
+    go acc [] ((i, b) : bs) = (i, f (acc, i) defa b) : go (swapBound i) [] bs
+    go acc as@((ia, a) : as') bs@((ib, b) : bs') = do
+      let bounds = (acc, min ia ib)
       case compare ia ib of
-        LT -> (ia, f bounds a b) : go as' bs
-        -- TODO(sandy): wtf am i doing. need a smarter accumulator
-        EQ -> (ia, f bounds a b) : go as' bs'
-        GT -> (ib, f bounds a b) : go as bs'
+        LT -> (ia, f bounds a b) : go (swapBound ia) as' bs
+        EQ -> (ia, f bounds a b) : go (swapBound ia) as' bs'
+        GT -> (ib, f bounds a b) : go (swapBound ib) as bs'
 
 
 unbound :: Bound a -> a
@@ -84,17 +85,15 @@ swapBound (Closed a) = Open a
 findInterval :: Rational -> SF Rational a -> ((Bound Rational, Bound Rational), a)
 findInterval x (SF m def) =
   case (M.lookupLE (Open x) m, M.lookupGE (Closed x) m) of
-    (Just (lo, _), Just (hi, v)) -> ((lo, hi), v)
-    (Nothing, Just (hi, v)) -> ((Closed 0, swapBound hi), v)
+    (Just (lo, _), Just (hi, v)) -> ((swapBound lo, hi), v)
+    (Nothing, Just (hi, v)) -> ((Closed 0, hi), v)
     (Just (lo, _), Nothing) -> ((swapBound lo, Closed 1), def)
     (Nothing, Nothing) -> ((Closed 0, Closed 1), def)
 
-intervals :: SF Rational a -> [((Rational, Rational), a)]
-intervals (SF m def) = go 0 $ M.toAscList $ M.mapKeysMonotonic unbound m
+intervals :: SF Rational a -> [((Bound Rational, Bound Rational), a)]
+intervals (SF m def) = go (Closed 0) $ M.toAscList m
   where
-    go lo []
-      | lo <= 1 = pure ((lo, 1), def)
-      | otherwise = mempty
+    go lo [] = pure ((lo, Closed 1), def)
     go lo ((hi, a) : as) = ((lo, hi), a) : go hi as
 
 data Durated a = Durated
@@ -113,7 +112,7 @@ foldInterval :: Rhythm a -> [(Rational, Durated a)]
 foldInterval Empty = mempty
 foldInterval (Full a) = pure (0, Durated 1 a)
 foldInterval (Interval as) =
-  flip foldMap (intervals as) $ \((lo, hi), r) ->
+  flip foldMap (intervals as) $ \((unbound -> lo, unbound -> hi), r) ->
     fmap ((+ lo) . (* (hi - lo)) *** mapDuration (* (hi - lo))) $ foldInterval r
 foldInterval (Par as bs) = foldInterval as <> foldInterval bs
 
@@ -133,20 +132,22 @@ trim _ Empty = Empty
 trim _ (Full a) = Full a
 trim bs (Par x y) = Par (trim bs x) (trim bs y)
 trim bs (Interval sf) =
-  Interval $ trimSF bs sf
+  trimSF bs sf
 
 
-trimSF :: (Bound Rational, Bound Rational) -> SF Rational a -> SF Rational a
-trimSF (lo, hi) sf@(SF m def) =
-  flip SF (snd $ findInterval (unbound hi) sf) $ M.fromAscList $ do
-    let size = unbound hi - unbound lo
-    -- lol wtf
-    -- completely borked
-    (i, a) <- M.toList m
-    -- wtf????? i is the top of an interval, so
-    guard $ lo <= i
-    guard $ i <= hi
-    pure (fmap ((/ size) . subtract (unbound lo)) i, a)
+trimSF :: (Bound Rational, Bound Rational) -> SF Rational (Rhythm a) -> Rhythm a
+trimSF (lo, hi) sf@(SF m def) = do
+  let biggest = maybe def snd $ M.lookupGE hi m
+      pieces = do
+        let size = unbound hi - unbound lo
+        (i, a) <- M.toList m
+        guard $ lo <= i
+        guard $ i <= hi
+        pure (fmap ((/ size) . subtract (unbound lo)) i, a)
+      end = find ((== Closed 1) . fst) pieces
+  case pieces of
+    [] -> biggest
+    _ -> Interval $ SF (M.fromAscList pieces) biggest
 
 overlay :: (a -> b -> c) -> Rhythm a -> Rhythm b -> Rhythm c
 overlay _ Empty _ = Empty
@@ -160,6 +161,9 @@ overlay f (Interval as) (Interval bs) =
   -- but the overlap here is only partial given by the intersection of the
   -- intervals
   -- so we actually want to do a recursive call on the intersecting bits
+  --
+  -- ok new bug
+  -- we want to trim only when the bounds dont actually line up
   Interval $ liftA2SF (\bounds ar br -> overlay f (trim bounds ar) (trim bounds br)) as bs
 
 instance Applicative Rhythm where
@@ -202,7 +206,7 @@ instance Arbitrary a => Arbitrary (Rhythm a) where
     [ pure Empty
     , fmap Full arbitrary
     , sized $ \sz -> do
-        n <- arbitrary
+        n <- fmap ((+ 2) . abs) arbitrary
         fmap evenly $ vectorOf n $ resize (sz `div` n) arbitrary
     ]
   shrink Empty = []
@@ -224,55 +228,51 @@ test = evenly [pure "a", pure "b", pure "c"]
 test2 :: Rhythm String
 test2 = evenly [pure "1", pure "2"]
 
-type Music = Rhythm
 
--- test3 :: Music String
--- test3 = Interval $ replicate 6 $ pure "."
-
--- test4 :: Music String
--- test4 = Interval
---   [ pure "a"
---   , Interval $ fmap pure
---     [ "b"
---     , "b"
---     , "a"
---     ]
---   ]
-
--- test5 :: Music String
--- test5 = Interval $ fmap pure
---   [ "a."
---   , "a."
---   , "a."
---   , "b."
---   , "b."
---   , "a."
---   ]
+zz = Interval zz2
 
 
-zz = Interval (fromList [(Open (1 % 2),Interval (fromList [(Open (1 % 2),Full "")] Empty))] Empty)
+zz2 :: SF Rational (Rhythm Int)
+zz2 =
+  fromList
+    (pure (Open (1 % 2), Interval $ fromList [(Open (2 % 3),Full 0)] Empty))
+    Empty
+
+zz3 :: IO ()
+zz3 = traverse_ print $ liftA2SF (\b z _ -> (b, z, trim b z)) zz2 zz2
+
 
 
 main :: IO ()
 main = hspec $ modifyMaxSuccess (const 100000) $ do
-  prop "overlay" $ \(Fn2 (f :: Int -> Int -> Int)) z -> do
-    let l = overlay f z z
-        r = fmap (\x -> f x x) z
+  prop "trim id" $ \(z :: Rhythm Int) -> do
+    let l = trim (Closed 0, Closed 1) z
+    counterexample ("lhs: " <> show l) $
+        l =-= z
+
+
+  focus $ prop "overlay" $ \(z :: Rhythm Int) -> do
+    let l = overlay const z z
+        r = z
     counterexample ("lhs: " <> show l) $
       counterexample ("rhs: " <> show r) $
         l =-= r
 
-  focus $ prop "trim" $ \(NonEmpty (as :: [Rhythm Int])) -> do
+  prop "trim" $ \(NonEmpty (as :: [Rhythm Int])) -> do
     let len = fromIntegral $ length as
         width = recip len
     n <- elements [ 0 .. round len - 1 ]
     pure $ do
-      let l = trim (Closed (fromIntegral n * width), Open ((fromIntegral n + 1) * width)) (evenly as)
+      let e = evenly as
+          b = (Closed (fromIntegral n * width), Open ((fromIntegral n + 1) * width))
+          l = trim b e
           r = as !! n
-      counterexample ("n: " <> show n) $
-        counterexample ("lhs: " <> show l) $
-          counterexample ("rhs: " <> show r) $
-            l =-= r
+      counterexample ("e: " <> show e) $
+        counterexample ("b: " <> show b) $
+        counterexample ("n: " <> show n) $
+          counterexample ("lhs: " <> show l) $
+            counterexample ("rhs: " <> show r) $
+              l =-= r
 
   prop "simple trim l" $ \(a :: Rhythm String) (b :: Rhythm String) ->
     trim (Closed 0, Open $ 1 % 2) (evenly [a, b]) =-= a

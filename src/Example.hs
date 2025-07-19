@@ -81,11 +81,11 @@ section10gen top bot =
 wtf :: Rhythm String
 wtf =
   overlay (<>)
-    (im $ replicate 4 ".")
+    (im $ replicate 6 ".")
     (evenly
       [ pure "a"
       , im
-          [ "b", "a" ]
+          [ "b", "b", "a" ]
       ])
 
 debug :: Rhythm String
