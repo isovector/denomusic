@@ -1,7 +1,7 @@
 {-# LANGUAGE LambdaCase           #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module Example where
+module Etude17 where
 
 import Control.Arrow
 import Data.Ratio
@@ -113,6 +113,35 @@ invert ((pc, o) : xs) = xs <> pure (pc, o + 1)
 noFifth :: [Pitch] -> [Pitch]
 noFifth (x:y:_:z) = x:y:z
 noFifth xs = xs
+
+data Variant = Variant1 | Variant2 | Variant3
+
+song' :: Rhythm Pitch
+song' = evenly $ do
+  (ch, v) <- [ (minor F, Variant1), (maj Df, Variant2), (maj Af, Variant1), (maj C, Variant3)
+             , (minor F, Variant1), (maj Df, Variant2), (maj Ef, Variant1), (maj C, Variant3)
+             , (minor F, Variant1), (maj Df, Variant2), (maj Ef, Variant1), (maj C, Variant3)
+             ]
+  pure $ case v of
+    Variant1 -> section10gen (pure $ ch 4) (pure $ invert $ ch 2)
+    Variant2 ->
+      section10gen
+        (evenly
+          [ pure $ ch 4
+          , im
+              [ invert $ ch 4
+              , invert $ invert $ ch 4
+              , ch 4
+              ]
+          ])
+        (pure $ ch 3)
+    Variant3 ->
+      section10gen
+        (im
+          [ invert $ ch 4
+          , dim (fst $ head $ drop 1 $ ch 4) 4
+          ])
+        (pure $ ch 2)
 
 song :: Rhythm Pitch
 song = do
