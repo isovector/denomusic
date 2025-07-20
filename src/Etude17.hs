@@ -29,7 +29,7 @@ main =
   playDev @Pitch 2 $
     foldMusic $
       renormalize (1 % 8) $
-        foldInterval song
+        foldRhythm song
 
 bar1to4 :: Rhythm Pitch
 bar1to4 = do

@@ -21,7 +21,7 @@ module Rhythm (
 
   -- * Eliminating Rhythms
   annotate,
-  foldInterval,
+  foldRhythm,
   Durated (..),
   mapDuration,
 
@@ -50,7 +50,7 @@ import Test.QuickCheck.Checkers
 data Rhythm a
   = Empty
   | Full a
-  | Interval (SF Rational (Rhythm a))
+  | Seq (SF Rational (Rhythm a))
   | Par (Rhythm a) (Rhythm a)
   deriving stock (Show, Functor, Foldable, Traversable)
 
@@ -71,7 +71,7 @@ mu _ n | n > 1 = mempty
 mu _ n | n < 0 = mempty
 mu Empty _ = mempty
 mu (Full a) _ = S.singleton a
-mu (Interval as) n =
+mu (Seq as) n =
   let ((leftb, unbound -> right), m) = findInterval n as
       left = unbound leftb
       width = right - left
@@ -107,12 +107,12 @@ annotate :: Rhythm a -> Rhythm ((Bound Rational, Bound Rational), a)
 annotate (Full a) = Full ((Closed 0, Closed 1), a)
 annotate Empty = Empty
 annotate (Par a b) = Par (annotate a) (annotate b)
-annotate (Interval sf) = do
+annotate (Seq sf) = do
   let is = intervals sf
   case unsnoc is of
     Nothing -> Empty
     Just (pieces, (end, def)) ->
-      Interval $ flip SF (fmap (first $ debound end) $ annotate def) $ M.fromAscList $ do
+      Seq $ flip SF (fmap (first $ debound end) $ annotate def) $ M.fromAscList $ do
         (b, a) <- pieces
         let a' = annotate a
         pure (snd b, fmap (first $ debound b) $ a')
@@ -126,13 +126,13 @@ data Durated a = Durated
 mapDuration :: (Rational -> Rational) -> Durated a -> Durated a
 mapDuration f (Durated d a) = Durated (f d) a
 
-foldInterval :: Rhythm a -> [(Rational, Durated a)]
-foldInterval Empty = mempty
-foldInterval (Full a) = pure (0, Durated 1 a)
-foldInterval (Interval as) =
+foldRhythm :: Rhythm a -> [(Rational, Durated a)]
+foldRhythm Empty = mempty
+foldRhythm (Full a) = pure (0, Durated 1 a)
+foldRhythm (Seq as) =
   flip foldMap (intervals as) $ \((unbound -> lo, unbound -> hi), r) ->
-    fmap ((+ lo) . (* (hi - lo)) *** mapDuration (* (hi - lo))) $ foldInterval r
-foldInterval (Par as bs) = foldInterval as <> foldInterval bs
+    fmap ((+ lo) . (* (hi - lo)) *** mapDuration (* (hi - lo))) $ foldRhythm r
+foldRhythm (Par as bs) = foldRhythm as <> foldRhythm bs
 
 overlay :: (a -> b -> c) -> Rhythm a -> Rhythm b -> Rhythm c
 overlay _ Empty _ = Empty
@@ -141,7 +141,7 @@ overlay f (Full a) b = fmap (f a) b
 overlay f a (Full b) = fmap (flip f b) a
 overlay f (Par a b) c = Par (overlay f a c) (overlay f b c)
 overlay f a (Par b c) = Par (overlay f a b) (overlay f a c)
-overlay f ar@(Interval as) br@(Interval bs) = do
+overlay f ar@(Seq as) br@(Seq bs) = do
   let spans = do
         bound <- overlappingSpans as bs
         let a = getSpan bound ar
@@ -151,7 +151,7 @@ overlay f ar@(Interval as) br@(Interval bs) = do
     Nothing -> Empty
     Just ([], d) -> snd d
     Just (pieces, d) ->
-      Interval $ SF (M.fromAscList pieces) $ snd d
+      Seq $ SF (M.fromAscList pieces) $ snd d
 
 overlappingSpans :: SF Rational a -> SF Rational b -> [(Bound Rational, Bound Rational)]
 overlappingSpans (SF sfa _) (SF sfb _) =
@@ -171,7 +171,7 @@ getSpan :: (Bound Rational, Bound Rational) -> Rhythm a -> Rhythm a
 getSpan _ Empty = Empty
 getSpan _ (Full a) = Full a
 getSpan bs (Par x y) = Par (getSpan bs x) (getSpan bs y)
-getSpan bs (Interval sf) = do
+getSpan bs (Seq sf) = do
   let spanning = do
         (b@(_, hi), a) <- intervals sf
         intersected <- maybeToList $ intersection bs b
@@ -187,7 +187,7 @@ getSpan bs (Interval sf) = do
   case unsnoc spanning of
     Just ([], def) -> snd def
     Just (pieces, def) ->
-      Interval $ SF (M.fromAscList pieces) $ snd def
+      Seq $ SF (M.fromAscList pieces) $ snd def
     Nothing -> Empty
 
 renormalize :: (Bound Rational, Bound Rational) -> Bound Rational -> Bound Rational
@@ -221,7 +221,7 @@ instance Monad Rhythm where
   return = pure
   Full a >>= f = f a
   Empty >>= _ = Empty
-  Interval as >>= f = Interval $ fmap (>>= f) as
+  Seq as >>= f = Seq $ fmap (>>= f) as
   Par as bs >>= f = Par (as >>= f) (bs >>= f)
 
 instance (Ord a, Show a) => EqProp (Rhythm a) where
@@ -231,7 +231,7 @@ instance (Ord a, Show a) => EqProp (Rhythm a) where
 tuplet :: [Rhythm a] -> Rhythm a
 tuplet [] = Empty
 tuplet [a] = a
-tuplet (init &&& last -> (as, def)) = Interval $
+tuplet (init &&& last -> (as, def)) = Seq $
   flip SF def $
     M.fromAscList $ do
       let len = fromIntegral $ length as + 1
@@ -260,11 +260,11 @@ instance Arbitrary a => Arbitrary (Rhythm a) where
   shrink Empty = []
   shrink (Full a) = Empty : fmap Full (shrink a)
   shrink (Par a b) = Empty : a : b : fmap (Par a) (shrink b) ++ fmap (flip Par b) (shrink a)
-  shrink (Interval (SF as b)) =
-    Empty : b : (fmap (Interval . flip SF b . M.fromAscList) $ listShrinker (M.toList as)) ++ fmap (Interval . SF as) (shrink b) ++ do
+  shrink (Seq (SF as b)) =
+    Empty : b : (fmap (Seq . flip SF b . M.fromAscList) $ listShrinker (M.toList as)) ++ fmap (Seq . SF as) (shrink b) ++ do
       (ix, a) <- M.toList as
       a' <- shrink a
-      pure $ Interval $ flip SF b $ M.fromList $ do
+      pure $ Seq $ flip SF b $ M.fromList $ do
         xx@(ix', _) <- M.toList as
         case ix == ix' of
           True -> pure (ix, a')
@@ -340,7 +340,7 @@ spec = modifyMaxSuccess (const 100000) $ do
 
   describe "overlappingSpans" $ do
     prop "id" $ \x y -> do
-      let Interval sf = tuplet @Int [x, y]
+      let Seq sf = tuplet @Int [x, y]
           lhs = fmap fst $ intervals sf
       lhs === overlappingSpans sf sf
 
@@ -348,7 +348,7 @@ spec = modifyMaxSuccess (const 100000) $ do
       n <- fmap ((+ 2) . abs) arbitrary
       pure $
         counterexample ("n: " <> show n) $ do
-          let Interval sf = tuplet @Int $ replicate n Empty
+          let Seq sf = tuplet @Int $ replicate n Empty
               lhs = fmap fst $ intervals sf
           lhs === overlappingSpans sf sf
 

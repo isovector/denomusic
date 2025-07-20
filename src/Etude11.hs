@@ -16,7 +16,7 @@ main =
   playDev @Pitch 2 $
     foldMusic $
       renormalize (1 % 8) $
-        foldInterval song
+        foldRhythm song
 
 chorded :: Rhythm [Pitch] -> Rhythm Pitch
 chorded = (chord =<<)
