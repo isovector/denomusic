@@ -33,15 +33,15 @@ module Rhythm (
   spec,
 ) where
 
-import qualified Data.Set as S
-import Data.Set (Set)
-import Control.Arrow ((&&&), (***), first)
+import Control.Arrow (first, (&&&), (***))
 import Control.Monad (ap, guard)
 import Data.Function.Step (Bound (..), SF (..))
 import Data.List (unsnoc)
 import Data.Map qualified as M
 import Data.Maybe
 import Data.Ratio
+import Data.Set (Set)
+import Data.Set qualified as S
 import Test.Hspec
 import Test.Hspec.QuickCheck
 import Test.QuickCheck
@@ -115,15 +115,13 @@ annotate (Interval sf) = do
       Interval $ flip SF (fmap (first $ debound end) $ annotate def) $ M.fromAscList $ do
         (b, a) <- pieces
         let a' = annotate a
-        pure (snd b, fmap (first $ debound b)$ a')
-
+        pure (snd b, fmap (first $ debound b) $ a')
 
 data Durated a = Durated
   { getDuration :: Rational
   , getValue :: a
   }
   deriving stock (Eq, Ord, Show)
-
 
 mapDuration :: (Rational -> Rational) -> Durated a -> Durated a
 mapDuration f (Durated d a) = Durated (f d) a
@@ -198,7 +196,6 @@ renormalize (unbound -> lo, hib) x =
 
 rebound :: (Bound Rational, Bound Rational) -> (Bound Rational, Bound Rational) -> (Bound Rational, Bound Rational)
 rebound b (lo, hi) = (renormalize b lo, renormalize b hi)
-
 
 denormalize :: (Bound Rational, Bound Rational) -> Bound Rational -> Bound Rational
 denormalize (unbound -> lo, hib) x =
