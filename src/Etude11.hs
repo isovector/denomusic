@@ -5,18 +5,13 @@ module Etude11 where
 
 import Control.Monad
 import Data.Ratio
-import Etude17 (foldMusic, renormalize)
 import Euterpea (Pitch, PitchClass (..))
-import Euterpea.IO.MIDI.Play
 import Legacy hiding (main)
 import Rhythm
 
 main :: IO ()
 main =
-  playDev @Pitch 2 $
-    foldMusic $
-      renormalize (1 % 8) $
-        intervals song
+  play (1 % 8) song
 
 chorded :: Rhythm [Pitch] -> Rhythm Pitch
 chorded = (chord =<<)

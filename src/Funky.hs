@@ -3,9 +3,8 @@ module Funky where
 import Control.Monad.State
 import Data.Bool
 import Data.Ratio
-import Etude17 (foldMusic, invert, renormalize)
+import Etude17 (invert)
 import Euterpea (Pitch, PitchClass (..))
-import Euterpea.IO.MIDI.Play
 import Legacy hiding (main)
 import Rhythm
 import System.Random
@@ -14,11 +13,7 @@ main :: IO ()
 main = do
   g <- initStdGen
   print g
-  playDev @Pitch 2 $
-    foldMusic $
-      renormalize (1 % 8) $
-        intervals $
-          flip evalStateT g song
+  play (1 % 8) $ flip evalStateT g song
 
 lydian :: PitchClass -> [PitchClass]
 lydian pc =

@@ -28,6 +28,9 @@ module Rhythm (
   annotate,
   intervals,
 
+  -- * Playing Rhythms
+  play,
+
   -- * Reexpots
   SF (..),
   Bound (..),
@@ -52,6 +55,9 @@ import Test.Hspec
 import Test.Hspec.QuickCheck
 import Test.QuickCheck
 import Test.QuickCheck.Checkers
+import Euterpea (Music (..), Pitch, note, rest)
+import Euterpea qualified as E
+import Euterpea.IO.MIDI.Play (playDev)
 
 -- | An algebraically compositional representation of music. The core idea of
 -- 'Rhythm' is to give up on any absolute notion of time, and instead treat all
@@ -361,6 +367,27 @@ mkInterval pieces =
     Just ([], a) -> snd a
     Just (as', a) ->
       Seq $ SF (M.fromAscList as') (snd a)
+
+
+changeDuration :: Rational -> [(Interval Rational, a)] -> [(Interval Rational, a)]
+changeDuration r ds =
+  let shortest = minimum $ fmap (getDuration . fst) ds
+      mult = r / shortest
+   in fmap (first $ fmap (* mult)) ds
+
+foldMusic :: [(Interval Rational, a)] -> E.Music a
+foldMusic =
+  flip foldr (rest 0) $
+    uncurry $ \i a m ->
+      (rest (getOffset i) :+: note (getDuration i) a) :=: m
+
+play :: Rational -> Rhythm Pitch -> IO ()
+play smallest song =
+  playDev 2 $
+    foldMusic $
+      changeDuration smallest $
+        intervals song
+
 
 listShrinker :: [a] -> [[a]]
 listShrinker [_] = []

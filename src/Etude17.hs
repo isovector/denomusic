@@ -4,32 +4,15 @@
 
 module Etude17 where
 
-import Control.Arrow
 import Data.Ratio
-import Euterpea (Music (..), Pitch, PitchClass (..), note, rest)
+import Euterpea (Pitch, PitchClass (..))
 import Euterpea qualified as E
-import Euterpea.IO.MIDI.Play
 import Legacy hiding (main)
 import Rhythm
 
-renormalize :: Rational -> [(Interval Rational, a)] -> [(Interval Rational, a)]
-renormalize r ds =
-  let shortest = minimum $ fmap (getDuration . fst) ds
-      mult = r / shortest
-   in fmap (first $ fmap (* mult)) ds
-
-foldMusic :: [(Interval Rational, a)] -> E.Music a
-foldMusic =
-  flip foldr (rest 0) $
-    uncurry $ \i a m ->
-      (rest (getOffset i) :+: note (getDuration i) a) :=: m
-
 main :: IO ()
 main =
-  playDev @Pitch 2 $
-    foldMusic $
-      renormalize (1 % 8) $
-        intervals song
+  play (1 % 8) song
 
 bar1to4 :: Rhythm Pitch
 bar1to4 = do
