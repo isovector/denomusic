@@ -1,17 +1,16 @@
-{-# LANGUAGE LambdaCase           #-}
+{-# LANGUAGE LambdaCase #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
-{-# OPTIONS_GHC -fno-warn-x-partial       #-}
+{-# OPTIONS_GHC -fno-warn-x-partial #-}
 
 module Etude17 where
 
 import Control.Arrow
 import Data.Ratio
-import Euterpea.IO.MIDI.Play
-import Rhythm hiding (renormalize, main)
-import Euterpea (PitchClass (..), Pitch, Music (..), note, rest)
+import Euterpea (Music (..), Pitch, PitchClass (..), note, rest)
 import Euterpea qualified as E
+import Euterpea.IO.MIDI.Play
 import Legacy hiding (main)
-
+import Rhythm
 
 renormalize :: Rational -> [(Rational, Durated a)] -> [(Rational, Durated a)]
 renormalize r ds =
@@ -19,13 +18,11 @@ renormalize r ds =
       mult = r / shortest
    in fmap ((* mult) *** mapDuration (* mult)) ds
 
-
 foldMusic :: [(Rational, Durated a)] -> E.Music a
 foldMusic =
   flip foldr (rest 0) $
     uncurry $ \offset (Durated d a) m ->
       (rest offset :+: note d a) :=: m
-
 
 main :: IO ()
 main =
@@ -33,18 +30,6 @@ main =
     foldMusic $
       renormalize (1 % 8) $
         foldInterval song
-
-im :: [a] -> Rhythm a
-im = evenly . fmap pure
-
-rtimes :: Int -> Rhythm a -> Rhythm a
-rtimes 0 _ = Empty
-rtimes 1 a = a
-rtimes n a = evenly $ replicate n a
-
-chord :: [a] -> Rhythm a
-chord [] = Empty
-chord xs = foldr1 Par $ fmap pure xs
 
 bar1to4 :: Rhythm Pitch
 bar1to4 = do
@@ -72,191 +57,173 @@ section10gen top bot =
   (chord =<<) $
     Par
       (overlay (const) top (im $ replicate 6 ()))
-       ( do
-           n <- overlay (const id) (im $ replicate 4 ()) bot
-           im [take 2 n, drop 2 n]
-       )
-
-
-
-wtf :: Rhythm String
-wtf =
-  overlay (<>)
-    (im $ replicate 6 ".")
-    (evenly
-      [ pure "a"
-      , im
-          [ "b", "b", "a" ]
-      ])
-
-debug :: Rhythm String
-debug = trim (Closed $ 1 % 3, Open $ 2 % 3) $ im ["a", "b", "c"]
-
--- ([(Open (1 % 4),Full ".a")
---  ,(Open (1 % 2),Full ".a")
---  ,(Open (3 % 4),Interval (fromList [(Open (1 % 2),Full ".b")] (Full ".a")))]
---   (Interval (fromList [(Open (1 % 2),Full ".b")] (Full ".a"))))
-
--- Interval
---  (fromList
---    [(Open (1 % 6),Full (Cs,4))
---    ,(Open (1 % 3),Full (Cs,4))
---    ,(Open (1 % 2),Full (Cs,4))
---    ,(Open (2 % 3),Interval (fromList [(Open (1 % 3),Full (F,4)),(Open (2 % 3),Full (F,4))] (Full (F,4))))
---    ,(Open (5 % 6),Interval (fromList [(Open (1 % 3),Full (F,4)),(Open (2 % 3),Full (F,4))] (Full (F,4))))
---    ]
---    (Interval (fromList [(Open (1 % 3),Full (F,4)),(Open (2 % 3),Full (F,4))] (Full (F,4)))))
+      ( do
+          n <- overlay (const id) (im $ replicate 4 ()) bot
+          im [take 2 n, drop 2 n]
+      )
 
 invert :: [Pitch] -> [Pitch]
 invert [] = []
 invert ((pc, o) : xs) = xs <> pure (pc, o + 1)
 
 noFifth :: [Pitch] -> [Pitch]
-noFifth (x:y:_:z) = x:y:z
+noFifth (x : y : _ : z) = x : y : z
 noFifth xs = xs
 
 data Variant = Variant1 | Variant2 | Variant3
 
 song' :: Rhythm Pitch
-song' = evenly $ do
-  (ch, v) <- [ (minor F, Variant1), (maj Df, Variant2), (maj Af, Variant1), (maj C, Variant3)
-             , (minor F, Variant1), (maj Df, Variant2), (maj Ef, Variant1), (maj C, Variant3)
-             , (minor F, Variant1), (maj Df, Variant2), (maj Ef, Variant1), (maj C, Variant3)
-             ]
+song' = tuplet $ do
+  (ch, v) <-
+    [ (minor F, Variant1)
+      , (maj Df, Variant2)
+      , (maj Af, Variant1)
+      , (maj C, Variant3)
+      , (minor F, Variant1)
+      , (maj Df, Variant2)
+      , (maj Ef, Variant1)
+      , (maj C, Variant3)
+      , (minor F, Variant1)
+      , (maj Df, Variant2)
+      , (maj Ef, Variant1)
+      , (maj C, Variant3)
+      ]
   pure $ case v of
     Variant1 -> section10gen (pure $ ch 4) (pure $ invert $ ch 2)
     Variant2 ->
       section10gen
-        (evenly
-          [ pure $ ch 4
-          , im
-              [ invert $ ch 4
-              , invert $ invert $ ch 4
-              , ch 4
-              ]
-          ])
+        ( tuplet
+            [ pure $ ch 4
+            , im
+                [ invert $ ch 4
+                , invert $ invert $ ch 4
+                , ch 4
+                ]
+            ]
+        )
         (pure $ ch 3)
     Variant3 ->
       section10gen
-        (im
-          [ invert $ ch 4
-          , dim (fst $ head $ drop 1 $ ch 4) 4
-          ])
+        ( im
+            [ invert $ ch 4
+            , dim (fst $ head $ drop 1 $ ch 4) 4
+            ]
+        )
         (pure $ ch 2)
 
 song :: Rhythm Pitch
 song = do
   let
     b1 = section10gen (pure $ minor F 4) (pure $ minor F 3)
-  evenly
+  tuplet
     [ -- section 10
       b1
     , section10gen
-          (evenly
+        ( tuplet
             [ pure $ maj Cs 4
             , im
-              [ noFifth $ min7 F 4
-              , noFifth $ min7 F 4
-              , invert $ maj Cs 4
-              ]
-            ])
-          (evenly
+                [ noFifth $ min7 F 4
+                , noFifth $ min7 F 4
+                , invert $ maj Cs 4
+                ]
+            ]
+        )
+        ( tuplet
             [ pure $ invert $ maj Cs 3
             , im
                 [ noFifth $ min7 F 3
                 , invert $ maj Cs 3
-
                 ]
-            ])
-
+            ]
+        )
     , section10gen
         (pure $ invert $ invert $ maj Af 3)
         (pure $ invert $ invert $ maj Af 2)
     , section10gen
-        (im
-          [ invert $ maj C 4
-          , dim E 4
-          ]
-          )
+        ( im
+            [ invert $ maj C 4
+            , dim E 4
+            ]
+        )
         (pure $ invert $ maj C 3)
     , -- section 11
       b1
     , section10gen
-          (evenly
+        ( tuplet
             [ pure $ maj Cs 4
             , im
-              [ noFifth $ min7 F 4
-              , noFifth $ min7 F 4
-              , invert $ maj Cs 4
-              ]
-            ])
-          (pure $ maj Df 3)
-
-
+                [ noFifth $ min7 F 4
+                , noFifth $ min7 F 4
+                , invert $ maj Cs 4
+                ]
+            ]
+        )
+        (pure $ maj Df 3)
     , section10gen
         (pure $ invert $ maj Ef 4)
         (pure $ invert $ maj Ef 2)
     , section10gen
-        (im
-          [ invert $ invert $ maj C 4
-          , invert $ dim E 4
-          ]
-          )
+        ( im
+            [ invert $ invert $ maj C 4
+            , invert $ dim E 4
+            ]
+        )
         (pure $ invert $ invert $ maj C 2)
     , -- section 12
       section10gen
         (pure $ invert $ minor F 4)
         (pure $ invert $ minor F 2)
     , section10gen
-        (evenly
-          [ pure $ invert $ invert $ maj Df 4
+        ( tuplet
+            [ pure $ invert $ invert $ maj Df 4
             -- NOTE second bar of section 12 has a nonstandard pattern here
             -- which we can't express via section10gen
-          ]
-          )
+            ]
+        )
         (pure $ invert $ invert $ maj Df 2)
     , section10gen
         (pure $ invert $ maj Ef 4)
         (pure $ invert $ maj Ef 2)
     , section10gen
-        (im
-          [ invert $ invert $ maj C 4
-          , invert $ dim E 4
-          ])
+        ( im
+            [ invert $ invert $ maj C 4
+            , invert $ dim E 4
+            ]
+        )
         (pure $ invert $ maj C 2)
     , -- section 13 line 1
       section10gen
         (pure $ minor F 4)
         (pure $ power F 2)
-   ,  section10gen
-        (pure [ (E, 4), (Af, 4), (C, 5)  ])
-        (pure [ (E, 2), (C, 3), (E, 3) ] )
-   ,  section10gen
+    , section10gen
+        (pure [(E, 4), (Af, 4), (C, 5)])
+        (pure [(E, 2), (C, 3), (E, 3)])
+    , section10gen
         (pure $ invert $ maj Df 4)
         (pure $ power Df 2)
-   ,  section10gen
-        (im
-          [ [(E, 4), (G, 4), (Ef, 5)]
-          , [(E, 4), (G, 4), (Df, 5)]
-          ]
+    , section10gen
+        ( im
+            [ [(E, 4), (G, 4), (Ef, 5)]
+            , [(E, 4), (G, 4), (Df, 5)]
+            ]
         )
         (pure $ power C 2)
-   , -- section 13 line 2
+    , -- section 13 line 2
       section10gen
         (pure $ minor F 4)
         (pure $ power F 2)
-   ,  section10gen
-        (pure [ (E, 4), (Af, 4), (C, 5)  ])
-        (pure [ (E, 2), (C, 3), (E, 3) ] )
+    , section10gen
+        (pure [(E, 4), (Af, 4), (C, 5)])
+        (pure [(E, 2), (C, 3), (E, 3)])
     , -- first go around
       section10gen
-      (pure $ invert $ maj Ef 4)
-      (pure $ invert $ invert $ maj Ef 2 )
+        (pure $ invert $ maj Ef 4)
+        (pure $ invert $ invert $ maj Ef 2)
     , section10gen
-      (im
-        [ invert $ invert $ maj C 4
-        , invert $ dim E 4
-        ])
-      (pure $ invert $ maj C 2 )
+        ( im
+            [ invert $ invert $ maj C 4
+            , invert $ dim E 4
+            ]
+        )
+        (pure $ invert $ maj C 2)
     ]
-

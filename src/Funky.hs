@@ -1,18 +1,14 @@
 module Funky where
 
-import Data.Foldable
-import Data.Bool
-import Control.Monad
-import Data.Ratio
-import Etude17 (renormalize, foldMusic, rtimes, chord, im, invert)
-import Euterpea.IO.MIDI.Play
-import Rhythm hiding (renormalize, main)
-import Euterpea (PitchClass (..), Octave, Pitch(..), Music (..), note, rest)
-import Euterpea qualified as E
-import Legacy hiding (main)
 import Control.Monad.State
+import Data.Bool
+import Data.Ratio
+import Etude17 (foldMusic, invert, renormalize)
+import Euterpea (Pitch, PitchClass (..))
+import Euterpea.IO.MIDI.Play
+import Legacy hiding (main)
+import Rhythm
 import System.Random
-
 
 main :: IO ()
 main = do
@@ -23,7 +19,6 @@ main = do
       renormalize (1 % 8) $
         foldInterval $
           flip evalStateT g song
-
 
 lydian :: PitchClass -> [PitchClass]
 lydian pc =
@@ -87,24 +82,23 @@ song = do
             False -> lift $ im [c, c + 1]
         False -> pure c
     False -> lift $ chord cs
-  duplicate <- randomT @Bool
-  d <- case duplicate of
+  duplicate' <- randomT @Bool
+  d <- case duplicate' of
     False -> pure c
     True -> do
       neighbor <- randomT @Bool
       case neighbor of
         True -> do
           up <- randomT @Bool
-          lift $ im
-            [ c
-            , bool (c - 1) (c + 1) up
-            , c
-            ]
+          lift $
+            im
+              [ c
+              , bool (c - 1) (c + 1) up
+              , c
+              ]
         False -> do
           lift $ im [c, c]
-  pure $ notes !! (d + 6)
+  pure $ diatonicPitches !! (d + 6)
 
-
-notes = foldMap (take 1) $ iterate invert $ fmap (, 3) $ ionian C
-
-
+diatonicPitches :: [Pitch]
+diatonicPitches = foldMap (take 1) $ iterate invert $ fmap (,3) $ ionian C

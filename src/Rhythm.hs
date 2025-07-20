@@ -1,25 +1,48 @@
 {-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE DerivingVia        #-}
-{-# LANGUAGE ViewPatterns       #-}
+{-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE ViewPatterns #-}
+{-# OPTIONS_GHC -fno-warn-incomplete-uni-patterns #-}
 
-module Rhythm
-( module Rhythm
-, Bound (..)
-, SF (..)
+module Rhythm (
+  -- * Core Type
+  Rhythm (..),
+  mu,
+
+  -- * Constructing Sequential Rhythms
+  tuplet,
+  im,
+  rtimes,
+
+  -- * Constructing Parallel Rhythms
+  chord,
+
+  -- * Constructing Applicative Rhythms
+  overlay,
+
+  -- * Eliminating Rhythms
+  foldInterval,
+  Durated (..),
+  mapDuration,
+
+  -- * Reexpots
+  SF (..),
+  Bound (..),
+
+  -- * Tests
+  spec,
 ) where
 
-import Data.List (unsnoc)
-import Data.Maybe
-import Data.Foldable
-import Data.Ratio
-import qualified Data.Map as M
-import Data.Function.Step (SF(..), Bound(..), fromList)
+import Control.Arrow ((&&&), (***))
 import Control.Monad (ap, guard)
-import Control.Arrow ((***), (&&&))
-import Test.QuickCheck
-import Test.QuickCheck.Checkers
+import Data.Function.Step (Bound (..), SF (..))
+import Data.List (unsnoc)
+import Data.Map qualified as M
+import Data.Maybe
+import Data.Ratio
 import Test.Hspec
 import Test.Hspec.QuickCheck
+import Test.QuickCheck
+import Test.QuickCheck.Checkers
 
 data Rhythm a
   = Empty
@@ -28,24 +51,32 @@ data Rhythm a
   | Par (Rhythm a) (Rhythm a)
   deriving stock (Show, Functor, Foldable, Traversable)
 
+im :: [a] -> Rhythm a
+im = tuplet . fmap pure
+
+chord :: [a] -> Rhythm a
+chord [] = Empty
+chord xs = foldr1 Par $ fmap pure xs
+
+rtimes :: Int -> Rhythm a -> Rhythm a
+rtimes 0 _ = Empty
+rtimes 1 a = a
+rtimes n a = tuplet $ replicate n a
+
 mu :: Rhythm a -> Rational -> [a]
 mu _ n | n > 1 = []
 mu _ n | n < 0 = []
 mu Empty _ = []
 mu (Full a) _ = pure a
--- mu (Interval (SF _ d)) 1 = mu d 1
 mu (Interval as) n =
   let ((leftb, unbound -> right), m) = findInterval n as
       left = unbound leftb
       width = right - left
-   in
-      case (width, leftb) of
+   in case (width, leftb) of
         (0, Closed 1) -> mu m 1
         (0, _) -> error "how did you do this"
         _ -> mu m $ (n - left) / width
 mu (Par a b) n = mu a n <> mu b n
-
-
 
 unbound :: Bound a -> a
 unbound (Open a) = a
@@ -54,7 +85,6 @@ unbound (Closed a) = a
 swapBound :: Bound a -> Bound a
 swapBound (Open a) = Closed a
 swapBound (Closed a) = Open a
-
 
 findInterval :: Rational -> SF Rational a -> ((Bound Rational, Bound Rational), a)
 findInterval x (SF m def) =
@@ -66,9 +96,9 @@ findInterval x (SF m def) =
 
 intervals :: SF Rational a -> [((Bound Rational, Bound Rational), a)]
 intervals (SF m def) = go (Closed 0) $ M.toAscList m
-  where
-    go lo [] = pure ((lo, Closed 1), def)
-    go lo ((hi, a) : as) = ((lo, hi), a) : go (swapBound hi) as
+ where
+  go lo [] = pure ((lo, Closed 1), def)
+  go lo ((hi, a) : as) = ((lo, hi), a) : go (swapBound hi) as
 
 data Durated a = Durated
   { getDuration :: Rational
@@ -76,11 +106,8 @@ data Durated a = Durated
   }
   deriving stock (Eq, Ord, Show)
 
-
 mapDuration :: (Rational -> Rational) -> Durated a -> Durated a
 mapDuration f (Durated d a) = Durated (f d) a
-
-
 
 foldInterval :: Rhythm a -> [(Rational, Durated a)]
 foldInterval Empty = mempty
@@ -89,39 +116,6 @@ foldInterval (Interval as) =
   flip foldMap (intervals as) $ \((unbound -> lo, unbound -> hi), r) ->
     fmap ((+ lo) . (* (hi - lo)) *** mapDuration (* (hi - lo))) $ foldInterval r
 foldInterval (Par as bs) = foldInterval as <> foldInterval bs
-
-
-joinNotes :: Eq a => [(Rational, Durated a)] -> [(Rational, Durated a)]
-joinNotes [] = []
-joinNotes [x] = [x]
-joinNotes (n1@(o1, Durated d1 a1) : n2@(o2, Durated d2 a2) : xs)
-  | o1 + d1 == o2
-  , a1 == a2
-  = joinNotes $ (o1, Durated (d1 + d2) a1) : xs
-  | otherwise
-  = n1 : joinNotes (n2 : xs)
-
-trim :: (Bound Rational, Bound Rational) -> Rhythm a -> Rhythm a
-trim _ Empty = Empty
-trim _ (Full a) = Full a
-trim bs (Par x y) = Par (trim bs x) (trim bs y)
-trim bs (Interval sf) =
-  trimSF bs sf
-
-
-trimSF :: (Bound Rational, Bound Rational) -> SF Rational (Rhythm a) -> Rhythm a
-trimSF (lo, hi) (SF m def) = do
-  let biggest = maybe def snd $ M.lookupGE hi m
-      pieces = do
-        let size = unbound hi - unbound lo
-        (i, a) <- M.toList m
-        guard $ lo <= i
-        guard $ i <= hi
-        pure (fmap ((/ size) . subtract (unbound lo)) i, a)
-      end = find ((== Closed 1) . fst) pieces
-  case pieces of
-    [] -> biggest
-    _ -> Interval $ SF (M.fromAscList pieces) biggest
 
 overlay :: (a -> b -> c) -> Rhythm a -> Rhythm b -> Rhythm c
 overlay _ Empty _ = Empty
@@ -141,25 +135,20 @@ overlay f ar@(Interval as) br@(Interval bs) = do
     Just ([], d) -> snd d
     Just (pieces, d) ->
       Interval $ SF (M.fromAscList pieces) $ snd d
-  -- Interval $ flip SF undefined $ M.fromAscList $ do
-  --   (lo, hi) <- spans
-  --   undefined
-
 
 overlappingSpans :: SF Rational a -> SF Rational b -> [(Bound Rational, Bound Rational)]
 overlappingSpans (SF sfa _) (SF sfb _) =
-    go (Closed 0) (fmap fst (M.toList sfa) <> pure (Closed 1)) (fmap fst (M.toList sfb) <> pure (Closed 1))
-  where
-    go _ [] [] = []
-    go acc (i : as) [] = (acc, i) : go (swapBound i) as []
-    go acc [] (i : bs) = (acc, i) : go (swapBound i) [] bs
-    go acc as@(ia : as') bs@(ib : bs') = do
-      let bounds = (acc, min ia ib)
-      case compare ia ib of
-        LT -> bounds : go (swapBound ia) as' bs
-        EQ -> bounds : go (swapBound ia) as' bs'
-        GT -> bounds : go (swapBound ib) as bs'
-
+  go (Closed 0) (fmap fst (M.toList sfa) <> pure (Closed 1)) (fmap fst (M.toList sfb) <> pure (Closed 1))
+ where
+  go _ [] [] = []
+  go acc (i : as) [] = (acc, i) : go (swapBound i) as []
+  go acc [] (i : bs) = (acc, i) : go (swapBound i) [] bs
+  go acc as@(ia : as') bs@(ib : bs') = do
+    let bounds = (acc, min ia ib)
+    case compare ia ib of
+      LT -> bounds : go (swapBound ia) as' bs
+      EQ -> bounds : go (swapBound ia) as' bs'
+      GT -> bounds : go (swapBound ib) as bs'
 
 getSpan :: (Bound Rational, Bound Rational) -> Rhythm a -> Rhythm a
 getSpan _ Empty = Empty
@@ -187,10 +176,7 @@ getSpan bs (Interval sf) = do
 
 renormalize :: (Bound Rational, Bound Rational) -> Bound Rational -> Bound Rational
 renormalize (unbound -> lo, hib) x =
-  -- case x == hib of
-  --   True -> Closed 1
-  --   False ->
-      fmap ((/ (unbound hib - lo)) . (subtract lo)) x
+  fmap ((/ (unbound hib - lo)) . (subtract lo)) x
 
 intersection :: Ord k => (Bound k, Bound k) -> (Bound k, Bound k) -> Maybe (Bound k, Bound k)
 intersection (al, ar) (bl, br) = do
@@ -200,26 +186,6 @@ intersection (al, ar) (bl, br) = do
     LT -> Just (l, r)
     EQ -> Just (l, l)
     GT -> Nothing
-
-
-
-
-
-
-
--- liftA2SF
---   :: forall k a b c
---    . (k ~ Rational)
---   => (a -> b -> c)
---   -> SF k a
---   -> SF k b
---   -> SF k c
--- liftA2SF f (SF (M.toList -> as0) defa) (SF (M.toList -> bs0) defb) =
---   SF (M.fromAscList $ go (Closed 0) as0 bs0) (f (hi, Closed 1) defa defb)
---   where
---     hi = maybe (error "no bounds whatsoever") swapBound $ max
---           (maximum $ Nothing : fmap (Just . fst) as0)
---           (maximum $ Nothing : fmap (Just . fst) bs0)
 
 instance Applicative Rhythm where
   pure = Full
@@ -236,68 +202,49 @@ instance (Eq a, Show a) => EqProp (Rhythm a) where
   a =-= b = property $ \ix ->
     mu a ix === mu b ix
 
-evenly :: [Rhythm a] -> Rhythm a
-evenly [] = Empty
-evenly [a] = a
-evenly (init &&& last -> (as, def)) = Interval $
-  flip SF def $ M.fromAscList $ do
-    let len = fromIntegral $ length as + 1
-    (ix, a) <- zip [1..] as
-    pure (Open (ix % len), a)
-
+tuplet :: [Rhythm a] -> Rhythm a
+tuplet [] = Empty
+tuplet [a] = a
+tuplet (init &&& last -> (as, def)) = Interval $
+  flip SF def $
+    M.fromAscList $ do
+      let len = fromIntegral $ length as + 1
+      (ix, a) <- zip [1 ..] as
+      pure (Open (ix % len), a)
 
 listShrinker :: [a] -> [[a]]
 listShrinker [_] = []
 listShrinker as = do
   ix <- [0 .. length as - 1]
   pure $ do
-    (ix', a) <- zip [0..] as
+    (ix', a) <- zip [0 ..] as
     guard $ ix /= ix'
     pure a
 
-
 instance Arbitrary a => Arbitrary (Rhythm a) where
-  arbitrary = oneof
-    [ pure Empty
-    , fmap Full arbitrary
-    , sized $ \sz -> do
-        n <- fmap ((+ 2) . abs) arbitrary
-        fmap evenly $ vectorOf n $ resize (sz `div` n) arbitrary
-    ]
+  arbitrary =
+    oneof
+      [ pure Empty
+      , fmap Full arbitrary
+      , sized $ \sz -> do
+          n <- fmap ((+ 2) . abs) arbitrary
+          fmap tuplet $ vectorOf n $ resize (sz `div` n) arbitrary
+      ]
   shrink Empty = []
   shrink (Full a) = Empty : fmap Full (shrink a)
   shrink (Par a b) = Empty : a : b : fmap (Par a) (shrink b) ++ fmap (flip Par b) (shrink a)
-  shrink (Interval (SF as b)) = Empty : b : (fmap (Interval . flip SF b . M.fromAscList) $ listShrinker (M.toList as)) ++ fmap (Interval . SF as) (shrink b) ++ do
-    (ix, a) <- M.toList as
-    a' <- shrink a
-    pure $ Interval $ flip SF b $ M.fromList $ do
-      xx@(ix', _) <- M.toList as
-      case ix == ix' of
-        True -> pure (ix, a')
-        False -> pure xx
+  shrink (Interval (SF as b)) =
+    Empty : b : (fmap (Interval . flip SF b . M.fromAscList) $ listShrinker (M.toList as)) ++ fmap (Interval . SF as) (shrink b) ++ do
+      (ix, a) <- M.toList as
+      a' <- shrink a
+      pure $ Interval $ flip SF b $ M.fromList $ do
+        xx@(ix', _) <- M.toList as
+        case ix == ix' of
+          True -> pure (ix, a')
+          False -> pure xx
 
-
--- test :: Rhythm String
--- test = evenly [pure "a", pure "b", pure "c"]
-
-test2 :: Rhythm String
-test2 = evenly [pure "1", pure "2"]
-
-
-
-zz2 :: SF Rational (Rhythm Int)
-zz2 =
-  fromList
-    (pure (Open (1 % 2), Interval $ fromList [(Open (2 % 3),Full 0)] Empty))
-    Empty
-
--- zz3 :: IO ()
--- zz3 = traverse_ print $ liftA2SF (\b z _ -> (b, z, trim b z)) zz2 zz2
-
-
-
-main :: IO ()
-main = hspec $ modifyMaxSuccess (const 100000) $ do
+spec :: Spec
+spec = modifyMaxSuccess (const 100000) $ do
   describe "intersection" $ do
     prop "commutative" $ \x y ->
       intersection @Rational x y === intersection y x
@@ -316,25 +263,26 @@ main = hspec $ modifyMaxSuccess (const 100000) $ do
 
     prop "get one" $ \x y -> do
       let lhs =
-            getSpan @Int (Closed 0, Open 0.5)
-              (evenly [x, y])
+            getSpan @Int
+              (Closed 0, Open 0.5)
+              (tuplet [x, y])
       counterexample ("lhs: " <> show lhs) $
         lhs =-= x
 
     prop "get two" $ \x y -> do
-      let evened = evenly [x, y]
+      let evened = tuplet [x, y]
           lhs =
-            getSpan @Int (Closed 0.5, Closed 1)
+            getSpan @Int
+              (Closed 0.5, Closed 1)
               evened
       counterexample ("evened: " <> show evened) $
         counterexample ("lhs: " <> show lhs) $
           lhs =-= y
 
-
     prop "cover two" $ \x y -> do
-      let r = evenly @Int [x, y]
+      let r = tuplet @Int [x, y]
       let lhs =
-            evenly
+            tuplet
               [ getSpan (Closed 0, Open 0.5) r
               , getSpan (Closed 0.5, Closed 1) r
               ]
@@ -342,9 +290,9 @@ main = hspec $ modifyMaxSuccess (const 100000) $ do
         lhs =-= r
 
     prop "cover three" $ \x y z -> do
-      let r = evenly @Int [x, y, z]
+      let r = tuplet @Int [x, y, z]
       let lhs =
-            evenly
+            tuplet
               [ getSpan (Closed 0, Open 0.5) r
               , getSpan (Closed 0.5, Closed 1) r
               ]
@@ -353,27 +301,19 @@ main = hspec $ modifyMaxSuccess (const 100000) $ do
           lhs =-= r
 
     it "cover three unit" $ do
-      let r = evenly [Full "x", evenly [Full "y1", Full "y2"], Full "z"]
+      let r = tuplet [Full "x", tuplet [Full "y1", Full "y2"], Full "z"]
       let lhs =
-            evenly
+            tuplet
               [ getSpan (Closed 0, Open 0.5) r
               , getSpan (Closed 0.5, Closed 1) r
               ]
-      counterexample ("evenly: " <> show r) $
+      counterexample ("tuplet: " <> show r) $
         counterexample ("lhs: " <> show lhs) $
           lhs =-= r
 
-
-
-  prop "trim id" $ \(z :: Rhythm Int) -> do
-    let l = trim (Closed 0, Closed 1) z
-    counterexample ("lhs: " <> show l) $
-        l =-= z
-
-
   describe "overlappingSpans" $ do
     prop "id" $ \x y -> do
-      let Interval sf = evenly @Int [x, y]
+      let Interval sf = tuplet @Int [x, y]
           lhs = fmap fst $ intervals sf
       lhs === overlappingSpans sf sf
 
@@ -381,10 +321,9 @@ main = hspec $ modifyMaxSuccess (const 100000) $ do
       n <- fmap ((+ 2) . abs) arbitrary
       pure $
         counterexample ("n: " <> show n) $ do
-          let Interval sf = evenly @Int $ replicate n Empty
+          let Interval sf = tuplet @Int $ replicate n Empty
               lhs = fmap fst $ intervals sf
           lhs === overlappingSpans sf sf
-
 
   describe "overlay" $ do
     prop "const same" $ \(z :: Rhythm Int) -> do
@@ -409,7 +348,7 @@ main = hspec $ modifyMaxSuccess (const 100000) $ do
     prop "everywhere vs pure" $ \(Fn2 (f :: Int -> Int -> Int)) x y -> do
       nx <- fmap ((+ 2) . abs) arbitrary
       ny <- fmap ((+ 2) . abs) arbitrary
-      let l = overlay f (evenly $ replicate nx $ pure x) (evenly $ replicate ny $ pure y)
+      let l = overlay f (tuplet $ replicate nx $ pure x) (tuplet $ replicate ny $ pure y)
           r = pure $ f x y
       pure $
         counterexample ("lhs: " <> show l) $
@@ -421,37 +360,19 @@ main = hspec $ modifyMaxSuccess (const 100000) $ do
       pure $
         mu (overlay f x y) r === (f <$> (mu x r) <*> (mu y r))
 
-
-  prop "trim" $ \(NonEmpty (as :: [Rhythm Int])) -> do
-    let len = fromIntegral $ length as
-        width = recip len
-    n <- elements [ 0 .. round len - 1 ]
-    pure $ do
-      let e = evenly as
-          b = (Closed (fromIntegral n * width), Open ((fromIntegral n + 1) * width))
-          l = trim b e
-          r = as !! n
-      counterexample ("e: " <> show e) $
-        counterexample ("b: " <> show b) $
-        counterexample ("n: " <> show n) $
-          counterexample ("lhs: " <> show l) $
-            counterexample ("rhs: " <> show r) $
-              l =-= r
-
-  prop "simple trim l" $ \(a :: Rhythm String) (b :: Rhythm String) ->
-    trim (Closed 0, Open $ 1 % 2) (evenly [a, b]) =-= a
-
-  prop "simple trim r" $ \(a :: Rhythm String) (b :: Rhythm String) ->
-    trim (Closed 0.5, Open 1) (evenly [a, b]) =-= b
-
   focus $ prop "wtf case" $ \(Fn2 (f :: Int -> Int -> Int)) a1 a2 b1 b2 b3 -> do
-    let l = overlay f (evenly $ fmap pure [a1, a2]) (evenly $ fmap pure [b1, b2, b3])
-        r = evenly $ fmap pure
-              [ f a1 b1, f a1 b1
-              , f a1 b2, f a2 b2
-              , f a2 b2, f a2 b3
+    let l = overlay f (tuplet $ fmap pure [a1, a2]) (tuplet $ fmap pure [b1, b2, b3])
+        r =
+          tuplet $
+            fmap
+              pure
+              [ f a1 b1
+              , f a1 b1
+              , f a1 b2
+              , f a2 b2
+              , f a2 b2
+              , f a2 b3
               ]
     counterexample ("lhs: " <> show l) $
       counterexample ("rhs: " <> show r) $
         l =-= r
-
