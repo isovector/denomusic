@@ -34,7 +34,7 @@ module Rhythm (
 
 import qualified Data.Set as S
 import Data.Set (Set)
-import Control.Arrow ((&&&), (***))
+import Control.Arrow ((&&&), (***), first)
 import Control.Monad (ap, guard)
 import Data.Function.Step (Bound (..), SF (..))
 import Data.List (unsnoc)
@@ -102,11 +102,27 @@ intervals (SF m def) = go (Closed 0) $ M.toAscList m
   go lo [] = pure ((lo, Closed 1), def)
   go lo ((hi, a) : as) = ((lo, hi), a) : go (swapBound hi) as
 
+annotate :: Rhythm a -> Rhythm ((Bound Rational, Bound Rational), a)
+annotate (Full a) = Full ((Closed 0, Closed 1), a)
+annotate Empty = Empty
+annotate (Par a b) = Par (annotate a) (annotate b)
+annotate (Interval sf) = do
+  let is = intervals sf
+  case unsnoc is of
+    Nothing -> Empty
+    Just (pieces, (end, def)) ->
+      Interval $ flip SF (fmap (first $ debound end) $ annotate def) $ M.fromAscList $ do
+        (b, a) <- pieces
+        let a' = annotate a
+        pure (snd b, fmap (first $ debound b)$ a')
+
+
 data Durated a = Durated
   { getDuration :: Rational
   , getValue :: a
   }
   deriving stock (Eq, Ord, Show)
+
 
 mapDuration :: (Rational -> Rational) -> Durated a -> Durated a
 mapDuration f (Durated d a) = Durated (f d) a
@@ -167,8 +183,7 @@ getSpan bs (Interval sf) = do
             pure (hi', a)
           False -> do
             -- otherwise we need to trim the underlying span
-            let intersected' =
-                  (renormalize b $ fst intersected, renormalize b $ snd intersected)
+            let intersected' = rebound b intersected
             pure (hi', getSpan intersected' a)
   case unsnoc spanning of
     Just ([], def) -> snd def
@@ -179,6 +194,17 @@ getSpan bs (Interval sf) = do
 renormalize :: (Bound Rational, Bound Rational) -> Bound Rational -> Bound Rational
 renormalize (unbound -> lo, hib) x =
   fmap ((/ (unbound hib - lo)) . (subtract lo)) x
+
+rebound :: (Bound Rational, Bound Rational) -> (Bound Rational, Bound Rational) -> (Bound Rational, Bound Rational)
+rebound b (lo, hi) = (renormalize b lo, renormalize b hi)
+
+
+denormalize :: (Bound Rational, Bound Rational) -> Bound Rational -> Bound Rational
+denormalize (unbound -> lo, hib) x =
+  fmap ((+ lo) . (* (unbound hib - lo))) x
+
+debound :: (Bound Rational, Bound Rational) -> (Bound Rational, Bound Rational) -> (Bound Rational, Bound Rational)
+debound b (lo, hi) = (denormalize b lo, denormalize b hi)
 
 intersection :: Ord k => (Bound k, Bound k) -> (Bound k, Bound k) -> Maybe (Bound k, Bound k)
 intersection (al, ar) (bl, br) = do
