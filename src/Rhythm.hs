@@ -20,6 +20,9 @@ module Rhythm (
   -- * Constructing Applicative Rhythms
   overlay,
 
+  -- * Doing Weird Stuff
+  retime,
+
   -- * Eliminating Rhythms
   foldRhythm,
   Durated (..),
@@ -143,6 +146,17 @@ instance Alternative Rhythm where
   a <|> Empty = a
   a <|> b = Par a b
   empty = Empty
+
+-- | Apply a function to the upper timing bounds of every span in the outermost
+-- 'Seq' constructor. This function is assumed to be monotonic (at least for
+-- the final element in the span), so you can't do anything too crazy here, but
+-- it does allow us to timeshift or scale.
+retime :: (Rational -> Rational) -> Rhythm a -> Rhythm a
+retime _ Empty = Empty
+retime _ (Full a) = Full a
+retime f (Par a b) = Par (retime f a) (retime f b)
+retime f (Seq (SF m def)) =
+  Seq $ flip SF def $ M.mapKeys (fmap f) m
 
 -- | An 'Interval' is upper and lower bounds.
 data Interval a = Interval
