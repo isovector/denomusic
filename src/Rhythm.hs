@@ -20,10 +20,13 @@ module Rhythm (
   overlay,
 
   -- * Eliminating Rhythms
-  annotate,
   foldRhythm,
   Durated (..),
   mapDuration,
+
+  -- * Intervals
+  Interval (..),
+  annotate,
 
   -- * Reexpots
   SF (..),
@@ -54,6 +57,26 @@ data Rhythm a
   | Par (Rhythm a) (Rhythm a)
   deriving stock (Show, Functor, Foldable, Traversable)
 
+data Interval a = Interval
+  { i_lo :: Bound a
+  , i_hi :: Bound a
+  }
+  deriving stock (Eq, Ord, Functor, Foldable, Traversable)
+
+instance Show a => Show (Interval a) where
+  show (Interval lo hi) =
+    mconcat
+      [ case lo of
+          Open {} -> "("
+          Closed {} -> "["
+      , show $ unbound lo
+      , ","
+      , show $ unbound hi
+      , case hi of
+          Open {} -> ")"
+          Closed {} -> "]"
+      ]
+
 im :: [a] -> Rhythm a
 im = tuplet . fmap pure
 
@@ -72,7 +95,7 @@ mu _ n | n < 0 = mempty
 mu Empty _ = mempty
 mu (Full a) _ = S.singleton a
 mu (Seq as) n =
-  let ((leftb, unbound -> right), m) = findInterval n as
+  let (Interval leftb (unbound -> right), m) = findInterval n as
       left = unbound leftb
       width = right - left
    in case (width, leftb) of
@@ -89,22 +112,22 @@ swapBound :: Bound a -> Bound a
 swapBound (Open a) = Closed a
 swapBound (Closed a) = Open a
 
-findInterval :: Rational -> SF Rational a -> ((Bound Rational, Bound Rational), a)
+findInterval :: Rational -> SF Rational a -> (Interval Rational, a)
 findInterval x (SF m def) =
   case (M.lookupLE (Open x) m, M.lookupGE (Closed x) m) of
-    (Just (lo, _), Just (hi, v)) -> ((swapBound lo, hi), v)
-    (Nothing, Just (hi, v)) -> ((Closed 0, hi), v)
-    (Just (lo, _), Nothing) -> ((swapBound lo, Closed 1), def)
-    (Nothing, Nothing) -> ((Closed 0, Closed 1), def)
+    (Just (lo, _), Just (hi, v)) -> (Interval (swapBound lo) hi, v)
+    (Nothing, Just (hi, v)) -> (Interval (Closed 0) hi, v)
+    (Just (lo, _), Nothing) -> (Interval (swapBound lo) (Closed 1), def)
+    (Nothing, Nothing) -> (Interval (Closed 0) (Closed 1), def)
 
-intervals :: SF Rational a -> [((Bound Rational, Bound Rational), a)]
+intervals :: SF Rational a -> [(Interval Rational, a)]
 intervals (SF m def) = go (Closed 0) $ M.toAscList m
  where
-  go lo [] = pure ((lo, Closed 1), def)
-  go lo ((hi, a) : as) = ((lo, hi), a) : go (swapBound hi) as
+  go lo [] = pure (Interval lo $ Closed 1, def)
+  go lo ((hi, a) : as) = (Interval lo hi, a) : go (swapBound hi) as
 
-annotate :: Rhythm a -> Rhythm ((Bound Rational, Bound Rational), a)
-annotate (Full a) = Full ((Closed 0, Closed 1), a)
+annotate :: Rhythm a -> Rhythm (Interval Rational, a)
+annotate (Full a) = Full (Interval (Closed 0) (Closed 1), a)
 annotate Empty = Empty
 annotate (Par a b) = Par (annotate a) (annotate b)
 annotate (Seq sf) = do
@@ -115,7 +138,7 @@ annotate (Seq sf) = do
       Seq $ flip SF (fmap (first $ debound end) $ annotate def) $ M.fromAscList $ do
         (b, a) <- pieces
         let a' = annotate a
-        pure (snd b, fmap (first $ debound b) $ a')
+        pure (i_hi b, fmap (first $ debound b) $ a')
 
 data Durated a = Durated
   { getDuration :: Rational
@@ -130,7 +153,7 @@ foldRhythm :: Rhythm a -> [(Rational, Durated a)]
 foldRhythm Empty = mempty
 foldRhythm (Full a) = pure (0, Durated 1 a)
 foldRhythm (Seq as) =
-  flip foldMap (intervals as) $ \((unbound -> lo, unbound -> hi), r) ->
+  flip foldMap (intervals as) $ \(Interval (unbound -> lo) (unbound -> hi), r) ->
     fmap ((+ lo) . (* (hi - lo)) *** mapDuration (* (hi - lo))) $ foldRhythm r
 foldRhythm (Par as bs) = foldRhythm as <> foldRhythm bs
 
@@ -146,34 +169,34 @@ overlay f ar@(Seq as) br@(Seq bs) = do
         bound <- overlappingSpans as bs
         let a = getSpan bound ar
             b = getSpan bound br
-        pure (snd bound, overlay f a b)
+        pure (i_hi bound, overlay f a b)
   case unsnoc spans of
     Nothing -> Empty
     Just ([], d) -> snd d
     Just (pieces, d) ->
       Seq $ SF (M.fromAscList pieces) $ snd d
 
-overlappingSpans :: SF Rational a -> SF Rational b -> [(Bound Rational, Bound Rational)]
+overlappingSpans :: SF Rational a -> SF Rational b -> [Interval Rational]
 overlappingSpans (SF sfa _) (SF sfb _) =
   go (Closed 0) (fmap fst (M.toList sfa) <> pure (Closed 1)) (fmap fst (M.toList sfb) <> pure (Closed 1))
  where
   go _ [] [] = []
-  go acc (i : as) [] = (acc, i) : go (swapBound i) as []
-  go acc [] (i : bs) = (acc, i) : go (swapBound i) [] bs
+  go acc (i : as) [] = (Interval acc i) : go (swapBound i) as []
+  go acc [] (i : bs) = (Interval acc i) : go (swapBound i) [] bs
   go acc as@(ia : as') bs@(ib : bs') = do
-    let bounds = (acc, min ia ib)
+    let bounds = Interval acc $ min ia ib
     case compare ia ib of
       LT -> bounds : go (swapBound ia) as' bs
       EQ -> bounds : go (swapBound ia) as' bs'
       GT -> bounds : go (swapBound ib) as bs'
 
-getSpan :: (Bound Rational, Bound Rational) -> Rhythm a -> Rhythm a
+getSpan :: Interval Rational -> Rhythm a -> Rhythm a
 getSpan _ Empty = Empty
 getSpan _ (Full a) = Full a
 getSpan bs (Par x y) = Par (getSpan bs x) (getSpan bs y)
 getSpan bs (Seq sf) = do
   let spanning = do
-        (b@(_, hi), a) <- intervals sf
+        (b@(Interval _ hi), a) <- intervals sf
         intersected <- maybeToList $ intersection bs b
         let hi' = renormalize bs hi
         case b == intersected of
@@ -190,27 +213,27 @@ getSpan bs (Seq sf) = do
       Seq $ SF (M.fromAscList pieces) $ snd def
     Nothing -> Empty
 
-renormalize :: (Bound Rational, Bound Rational) -> Bound Rational -> Bound Rational
-renormalize (unbound -> lo, hib) x =
+renormalize :: Interval Rational -> Bound Rational -> Bound Rational
+renormalize (Interval (unbound -> lo) hib) x =
   fmap ((/ (unbound hib - lo)) . (subtract lo)) x
 
-rebound :: (Bound Rational, Bound Rational) -> (Bound Rational, Bound Rational) -> (Bound Rational, Bound Rational)
-rebound b (lo, hi) = (renormalize b lo, renormalize b hi)
+rebound :: Interval Rational -> Interval Rational -> Interval Rational
+rebound b (Interval lo hi) = Interval (renormalize b lo) $ renormalize b hi
 
-denormalize :: (Bound Rational, Bound Rational) -> Bound Rational -> Bound Rational
-denormalize (unbound -> lo, hib) x =
+denormalize :: Interval Rational -> Bound Rational -> Bound Rational
+denormalize (Interval (unbound -> lo) hib) x =
   fmap ((+ lo) . (* (unbound hib - lo))) x
 
-debound :: (Bound Rational, Bound Rational) -> (Bound Rational, Bound Rational) -> (Bound Rational, Bound Rational)
-debound b (lo, hi) = (denormalize b lo, denormalize b hi)
+debound :: Interval Rational -> Interval Rational -> Interval Rational
+debound b (Interval lo hi) = Interval (denormalize b lo) (denormalize b hi)
 
-intersection :: Ord k => (Bound k, Bound k) -> (Bound k, Bound k) -> Maybe (Bound k, Bound k)
-intersection (al, ar) (bl, br) = do
+intersection :: Ord k => Interval k -> Interval k -> Maybe (Interval k)
+intersection (Interval al ar) (Interval bl br) = do
   let l = max al bl
       r = min ar br
   case compare l r of
-    LT -> Just (l, r)
-    EQ -> Just (l, l)
+    LT -> Just $ Interval l r
+    EQ -> Just $ Interval l l
     GT -> Nothing
 
 instance Applicative Rhythm where
@@ -270,6 +293,9 @@ instance Arbitrary a => Arbitrary (Rhythm a) where
           True -> pure (ix, a')
           False -> pure xx
 
+instance Arbitrary a => Arbitrary (Interval a) where
+  arbitrary = Interval <$> arbitrary <*> arbitrary
+
 spec :: Spec
 spec = modifyMaxSuccess (const 100000) $ do
   describe "intersection" $ do
@@ -281,17 +307,17 @@ spec = modifyMaxSuccess (const 100000) $ do
       r === (r >>= intersection x)
 
     it "unit test" $
-      intersection (Open @Rational 0, Closed 0.5) (Open 0.25, Closed 1)
-        === Just (Open 0.25, Closed 0.5)
+      intersection (Interval (Open @Rational 0) $ Closed 0.5) (Interval (Open 0.25) $ Closed 1)
+        === Just (Interval (Open 0.25) $ Closed 0.5)
 
   describe "getSpan" $ do
     prop "identity" $ \x ->
-      getSpan @Int (Closed 0, Closed 1) x =-= x
+      getSpan @Int (Interval (Closed 0) $ Closed 1) x =-= x
 
     prop "get one" $ \x y -> do
       let lhs =
             getSpan @Int
-              (Closed 0, Open 0.5)
+              (Interval (Closed 0) $ Open 0.5)
               (tuplet [x, y])
       counterexample ("lhs: " <> show lhs) $
         lhs =-= x
@@ -300,7 +326,7 @@ spec = modifyMaxSuccess (const 100000) $ do
       let evened = tuplet [x, y]
           lhs =
             getSpan @Int
-              (Closed 0.5, Closed 1)
+              (Interval (Closed 0.5) $ Closed 1)
               evened
       counterexample ("evened: " <> show evened) $
         counterexample ("lhs: " <> show lhs) $
@@ -310,8 +336,8 @@ spec = modifyMaxSuccess (const 100000) $ do
       let r = tuplet @Int [x, y]
       let lhs =
             tuplet
-              [ getSpan (Closed 0, Open 0.5) r
-              , getSpan (Closed 0.5, Closed 1) r
+              [ getSpan (Interval (Closed 0) $ Open 0.5) r
+              , getSpan (Interval (Closed 0.5) $ Closed 1) r
               ]
       counterexample ("lhs: " <> show lhs) $
         lhs =-= r
@@ -320,8 +346,8 @@ spec = modifyMaxSuccess (const 100000) $ do
       let r = tuplet @Int [x, y, z]
       let lhs =
             tuplet
-              [ getSpan (Closed 0, Open 0.5) r
-              , getSpan (Closed 0.5, Closed 1) r
+              [ getSpan (Interval (Closed 0) $ Open 0.5) r
+              , getSpan (Interval (Closed 0.5) $ Closed 1) r
               ]
       counterexample ("even: " <> show r) $
         counterexample ("lhs: " <> show lhs) $
@@ -331,8 +357,8 @@ spec = modifyMaxSuccess (const 100000) $ do
       let r = tuplet [Full "x", tuplet [Full "y1", Full "y2"], Full "z"]
       let lhs =
             tuplet
-              [ getSpan (Closed 0, Open 0.5) r
-              , getSpan (Closed 0.5, Closed 1) r
+              [ getSpan (Interval (Closed 0) $ Open 0.5) r
+              , getSpan (Interval (Closed 0.5) $ Closed 1) r
               ]
       counterexample ("tuplet: " <> show r) $
         counterexample ("lhs: " <> show lhs) $
