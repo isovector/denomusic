@@ -12,24 +12,24 @@ import Euterpea.IO.MIDI.Play
 import Legacy hiding (main)
 import Rhythm
 
-renormalize :: Rational -> [(Rational, Durated a)] -> [(Rational, Durated a)]
+renormalize :: Rational -> [(Interval Rational, a)] -> [(Interval Rational, a)]
 renormalize r ds =
-  let shortest = minimum $ fmap (getDuration . snd) ds
+  let shortest = minimum $ fmap (getDuration . fst) ds
       mult = r / shortest
-   in fmap ((* mult) *** mapDuration (* mult)) ds
+   in fmap (first $ fmap (* mult)) ds
 
-foldMusic :: [(Rational, Durated a)] -> E.Music a
+foldMusic :: [(Interval Rational, a)] -> E.Music a
 foldMusic =
   flip foldr (rest 0) $
-    uncurry $ \offset (Durated d a) m ->
-      (rest offset :+: note d a) :=: m
+    uncurry $ \i a m ->
+      (rest (getOffset i) :+: note (getDuration i) a) :=: m
 
 main :: IO ()
 main =
   playDev @Pitch 2 $
     foldMusic $
       renormalize (1 % 8) $
-        foldRhythm song
+        intervals song
 
 bar1to4 :: Rhythm Pitch
 bar1to4 = do

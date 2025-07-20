@@ -17,7 +17,7 @@ main = do
   playDev @Pitch 2 $
     foldMusic $
       renormalize (1 % 8) $
-        foldRhythm $
+        intervals $
           flip evalStateT g song
 
 lydian :: PitchClass -> [PitchClass]
