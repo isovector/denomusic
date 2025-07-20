@@ -14,6 +14,7 @@ module Rhythm (
   rtimes,
 
   -- * Constructing Parallel Rhythms
+  asum,
   chord,
 
   -- * Constructing Applicative Rhythms
@@ -36,6 +37,7 @@ module Rhythm (
   spec,
 ) where
 
+import Control.Applicative
 import Control.Arrow (first, (&&&), (***))
 import Control.Monad (ap, guard)
 import Data.Function.Step (Bound (..), SF (..))
@@ -50,13 +52,99 @@ import Test.Hspec.QuickCheck
 import Test.QuickCheck
 import Test.QuickCheck.Checkers
 
+-- | An algebraically compositional representation of music. The core idea of
+-- 'Rhythm' is to give up on any absolute notion of time, and instead treat all
+-- music as normalized over the interval @[0,1)@. When we want to actually
+-- /play/ the music, we can multiply this interval out to the desired number of
+-- measures.
+--
+-- The combinator 'tuplet' fills the interval with its elements, ensuring that
+-- each element gets an equal division of time. Thus, we can make a triplet as
+--
+-- @'tuplet' [a, b, c]@
+--
+-- . 'tuplet' is the fundamental means of constructing rhythms. Because it can be
+-- nested, it allows us to subdivide beats, eg:
+--
+-- @'tuplet' [quarter, 'tuplet' [ eighth, eighth ],  quarter, quarter]@
+--
+-- constructs an interval which is broken up into four spans, the second of
+-- which is further subdivided in half. Thus, interpreted as a single measure,
+-- this represents a quarter note, two eighth notes, and then two more quarter
+-- notes.
+--
+-- The advantages of representing music this way is that it gives us a very
+-- meaningful set of algebraic primitives. Namely, we have two meaningful
+-- 'Applicative's, one 'Monad', and an 'Alternative'. It is these instances
+-- which give us most of the interesting means of constructing music.
+--
+-- The 'Applicative' and 'Monad' instances are both "substitute-y", meaning
+-- they will replace all "notes" with a sub 'Rhythm'. We can use this, for
+-- example, to generate broken chords:
+--
+-- @
+--   do
+--     -- Fill the interval with four evenly spaced C triads.
+--     chord <- 'tuplet' $ replicate 4 $ pure [(C, 3), (E, 3), (G, 3)]
+--     -- Replace each triad with a its first two notes, and then everything but
+--        its first two notes.
+--     'tuplet' [ take 2 chord, drop 2 chord ]
+-- ==
+--   'tuplet' $ replicate 4 $ 'tuplet'
+--     [ [(C, 3), (E, 3)]
+--     , [(G, 3)]
+--     ]
+-- @
+--
+-- We also have another applicative, although due to Haskell's typesystem it
+-- can't be an instance of 'Applicative'. This operation goes by the name
+-- 'overlay', which instead applies a function pointwise across two 'Rhythm's.
+-- We can use this, eg, to "stamp" a rhythmic element on top of chord changes.
+--
+-- @
+-- 'overlay' 'const' pitches rhythm
+-- @
+--
+-- which will use the pitches from @pitches@ but ensure that the rhythm from
+-- @rhythm@ is also present. Of course, we need not use 'const' here:
+--
+-- @
+--   'overlay' f ('tuplet' [a, b, c]) ('tuplet' [x, y])
+-- ==
+--   'tuplet'
+--      [ 'overlay' f a x
+--      , 'overlay' f a x
+--      , 'overlay' f b x
+--      , 'overlay' f b y
+--      , 'overlay' f c y
+--      , 'overlay' f c y
+--      ]
+-- @
+--
+-- The 'Alternative' instance performs two 'Rhythm's in parallel. For example,
+--
+-- @
+-- 'tuplet' (replicate 3 a) <|> 'tuplet' (replicate 4 b)
+-- @
+--
+-- is a threes-over-fours rhythm. Correspondingly, 'empty' is the absence of
+-- a rhythm, which means it can be used in 'overlay' to selectively mute
+-- sections of a 'Rhythm' after the fact.
 data Rhythm a
   = Empty
   | Full a
-  | Seq (SF Rational (Rhythm a))
+  | -- | A sequential rhythm, dividing up the interval @[0,1)@.
+    Seq (SF Rational (Rhythm a))
   | Par (Rhythm a) (Rhythm a)
   deriving stock (Show, Functor, Foldable, Traversable)
 
+instance Alternative Rhythm where
+  Empty <|> a = a
+  a <|> Empty = a
+  a <|> b = Par a b
+  empty = Empty
+
+-- | An 'Interval' is upper and lower bounds.
 data Interval a = Interval
   { i_lo :: Bound a
   , i_hi :: Bound a
@@ -77,18 +165,22 @@ instance Show a => Show (Interval a) where
           Closed {} -> "]"
       ]
 
+-- | Shorthand for @'tuplet' . fmap pure@.
 im :: [a] -> Rhythm a
 im = tuplet . fmap pure
 
+-- | Shorthand for @'asum' . fmap pure@.
 chord :: [a] -> Rhythm a
-chord [] = Empty
-chord xs = foldr1 Par $ fmap pure xs
+chord = asum . fmap pure
 
+-- | Repeat a 'Rhythm' some number of times.
 rtimes :: Int -> Rhythm a -> Rhythm a
 rtimes 0 _ = Empty
 rtimes 1 a = a
 rtimes n a = tuplet $ replicate n a
 
+-- | 'mu' provides a denotational semantics to 'Rhythm' by computing the set of
+-- "notes"  being played simultaneously at any point in the interval.
 mu :: Ord a => Rhythm a -> Rational -> Set a
 mu _ n | n > 1 = mempty
 mu _ n | n < 0 = mempty
@@ -126,6 +218,9 @@ intervals (SF m def) = go (Closed 0) $ M.toAscList m
   go lo [] = pure (Interval lo $ Closed 1, def)
   go lo ((hi, a) : as) = (Interval lo hi, a) : go (swapBound hi) as
 
+-- | Compute the 'Interval' associated with every "note" in a 'Rhythm'. It's
+-- not entirely clear to me why you might want to do this, but it's interesting
+-- that you can.
 annotate :: Rhythm a -> Rhythm (Interval Rational, a)
 annotate (Full a) = Full (Interval (Closed 0) (Closed 1), a)
 annotate Empty = Empty
@@ -236,10 +331,14 @@ intersection (Interval al ar) (Interval bl br) = do
     EQ -> Just $ Interval l l
     GT -> Nothing
 
+-- | This is a "substitute-y" 'Applicative', in that it performs tree grafting.
+-- You can use the 'overlay' operation instead of 'liftA2' if you're instead
+-- looking for a "zippy" applicative.
 instance Applicative Rhythm where
   pure = Full
   (<*>) = ap
 
+-- | This is a "substitute-y" 'Monad', in that it performs tree grafting.
 instance Monad Rhythm where
   return = pure
   Full a >>= f = f a
@@ -251,6 +350,15 @@ instance (Ord a, Show a) => EqProp (Rhythm a) where
   a =-= b = property $ \ix ->
     mu a ix === mu b ix
 
+-- | @'tuplet' as@ divides the time interval equally, laying out each of @as@
+-- sequentially. As its name implies, we can use this for constructing literal
+-- triplets (and other tuplets), but more generally this is the fundamental
+-- means of laying out 'Rhythm's sequentially. For example,
+--
+-- @'tuplet' measures@
+--
+-- will lay out a song, assigning equal time to each measure (which is exactly
+-- what we mean by a musical "measure.")
 tuplet :: [Rhythm a] -> Rhythm a
 tuplet [] = Empty
 tuplet [a] = a
