@@ -205,8 +205,8 @@ mu (Seq as) n =
       left = unbound leftb
       width = right - left
    in case (width, leftb) of
-        (0, Closed 1) -> mu m 1
-        (0, _) -> error "how did you do this"
+        -- (0, Closed 1) -> mu m 1
+        -- (0, _) -> error "how did you do this"
         _ -> mu m $ (n - left) / width
 mu (Par a b) n = mu a n <> mu b n
 
@@ -223,20 +223,20 @@ findInterval x (SF m def) =
   case (M.lookupLE (Open x) m, M.lookupGE (Closed x) m) of
     (Just (lo, _), Just (hi, v)) -> (Interval (swapBound lo) hi, v)
     (Nothing, Just (hi, v)) -> (Interval (Closed 0) hi, v)
-    (Just (lo, _), Nothing) -> (Interval (swapBound lo) (Closed 1), def)
-    (Nothing, Nothing) -> (Interval (Closed 0) (Closed 1), def)
+    (Just (lo, _), Nothing) -> (Interval (swapBound lo) (Open 1), def)
+    (Nothing, Nothing) -> (Interval (Closed 0) (Open 1), def)
 
 intervals :: SF Rational a -> [(Interval Rational, a)]
 intervals (SF m def) = go (Closed 0) $ M.toAscList m
  where
-  go lo [] = pure (Interval lo $ Closed 1, def)
+  go lo [] = pure (Interval lo $ Open 1, def)
   go lo ((hi, a) : as) = (Interval lo hi, a) : go (swapBound hi) as
 
 -- | Compute the 'Interval' associated with every "note" in a 'Rhythm'. It's
 -- not entirely clear to me why you might want to do this, but it's interesting
 -- that you can.
 annotate :: Rhythm a -> Rhythm (Interval Rational, a)
-annotate (Full a) = Full (Interval (Closed 0) (Closed 1), a)
+annotate (Full a) = Full (Interval (Closed 0) (Open 1), a)
 annotate Empty = Empty
 annotate (Par a b) = Par (annotate a) (annotate b)
 annotate (Seq sf) = do
@@ -287,7 +287,7 @@ overlay f ar@(Seq as) br@(Seq bs) = do
 
 overlappingSpans :: SF Rational a -> SF Rational b -> [Interval Rational]
 overlappingSpans (SF sfa _) (SF sfb _) =
-  go (Closed 0) (fmap fst (M.toList sfa) <> pure (Closed 1)) (fmap fst (M.toList sfb) <> pure (Closed 1))
+  go (Closed 0) (fmap fst (M.toList sfa) <> pure (Open 1)) (fmap fst (M.toList sfb) <> pure (Open 1))
  where
   go _ [] [] = []
   go acc (i : as) [] = (Interval acc i) : go (swapBound i) as []
@@ -429,12 +429,12 @@ spec = modifyMaxSuccess (const 100000) $ do
       r === (r >>= intersection x)
 
     it "unit test" $
-      intersection (Interval (Open @Rational 0) $ Closed 0.5) (Interval (Open 0.25) $ Closed 1)
+      intersection (Interval (Open @Rational 0) $ Closed 0.5) (Interval (Open 0.25) $ Open 1)
         === Just (Interval (Open 0.25) $ Closed 0.5)
 
   describe "getSpan" $ do
     prop "identity" $ \x ->
-      getSpan @Int (Interval (Closed 0) $ Closed 1) x =-= x
+      getSpan @Int (Interval (Closed 0) $ Open 1) x =-= x
 
     prop "get one" $ \x y -> do
       let lhs =
@@ -448,7 +448,7 @@ spec = modifyMaxSuccess (const 100000) $ do
       let evened = tuplet [x, y]
           lhs =
             getSpan @Int
-              (Interval (Closed 0.5) $ Closed 1)
+              (Interval (Closed 0.5) $ Open 1)
               evened
       counterexample ("evened: " <> show evened) $
         counterexample ("lhs: " <> show lhs) $
@@ -459,7 +459,7 @@ spec = modifyMaxSuccess (const 100000) $ do
       let lhs =
             tuplet
               [ getSpan (Interval (Closed 0) $ Open 0.5) r
-              , getSpan (Interval (Closed 0.5) $ Closed 1) r
+              , getSpan (Interval (Closed 0.5) $ Open 1) r
               ]
       counterexample ("lhs: " <> show lhs) $
         lhs =-= r
@@ -469,7 +469,7 @@ spec = modifyMaxSuccess (const 100000) $ do
       let lhs =
             tuplet
               [ getSpan (Interval (Closed 0) $ Open 0.5) r
-              , getSpan (Interval (Closed 0.5) $ Closed 1) r
+              , getSpan (Interval (Closed 0.5) $ Open 1) r
               ]
       counterexample ("even: " <> show r) $
         counterexample ("lhs: " <> show lhs) $
@@ -480,7 +480,7 @@ spec = modifyMaxSuccess (const 100000) $ do
       let lhs =
             tuplet
               [ getSpan (Interval (Closed 0) $ Open 0.5) r
-              , getSpan (Interval (Closed 0.5) $ Closed 1) r
+              , getSpan (Interval (Closed 0.5) $ Open 1) r
               ]
       counterexample ("tuplet: " <> show r) $
         counterexample ("lhs: " <> show lhs) $
