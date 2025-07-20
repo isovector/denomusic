@@ -32,6 +32,8 @@ module Rhythm (
   spec,
 ) where
 
+import qualified Data.Set as S
+import Data.Set (Set)
 import Control.Arrow ((&&&), (***))
 import Control.Monad (ap, guard)
 import Data.Function.Step (Bound (..), SF (..))
@@ -63,11 +65,11 @@ rtimes 0 _ = Empty
 rtimes 1 a = a
 rtimes n a = tuplet $ replicate n a
 
-mu :: Rhythm a -> Rational -> [a]
-mu _ n | n > 1 = []
-mu _ n | n < 0 = []
-mu Empty _ = []
-mu (Full a) _ = pure a
+mu :: Ord a => Rhythm a -> Rational -> Set a
+mu _ n | n > 1 = mempty
+mu _ n | n < 0 = mempty
+mu Empty _ = mempty
+mu (Full a) _ = S.singleton a
 mu (Interval as) n =
   let ((leftb, unbound -> right), m) = findInterval n as
       left = unbound leftb
@@ -198,7 +200,7 @@ instance Monad Rhythm where
   Interval as >>= f = Interval $ fmap (>>= f) as
   Par as bs >>= f = Par (as >>= f) (bs >>= f)
 
-instance (Eq a, Show a) => EqProp (Rhythm a) where
+instance (Ord a, Show a) => EqProp (Rhythm a) where
   a =-= b = property $ \ix ->
     mu a ix === mu b ix
 
@@ -226,6 +228,7 @@ instance Arbitrary a => Arbitrary (Rhythm a) where
     oneof
       [ pure Empty
       , fmap Full arbitrary
+      , Par <$> arbitrary <*> arbitrary
       , sized $ \sz -> do
           n <- fmap ((+ 2) . abs) arbitrary
           fmap tuplet $ vectorOf n $ resize (sz `div` n) arbitrary
@@ -341,9 +344,9 @@ spec = modifyMaxSuccess (const 100000) $ do
         counterexample ("lhs: " <> show l) $
           counterexample ("rhs: " <> show r) $
             counterexample ("at: " <> show ix) $
-              case mu y ix of
-                [] -> mu l ix === []
-                _ -> mu l ix === mu r ix
+              case null $ mu y ix of
+                True -> mu l ix === mempty
+                False -> mu l ix === mu r ix
 
     prop "everywhere vs pure" $ \(Fn2 (f :: Int -> Int -> Int)) x y -> do
       nx <- fmap ((+ 2) . abs) arbitrary
@@ -358,9 +361,9 @@ spec = modifyMaxSuccess (const 100000) $ do
     prop "pointwise" $ \(Fn2 (f :: Int -> Int -> Int)) x y -> do
       r <- arbitrary
       pure $
-        mu (overlay f x y) r === (f <$> (mu x r) <*> (mu y r))
+        mu (overlay f x y) r === S.fromList (f <$> S.toList (mu x r) <*> S.toList (mu y r))
 
-  focus $ prop "wtf case" $ \(Fn2 (f :: Int -> Int -> Int)) a1 a2 b1 b2 b3 -> do
+  prop "wtf case" $ \(Fn2 (f :: Int -> Int -> Int)) a1 a2 b1 b2 b3 -> do
     let l = overlay f (tuplet $ fmap pure [a1, a2]) (tuplet $ fmap pure [b1, b2, b3])
         r =
           tuplet $
