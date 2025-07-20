@@ -20,6 +20,7 @@ module Rhythm (
   overlay,
 
   -- * Eliminating Rhythms
+  annotate,
   foldInterval,
   Durated (..),
   mapDuration,
