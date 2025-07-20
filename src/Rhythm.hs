@@ -9,6 +9,7 @@ module Rhythm (
   mu,
 
   -- * Constructing Sequential Rhythms
+  weightedTuplet,
   tuplet,
   im,
   rtimes,
@@ -19,9 +20,6 @@ module Rhythm (
 
   -- * Constructing Applicative Rhythms
   overlay,
-
-  -- * Doing Weird Stuff
-  retime,
 
   -- * Eliminating Rhythms
   foldRhythm,
@@ -41,15 +39,16 @@ module Rhythm (
 ) where
 
 import Control.Applicative
-import Control.Arrow (first, (&&&), (***))
+import Control.Arrow (first, (***))
 import Control.Monad (ap, guard)
+import Control.Monad.State
 import Data.Function.Step (Bound (..), SF (..))
 import Data.List (unsnoc)
 import Data.Map qualified as M
 import Data.Maybe
-import Data.Ratio
 import Data.Set (Set)
 import Data.Set qualified as S
+import Data.Traversable
 import Test.Hspec
 import Test.Hspec.QuickCheck
 import Test.QuickCheck
@@ -147,17 +146,6 @@ instance Alternative Rhythm where
   a <|> b = Par a b
   empty = Empty
 
--- | Apply a function to the upper timing bounds of every span in the outermost
--- 'Seq' constructor. This function is assumed to be monotonic (at least for
--- the final element in the span), so you can't do anything too crazy here, but
--- it does allow us to timeshift or scale.
-retime :: (Rational -> Rational) -> Rhythm a -> Rhythm a
-retime _ Empty = Empty
-retime _ (Full a) = Full a
-retime f (Par a b) = Par (retime f a) (retime f b)
-retime f (Seq (SF m def)) =
-  Seq $ flip SF def $ M.mapKeys (fmap f) m
-
 -- | An 'Interval' is upper and lower bounds.
 data Interval a = Interval
   { i_lo :: Bound a
@@ -239,15 +227,10 @@ annotate :: Rhythm a -> Rhythm (Interval Rational, a)
 annotate (Full a) = Full (Interval (Closed 0) (Open 1), a)
 annotate Empty = Empty
 annotate (Par a b) = Par (annotate a) (annotate b)
-annotate (Seq sf) = do
-  let is = intervals sf
-  case unsnoc is of
-    Nothing -> Empty
-    Just (pieces, (end, def)) ->
-      Seq $ flip SF (fmap (first $ debound end) $ annotate def) $ M.fromAscList $ do
-        (b, a) <- pieces
-        let a' = annotate a
-        pure (i_hi b, fmap (first $ debound b) $ a')
+annotate (Seq sf) =
+  mkInterval $ do
+    (b, a) <- intervals sf
+    pure $ (i_hi b,) $ fmap (first $ debound b) $ annotate a
 
 data Durated a = Durated
   { getDuration :: Rational
@@ -273,17 +256,12 @@ overlay f (Full a) b = fmap (f a) b
 overlay f a (Full b) = fmap (flip f b) a
 overlay f (Par a b) c = Par (overlay f a c) (overlay f b c)
 overlay f a (Par b c) = Par (overlay f a b) (overlay f a c)
-overlay f ar@(Seq as) br@(Seq bs) = do
-  let spans = do
-        bound <- overlappingSpans as bs
-        let a = getSpan bound ar
-            b = getSpan bound br
-        pure (i_hi bound, overlay f a b)
-  case unsnoc spans of
-    Nothing -> Empty
-    Just ([], d) -> snd d
-    Just (pieces, d) ->
-      Seq $ SF (M.fromAscList pieces) $ snd d
+overlay f ar@(Seq as) br@(Seq bs) =
+  mkInterval $ do
+    bound <- overlappingSpans as bs
+    let a = getSpan bound ar
+        b = getSpan bound br
+    pure (i_hi bound, overlay f a b)
 
 overlappingSpans :: SF Rational a -> SF Rational b -> [Interval Rational]
 overlappingSpans (SF sfa _) (SF sfb _) =
@@ -303,24 +281,19 @@ getSpan :: Interval Rational -> Rhythm a -> Rhythm a
 getSpan _ Empty = Empty
 getSpan _ (Full a) = Full a
 getSpan bs (Par x y) = Par (getSpan bs x) (getSpan bs y)
-getSpan bs (Seq sf) = do
-  let spanning = do
-        (b@(Interval _ hi), a) <- intervals sf
-        intersected <- maybeToList $ intersection bs b
-        let hi' = renormalize bs hi
-        case b == intersected of
-          True -> do
-            -- can keep span intact, just need to renormalize hi
-            pure (hi', a)
-          False -> do
-            -- otherwise we need to trim the underlying span
-            let intersected' = rebound b intersected
-            pure (hi', getSpan intersected' a)
-  case unsnoc spanning of
-    Just ([], def) -> snd def
-    Just (pieces, def) ->
-      Seq $ SF (M.fromAscList pieces) $ snd def
-    Nothing -> Empty
+getSpan bs (Seq sf) =
+  mkInterval $ do
+    (b@(Interval _ hi), a) <- intervals sf
+    intersected <- maybeToList $ intersection bs b
+    let hi' = renormalize bs hi
+    case b == intersected of
+      True -> do
+        -- can keep span intact, just need to renormalize hi
+        pure (hi', a)
+      False -> do
+        -- otherwise we need to trim the underlying span
+        let intersected' = rebound b intersected
+        pure (hi', getSpan intersected' a)
 
 renormalize :: Interval Rational -> Bound Rational -> Bound Rational
 renormalize (Interval (unbound -> lo) hib) x =
@@ -374,14 +347,29 @@ instance (Ord a, Show a) => EqProp (Rhythm a) where
 -- will lay out a song, assigning equal time to each measure (which is exactly
 -- what we mean by a musical "measure.")
 tuplet :: [Rhythm a] -> Rhythm a
-tuplet [] = Empty
-tuplet [a] = a
-tuplet (init &&& last -> (as, def)) = Seq $
-  flip SF def $
-    M.fromAscList $ do
-      let len = fromIntegral $ length as + 1
-      (ix, a) <- zip [1 ..] as
-      pure (Open (ix % len), a)
+tuplet = weightedTuplet . fmap (1,)
+
+weightedTuplet :: [(Rational, Rhythm a)] -> Rhythm a
+weightedTuplet [] = Empty
+weightedTuplet [(_, a)] = a
+weightedTuplet as = do
+  let duration = sum $ fmap fst as
+      pieces =
+        flip evalState 0 $
+          for as $ \(sz, a) -> do
+            here <- get
+            let there = here + sz / duration
+            put there
+            pure (Open there, a)
+  mkInterval pieces
+
+mkInterval :: [(Bound Rational, Rhythm a)] -> Rhythm a
+mkInterval pieces =
+  case unsnoc pieces of
+    Nothing -> Empty
+    Just ([], a) -> snd a
+    Just (as', a) ->
+      Seq $ SF (M.fromAscList as') (snd a)
 
 listShrinker :: [a] -> [[a]]
 listShrinker [_] = []
