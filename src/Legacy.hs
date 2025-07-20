@@ -97,9 +97,9 @@ duration (Modify _ a) = duration a
 myBar :: [Pitch] -> Music Hand -> Music Pitch
 myBar chord@((basspitch, bassoctave) : remainder) paradiddle = bind f paradiddle
  where
-  f dur (LeftHand i) = note dur (basspitch, bassoctave - (i `mod` 2 + 1))
-  f dur (RightHand i) = (!! i) $ iterate invert $ musicChord dur remainder
-  f dur (GraspingHand i) = note dur (fst $ chord !! i, bassoctave + 2)
+  f dur (LeftHand i) = instrument Lead8BassLead $ note dur (basspitch, bassoctave - (i `mod` 2 + 1))
+  f dur (RightHand i) = instrument TangoAccordion $ (!! i) $ iterate invert $ musicChord dur remainder
+  f dur (GraspingHand i) = instrument SopranoSax $ note dur (fst $ chord !! i, bassoctave + 2)
 
 bassJob :: Music Hand
 bassJob =
