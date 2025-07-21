@@ -27,9 +27,11 @@ module Rhythm (
   getOffset,
   annotate,
   intervals,
+  getSpan,
 
   -- * Playing Rhythms
   play,
+  playBars,
 
   -- * Reexpots
   SF (..),
@@ -37,6 +39,8 @@ module Rhythm (
 
   -- * Tests
   spec,
+
+  foldMusic,
 ) where
 
 import Control.Applicative
@@ -380,6 +384,13 @@ foldMusic =
   flip foldr (rest 0) $
     uncurry $ \i a m ->
       (rest (getOffset i) :+: note (getDuration i) a) :=: m
+
+playBars :: Int -> Rhythm Pitch -> IO ()
+playBars bars song =
+  playDev 2 $
+    foldMusic $
+      fmap (first $ fmap (* fromIntegral bars)) $
+        intervals song
 
 play :: Rational -> Rhythm Pitch -> IO ()
 play smallest song =

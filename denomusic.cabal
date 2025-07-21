@@ -26,10 +26,12 @@ source-repository head
 library
   exposed-modules:
       Etude11
+      Etude16
       Etude17
       Funky
       Legacy
       Rhythm
+      Westergaard
   other-modules:
       Paths_denomusic
   autogen-modules:
@@ -43,7 +45,9 @@ library
     , base >=4.7 && <5
     , checkers
     , containers
+    , fingertree
     , hspec
+    , lens
     , mtl
     , random
     , split

@@ -32,6 +32,8 @@ dependencies:
 - mtl
 - transformers
 - random
+- lens
+- fingertree
 
 default-extensions: []
 
