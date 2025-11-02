@@ -27,27 +27,60 @@ asLastBeat a = weightedTuplet
   ]
 
 
+twiddle :: Score Pitch
+twiddle = delay (- (2 % 7)) $ mconcat
+  [ asBars (2 % 7) $
+      im
+        [ (G, 2)
+        , (A, 2)
+        , (G, 2)
+        , (Fs, 2)
+        ]
+  , asBars (10 % 7) $ pure (G, 2)
+  ]
+
+strike :: Score Pitch
+strike = delay (- (1 % 7)) $ mconcat
+  [ asBars (1 % 7) $ chord
+      [ (Fs, 5)
+      , (Fs, 6)
+      ]
+  , asBars (10 % 7) $ chord
+      [ (G, 5)
+      , (G, 6)
+      ]
+  ]
+
 score :: Score Pitch
 score = mconcat
-  [ bar $
-      bassTemplate
-        (D, 3)
-        (G, 3)
-        (Bf, 3)
-  , bar $ asum
-      [
+  [ b
+  , b
+  , parL b twiddle
+  , b
+  , parL b strike
+  , b
+  , parL b twiddle
+  , b
+  , parL b strike
+  , b'
+  , b''
+  ]
+  where
+    b =
+      bar $
         bassTemplate
           (D, 3)
           (G, 3)
           (Bf, 3)
-      , asLastBeat $ im
-          [ (G, 2)
-          , (A, 2)
-          , (G, 2)
-          , (Fs, 2)
-          ]
-      ]
-  ]
+    b' = bar $ bassTemplate
+          (F, 3)
+          (G, 3)
+          (Bf, 3)
+    b'' = bar $ bassTemplate
+          (Ef, 3)
+          (G, 3)
+          (Bf, 3)
+
 
 main :: IO ()
 main = playScore score
