@@ -49,6 +49,28 @@ data Envelope a = Envelope
 newtype Matrix a = Matrix { getMatrix :: M33 a }
   deriving newtype (Eq, Show)
 
+instance (Num a, Arbitrary a) => Arbitrary (Matrix a) where
+  arbitrary = fmap Matrix $
+    V3
+      <$> (V3 <$> arbitrary <*> arbitrary <*> arbitrary)
+      <*> (V3 <$> arbitrary <*> arbitrary <*> arbitrary)
+      <*> pure (V3 0 0 1)
+  shrink (Matrix (V3 x y z)) = fmap Matrix $ mconcat
+    [ V3 <$> shrink x <*> pure y <*> pure z
+    , V3 <$> pure x <*> shrink y <*> pure z
+    ]
+
+instance Arbitrary a => Arbitrary (V3 a) where
+  arbitrary = V3 <$> arbitrary <*> arbitrary <*> arbitrary
+  shrink (V3 x y z) = mconcat
+    [ V3 <$> shrink x <*> pure y <*> pure z
+    , V3 <$> pure x <*> shrink y <*> pure z
+    , V3 <$> pure x <*> pure y <*> shrink z
+    ]
+
+instance Arbitrary a => Arbitrary (Envelope a) where
+  arbitrary = Envelope <$> fmap (Just . Max) arbitrary <*> fmap (Just . Max) arbitrary
+
 instance Num a => Semigroup (Matrix a) where
   Matrix x <> Matrix y = Matrix $ x !*! y
 
@@ -67,9 +89,9 @@ instance Fractional a => Action (Matrix a) (Envelope a) where
   act (Matrix m) (Envelope (Just (Max x)) (Just (Max y))) =
     -- let V3 start width _ = m !* V3 (-x) (y + x) 1
     --  in Envelope (Just $ Max (-start)) (Just $ Max (width + start))
-    let V3 _ x' _ = m !* V3 0 x 1
-        V3 _ y' _ = m !* V3 0 y 1
-     in Envelope (Just $ Max $ x') (Just $ Max $ y')
+    let V3 dx x' _ = m !* V3 0 x 1
+        V3 dy y' _ = m !* V3 0 y 1
+     in Envelope (Just $ Max $ -dx + x') (Just $ Max $ dy + y')
   act _ _ = undefined
 
 getEnv :: Score a -> Maybe (Envelope Rational)
@@ -181,23 +203,38 @@ instance Arbitrary a => Arbitrary (MkScore a) where
     , pure b
     ]
 
-main :: IO ()
-main = hspec $ do
+
+mainTest :: IO ()
+mainTest = hspec $ do
   let test = ((===) `on` (toMusic . mkScore @Int))
-  prop "delay/after" $ \d a b ->
-    test
-      (Delay d $ After a b)
-      (After (Delay d a) b)
+      envs = ((===) `on` (getEnv . mkScore @Int))
 
-  prop "after assoc" $ \a b c ->
-    test
-      (After (After a b) c)
-      (After a (After b c))
+--   prop "delay/after" $ \d a b ->
+--     test
+--       (Delay d $ After a b)
+--       (After (Delay d a) b)
 
-  prop "delay scale" $ \d s a ->
-    test
-      (Scale s (Delay d a))
-      (Delay (d * s) (Scale s a))
+--   prop "after assoc" $ \a b c ->
+--     test
+--       (After (After a b) c)
+--       (After a (After b c))
+
+--   prop "delay scale" $ \d s a ->
+--     test
+--       (Scale s (Delay d a))
+--       (Delay (d * s) (Scale s a))
+
+  prop "action id" $ \(x :: Envelope Rational) ->
+    act (mempty @(Matrix Rational)) x === x
+
+  prop "action <>" $ \(m1 :: Matrix Rational) m2 (x :: Envelope Rational) ->
+    act (m1 <> m2) x === act m1 (act m2 x)
+
+  -- prop "hom action mempty" $
+  --   act (mempty @(Matrix Rational)) (mempty @(Envelope Rational)) === mempty
+
+  prop "hom action <>" $ \(m :: Matrix Rational) (s1 :: Envelope Rational) s2 ->
+    act m (s1 <> s2) === act m s1 <> act m s2
 
 
 

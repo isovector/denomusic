@@ -37,6 +37,10 @@ dependencies:
 - dual-tree
 - monoid-extras
 - linear
+- recursion-schemes
+- deepseq
+- lilypond
+- prettify
 
 default-extensions: []
 

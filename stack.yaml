@@ -13,6 +13,11 @@ notify-if-nix-on-path: false
 extra-deps:
 - Euterpea-2.0.7
 - PortMidi-0.2.0.0
+- lilypond-1.9.0@sha256:b4b51d77699e47ba3ced169cce76d3d5ebab937418de7feb7a2b921513f598d9,1477
+- music-dynamics-literal-1.9.0@sha256:2283b5cc4e67f3ef3561ff0da7f8b2fae87f407d7b620a8fcf3b75b6d0332fb1,1010
+- music-pitch-literal-1.9.0@sha256:ce94f1e65bdbfc0d6ae6fee4b983a5681ba33ec17d49d4f53def4dc91665066d,1203
+- prettify-1.0@sha256:7105b5783f3d899311f6e392cfe8a230eabc7db98b77e7557b7d1335d91a5bc0,775
+
 
 
 nix:

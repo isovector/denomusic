@@ -30,8 +30,10 @@ library
       Etude17
       Funky
       Legacy
+      Notation
       Rhythm
       Score
+      Tile
       Westergaard
   other-modules:
       Paths_denomusic
@@ -46,14 +48,18 @@ library
     , base >=4.7 && <5
     , checkers
     , containers
+    , deepseq
     , dual-tree
     , fingertree
     , hspec
     , lens
+    , lilypond
     , linear
     , monoid-extras
     , mtl
+    , prettify
     , random
+    , recursion-schemes
     , split
     , step-function
     , transformers
