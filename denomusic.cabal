@@ -31,6 +31,7 @@ library
       Funky
       Legacy
       Rhythm
+      Score
       Westergaard
   other-modules:
       Paths_denomusic
@@ -45,9 +46,12 @@ library
     , base >=4.7 && <5
     , checkers
     , containers
+    , dual-tree
     , fingertree
     , hspec
     , lens
+    , linear
+    , monoid-extras
     , mtl
     , random
     , split

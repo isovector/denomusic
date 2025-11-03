@@ -28,7 +28,7 @@ asLastBeat a = weightedTuplet
 
 
 twiddle :: Score Pitch
-twiddle = delay (- (2 % 7)) $ mconcat
+twiddle = foldr1 after
   [ asBars (2 % 7) $
       im
         [ (G, 2)
@@ -40,7 +40,7 @@ twiddle = delay (- (2 % 7)) $ mconcat
   ]
 
 strike :: Score Pitch
-strike = delay (- (1 % 7)) $ mconcat
+strike = delay (- (1 % 7)) $ foldr1 after
   [ asBars (1 % 7) $ chord
       [ (Fs, 5)
       , (Fs, 6)
@@ -52,26 +52,20 @@ strike = delay (- (1 % 7)) $ mconcat
   ]
 
 score :: Score Pitch
-score = mconcat
-  [ b
-  , b
-  , parL b twiddle
-  , b
-  , parL b strike
-  , b
-  , parL b twiddle
-  , b
-  , parL b strike
-  , b'
-  , b''
+score = foldr1 after
+  -- [ b
+  -- [ b
+  [ twiddle
+  -- , parL b strike
+  -- , b
+  -- , parL b twiddle
+  -- , b
+  -- , parL b strike
+  -- , b'
+  -- , b''
   ]
   where
-    b =
-      bar $
-        bassTemplate
-          (D, 3)
-          (G, 3)
-          (Bf, 3)
+    b = bar $ bassTemplate (D, 3) (G, 3) (Bf, 3)
     b' = bar $ bassTemplate
           (F, 3)
           (G, 3)
