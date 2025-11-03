@@ -18,6 +18,8 @@ module Score where
   -- , parL
   -- ) where
 
+import Test.QuickCheck hiding (scale)
+import Test.QuickCheck qualified as Q
 import Debug.Trace
 import Data.Function
 import Data.Ratio
@@ -34,6 +36,8 @@ import Data.Monoid.Action
 import Linear.V3
 import Linear.Matrix
 import Rhythm
+import Test.Hspec hiding (after)
+import Test.Hspec.QuickCheck
 
 data Envelope a = Envelope
   { e_before :: Maybe (Max a)
@@ -127,7 +131,7 @@ bar = asBars 1
 
 asBars :: Rational -> Rhythm a -> Score a
 asBars r
-  = foldMap (\(i, a) -> delay (traceShowId $ getOffset i * r) $ scale (getDuration i * r) $ note a)
+  = foldMap (\(i, a) -> delay (getOffset i * r) $ scale (getDuration i * r) $ note a)
   . intervals
 
 
@@ -135,4 +139,65 @@ playScore :: Score Pitch -> IO ()
 playScore
   = playDev 2
   . toMusic
+
+data MkScore a
+  = Note a
+  | Scale Rational (MkScore a)
+  | Delay Rational (MkScore a)
+  | After (MkScore a) (MkScore a)
+  deriving Show
+
+mkScore :: MkScore a -> Score a
+mkScore (Note a) = note a
+mkScore (Scale a b) = scale a $ mkScore b
+mkScore (Delay a b) = delay a $ mkScore b
+mkScore (After a b) = after (mkScore a) $ mkScore b
+
+instance Arbitrary a => Arbitrary (MkScore a) where
+  arbitrary = sized $ \n ->
+    case n <= 1 of
+      True -> Note <$> arbitrary
+      False -> oneof
+        [ Note <$> arbitrary
+        , Scale <$> arbitrary <*> Q.scale (subtract 1) arbitrary
+        , Delay <$> arbitrary <*> Q.scale (subtract 1) arbitrary
+        , After <$> Q.scale (`div` 2) arbitrary <*> Q.scale (`div` 2) arbitrary
+        ]
+  shrink (Note a) = Note <$> shrink a
+  shrink (Scale a b) = mconcat
+    [ Scale <$> shrink a <*> pure b
+    , Scale <$> pure a <*> shrink b
+    , pure b
+    ]
+  shrink (Delay a b) = mconcat
+    [ Delay <$> shrink a <*> pure b
+    , Delay <$> pure a <*> shrink b
+    , pure b
+    ]
+  shrink (After a b) = mconcat
+    [ After <$> shrink a <*> pure b
+    , After <$> pure a <*> shrink b
+    , pure a
+    , pure b
+    ]
+
+main :: IO ()
+main = hspec $ do
+  let test = ((===) `on` (toMusic . mkScore @Int))
+  prop "delay/after" $ \d a b ->
+    test
+      (Delay d $ After a b)
+      (After (Delay d a) b)
+
+  prop "after assoc" $ \a b c ->
+    test
+      (After (After a b) c)
+      (After a (After b c))
+
+  prop "delay scale" $ \d s a ->
+    test
+      (Scale s (Delay d a))
+      (Delay (d * s) (Scale s a))
+
+
 
