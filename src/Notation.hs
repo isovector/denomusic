@@ -1,10 +1,19 @@
+
 module Notation where
 
+import Debug.Trace
+import Data.Foldable
+import Data.List (partition)
+import Data.Maybe
+import Control.Monad.State
+import Data.Foldable
 import Data.Music.Lilypond
 import Euterpea qualified as E
 import Text.Pretty (pretty)
 import Etude16
 import Tile
+import Data.Bool
+
 
 toPitch :: E.Pitch -> Pitch
 toPitch (pc, o) =
@@ -48,9 +57,42 @@ pitchClassToPitchAndAccidental E.Bf  = (B, -1)
 pitchClassToPitchAndAccidental E.Bs  = (B, 1)
 pitchClassToPitchAndAccidental E.Bss = (B, 2)
 
-toLilypond :: E.Music E.Pitch -> Music
-toLilypond (a E.:=: b) = simultaneous (toLilypond a) (toLilypond b)
-toLilypond (a E.:+: b) = sequential (toLilypond a) (toLilypond b)
-toLilypond (E.Prim (E.Rest d)) = Rest (Just $ Duration d) []
-toLilypond (E.Prim (E.Note d p)) = Note (NotePitch (toPitch p) Nothing) (Just $ Duration d) []
-toLilypond E.Modify {} = undefined
+forking :: [(Rational, E.Pitch)] -> Music -> Music
+forking [] m = m
+forking es m = simultaneous (forked es) m
+
+forked :: [(Rational, E.Pitch)] -> Music
+forked [] = rest
+forked es = foldr1 simultaneous $ fmap (\(d, p) -> Note (NotePitch (toPitch p) Nothing) (Just $ Duration d) []) es
+
+chorded :: Rational -> [E.Pitch] -> Music
+chorded d ps = Chord (fmap ((, []) . (\p -> NotePitch p Nothing) . toPitch) ps) (Just $ Duration d) []
+
+toLilypond' :: [Events E.Pitch] -> Music
+toLilypond' [] = rest
+toLilypond' (Events notes _ : es) = do
+  let min_dur = minimum $ fmap fst notes
+      mnext_wait = fmap e_at $ listToMaybe es
+  case mnext_wait of
+    Nothing -> forked (toList notes)
+    Just next_wait ->
+      case min_dur <= next_wait of
+        True -> do
+          -- we can fit in at least one note before the next section
+          let (short, long) = partition ((== min_dur) . fst) $ toList notes
+          let remaining = toLilypond' es
+          forking
+            long
+            $ sequential (chorded min_dur $ fmap snd short)
+            $ (bool (sequential (Rest (Just $ Duration $ next_wait - min_dur) [])) id (min_dur == next_wait)) remaining
+        False -> do
+          let remaining = toLilypond' es
+          forking (toList notes)
+            $ sequential (Rest (Just $ Duration $ next_wait) []) remaining
+
+
+toLilypond :: Tile E.Pitch -> Music
+toLilypond = toLilypond' . flatten
+
+
+

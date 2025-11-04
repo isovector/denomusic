@@ -53,6 +53,22 @@ asLastBeat a = weightedTuplet
   ]
 
 
+twiddleStrait :: Tile Pitch
+twiddleStrait = do
+  let z = asBars (1 % 4) $
+            im
+              [ (G, 2)
+              , (A, 2)
+              , (G, 2)
+              , (Fs, 2)
+              ]
+  mconcat
+    [ tile 1 (G, 4)
+    , striking (1 % 4) z
+    , co z
+    , tile 1 (G, 4)
+    ]
+
 twiddle :: Tile Pitch
 twiddle =
   co $ asBars (2 % 7) $
@@ -87,12 +103,12 @@ approachD :: Tile Pitch -> Tile Pitch
 approachD = fmap (E.pitch . (+ 1) . E.absPitch)
 
 striking :: Rational -> Tile Pitch -> Tile Pitch
-striking r t = traceShowWith toMusic $
+striking r t =
   let ham = hammer id t
    in co (scale r $ approachU ham) <> ham
 
 strikingD :: Rational -> Tile Pitch -> Tile Pitch
-strikingD r t = traceShowWith toMusic $
+strikingD r t =
   let ham = hammer Down t
    in co (scale r $ approachD ham) <> ham
 
