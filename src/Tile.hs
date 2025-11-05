@@ -36,6 +36,11 @@ data SHeap a = Empty | SHeap Rational (Seq (Rational, a)) (SHeap a) (SHeap a)
 scale :: Rational -> Tile a -> Tile a
 scale m (Tile d sh)= Tile (d * m) $ scaleSH m sh
 
+scaleTo :: Rational -> Tile a -> Tile a
+scaleTo d t =
+  let dur = duration t
+   in scale (d / dur) t
+
 scaleSH :: Rational -> SHeap a -> SHeap a
 scaleSH m (SHeap t e l r) = SHeap (t * m) (fmap (first (* m)) e) (scaleSH m l) (scaleSH m r)
 scaleSH _ Empty = Empty
