@@ -106,6 +106,16 @@ fork a b = re a %% b
 join :: Tile a -> Tile a -> Tile a
 join a b = a %% co b
 
+
+newtype Simul a = Simul { getSimul :: Tile a }
+
+instance Semigroup (Simul a) where
+  Simul a <> Simul b = Simul $ re a <> re b
+
+instance Monoid (Simul a) where
+  mempty = Simul mempty
+
+
 simul :: [Tile a] -> Tile a
 simul [] = mempty
 simul as = foldr1 fork as

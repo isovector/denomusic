@@ -1,4 +1,4 @@
-{-# LANGUAGE LambdaCase         #-}
+{-# LANGUAGE LambdaCase #-}
 {-# OPTIONS_GHC -fno-warn-type-defaults #-}
 
 module Etude16 where
@@ -77,8 +77,8 @@ sec2 = mconcat
   , fork bassTwiddleG bass1Twice
   ]
 
-secBuilder :: (Int -> Tile Pitch) -> Tile Pitch
-secBuilder f = foldMap (\(i, t) -> fork (f i) t) $
+secBuilder :: (Int -> Simul Pitch) -> Tile Pitch
+secBuilder f = foldMap (\(i, t) -> fork (getSimul $ f i) t) $
   zip [0..]
     [ bass1
     , bassTemplate (F,  3) (G,  3) (Bf, 3)
@@ -110,17 +110,20 @@ trebleTwiddle2 =
         , (C,  5)
         ]
 
+twiddleD :: Tile Pitch
+twiddleD = co trebleTwiddle1 <> octaveChord D 5
+
 
 sec3 :: Tile Pitch
-sec3 = secBuilder $ \case
+sec3 = secBuilder $ Simul . \case
   0 -> strike2
-  4 -> co trebleTwiddle1 <> octaveChord D 5
+  4 -> twiddleD
   _ -> mempty
 
 sec3'2 :: Tile Pitch
-sec3'2 = secBuilder $ \case
-  0 -> co trebleTwiddle1 <> octaveChord D 5
-  4 -> co trebleTwiddle1 <> octaveChord D 5
+sec3'2 = secBuilder $ Simul . \case
+  0 -> twiddleD
+  4 -> twiddleD
   _ -> mempty
 
 ascTriplets :: (Pitch, Pitch) -> (Pitch, Pitch) -> (Pitch, Pitch) -> Tile Pitch
@@ -139,14 +142,19 @@ triple3 = ascTriplets ((G,  4), (Bf, 4)) ((A,  4), (C, 5)) ((Bf, 4), (D,  5))
 triple5 = ascTriplets ((D,  4), (F,  4)) ((Ef, 4), (G, 4)) ((F,  4), (A,  4))
 triple7 = ascTriplets ((Bf, 3), (D,  4)) ((C,  4), (E, 4)) ((D,  4), (Fs, 4))
 
+
+sec5Bits :: Int -> Simul Pitch
+sec5Bits =
+  Simul . \case
+    0 -> co trebleTwiddle2 <> octaveChord Bf 4
+    1 -> triple1
+    3 -> triple3
+    5 -> triple5
+    7 -> triple7
+    _ -> mempty
+
 sec5 :: Tile Pitch
-sec5 = secBuilder $ \case
-  0 -> co trebleTwiddle2 <> octaveChord Bf 4
-  1 -> triple1
-  3 -> triple3
-  5 -> triple5
-  7 -> triple7
-  _ -> mempty
+sec5 = secBuilder sec5Bits
 
 
 strike3 :: Tile Pitch
@@ -162,15 +170,10 @@ strike4 = mconcat
   ]
 
 sec7 :: Tile Pitch
-sec7 = secBuilder $ \case
-  0 -> co trebleTwiddle2 <> octaveChord Bf 4
-  1 -> triple1
+sec7 = secBuilder $ sec5Bits <> Simul . \case
   2 -> strike2
-  3 -> triple3
   4 -> strike3
-  5 -> triple5
   6 -> strike4
-  7 -> triple7
   _ -> mempty
 
 song :: Tile Pitch
