@@ -1,16 +1,12 @@
 
 module Notation where
 
-import Debug.Trace
-import Data.Foldable
 import Data.List (partition)
 import Data.Maybe
-import Control.Monad.State
 import Data.Foldable
 import Data.Music.Lilypond
 import Euterpea qualified as E
-import Text.Pretty (pretty)
-import Etude16
+-- import Text.Pretty (pretty)
 import Tile
 import Data.Bool
 

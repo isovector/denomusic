@@ -25,16 +25,10 @@ source-repository head
 
 library
   exposed-modules:
-      Etude11
-      Etude16
-      Etude17
-      Funky
+      Glass.Etude16
       Legacy
       Notation
-      Rhythm
-      Score
       Tile
-      Westergaard
   other-modules:
       Paths_denomusic
   autogen-modules:

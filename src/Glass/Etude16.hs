@@ -1,7 +1,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# OPTIONS_GHC -fno-warn-type-defaults #-}
 
-module Etude16 where
+module Glass.Etude16 where
 
 import Data.Semigroup
 import Data.Ratio

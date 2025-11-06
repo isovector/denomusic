@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -fno-warn-all #-}
+
 module Legacy where
 
 import Control.Applicative
