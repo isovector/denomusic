@@ -154,7 +154,11 @@ sec5Bits =
     _ -> mempty
 
 sec5 :: Tile Pitch
-sec5 = secBuilder sec5Bits
+sec5 = secBuilder $ sec5Bits <> Simul . \case
+  2 -> twiddleD
+  4 -> bassTwiddleG
+  _ -> mempty
+
 
 
 strike3 :: Tile Pitch
@@ -234,12 +238,10 @@ sec9 = mconcat
 
 score :: Tile Pitch
 score = mconcat
-  [ song
+  [ sec5
   ]
 
 main :: IO ()
 main =
-  playTile $ song >>= \case
-    (C, _) -> pure (C, 2)
-    x -> pure x
+  playTile score
 

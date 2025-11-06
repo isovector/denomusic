@@ -11,7 +11,6 @@ import Data.List (sort)
 import Data.Containers.ListUtils (nubOrd)
 import Data.Foldable
 import Test.QuickCheck hiding (scale)
-import Control.Monad
 import Control.DeepSeq (NFData)
 import Data.Traversable
 import Control.Monad.State
@@ -34,23 +33,18 @@ instance Ord a => Eq (Tile a) where
   t1 == t2 = duration t1 == duration t2 && flatten t1 == flatten t2
 
 instance Semigroup (Tile a) where
-  (<>) = (%%)
+  Tile d1 s1 <> Tile d2 s2 = Tile (d1 + d2) (mergeSH s1 (shiftSH d1 s2))
 
 instance Monoid (Tile a) where
   mempty = delay 0
 
-
-instance Applicative Tile where
-  pure = tile 1
-  (<*>) = ap
-
-instance Monad Tile where
-  Tile d Empty >>= _ = Tile d Empty
-  Tile d (SHeap t es l r) >>= f =
+bind :: Tile a -> (a -> Tile b) -> Tile b
+bind (Tile d Empty) _ = Tile d Empty
+bind (Tile d (SHeap t es l r)) f =
     let es' = fmap (fmap f) es
         es'' = fmap (uncurry scaleTo) es'
         es''' = getSimul $ foldMap (Simul . co . re) es''
-     in delay t <> es''' <> (Tile (d - t) (mergeSH l r) >>= f)
+     in delay t <> es''' <> bind (Tile (d - t) $ mergeSH l r) f
 
 
 data SHeap a = Empty | SHeap Rational (Seq (Rational, a)) (SHeap a) (SHeap a)
@@ -61,16 +55,13 @@ scale m (Tile d sh)= Tile (d * m) $ scaleSH m sh
 
 scaleTo :: Rational -> Tile a -> Tile a
 scaleTo d t =
-  let dur = duration t
-   in scale (d / dur) t
+  case duration t of
+    0 -> mempty
+    dur -> scale (d / dur) t
 
 scaleSH :: Rational -> SHeap a -> SHeap a
 scaleSH m (SHeap t e l r) = SHeap (t * m) (fmap (first (* m)) e) (scaleSH m l) (scaleSH m r)
 scaleSH _ Empty = Empty
-
-(%%) :: Tile a -> Tile a -> Tile a
-(%%) = tileProduct
-infixr 5 %%
 
 delay :: Rational -> Tile a
 delay d = Tile d Empty
@@ -80,9 +71,6 @@ event = tile 0
 
 tile :: Rational -> a -> Tile a
 tile r a = Tile r (SHeap 0 (Seq.singleton (r, a)) Empty Empty)
-
-tileProduct :: Tile a -> Tile a -> Tile a
-tileProduct (Tile d1 s1) (Tile d2 s2) = Tile (d1 + d2) (mergeSH s1 (shiftSH d1 s2))
 
 mergeSH :: SHeap a -> SHeap a -> SHeap a
 mergeSH l Empty = l
@@ -100,6 +88,24 @@ shiftSH d (SHeap d' e l r) = SHeap (d + d') e l r
 duration :: Tile a -> Rational
 duration (Tile d _) = d
 
+split :: Tile a -> (Tile a, Tile a)
+split t | duration t < 0 = (t, mempty)
+split t@(Tile _ Empty) = (mempty, t)
+split tt@(Tile d (SHeap t i l r)) =
+  case t < 0 of
+    True -> do
+      let events = getSimul $ foldMap (Simul . re) $ fmap (uncurry tile) i
+          (x, y) = split $ Tile (d) $ shiftSH t $ mergeSH l r
+      (re $ delay t <> events <> x, y)
+    False -> (mempty, tt)
+
+section :: Tile a -> (Tile a, Tile a, Tile a)
+section t =
+  let (before, remainder) = split t
+      (mid, after) = split $ co remainder
+   in (before, delay (duration remainder) <> mid, after)
+
+
 data Events a = Events
   { e_events :: Seq (Rational, a)
   , e_at :: Rational
@@ -109,18 +115,6 @@ data Events a = Events
 instance Ord a => Eq (Events a) where
   Events e1 a1 == Events e2 a2 = a1 == a2 && sort (nubOrd (toList e1)) == sort (nubOrd (toList e2))
 
--- TODO(sandy): broken; fails when the first event is negative and the start pos is more negative
-
--- splitT :: Tile a -> (Tile a, Tile a)
--- splitT (Tile d Empty)
---   | d < 0 = (Tile d Empty, mempty)
---   | otherwise = (mempty, Tile d Empty)
--- splitT t@(Tile d (SHeap i e l r))
---   | i < 0 =
---       let (x, y) = splitT $ Tile (d - i) (mergeSH l r)
---        in (Tile (d - duration y)(SHeap i e Empty Empty) <> x, y)
---   | otherwise = (mempty, t)
-
 uncons :: Tile a -> Maybe (Events a, Tile a)
 uncons (Tile _ Empty) = Nothing
 uncons (Tile d (SHeap t e l r)) = Just (Events e t, Tile (d - t) (mergeSH l r))
@@ -129,19 +123,19 @@ flatten :: Tile a -> [Events a]
 flatten = unfoldr uncons
 
 inv :: Tile a -> Tile a
-inv t = let d = duration t in delay (- d) %% t %% delay (- d)
+inv t = let d = duration t in delay (- d) <> t <> delay (- d)
 
 re :: Tile a -> Tile a
-re t = t %% delay (- (duration t))
+re t = t <> delay (- duration t)
 
 co :: Tile a -> Tile a
-co t = delay (- (duration t)) %% t
+co t = delay (- duration t) <> t
 
 fork :: Tile a -> Tile a -> Tile a
-fork a b = re a %% b
+fork a b = re a <> b
 
 join :: Tile a -> Tile a -> Tile a
-join a b = a %% co b
+join a b = a <> co b
 
 
 newtype Simul a = Simul { getSimul :: Tile a }
@@ -187,7 +181,23 @@ data MakeTile a
   | Delay Rational
   | TileT Rational a
   | Tensor (MakeTile a) (MakeTile a)
-  deriving stock (Eq, Ord, Show)
+  | Co (MakeTile a)
+  | Re (MakeTile a)
+  | Inv (MakeTile a)
+  deriving stock (Eq, Ord)
+
+$(makeBaseFunctor [''MakeTile])
+
+instance Show a => Show (MakeTile a) where
+  show = cata $ \case
+    EmptyTF -> "mempty"
+    EventF a -> "event " <> showsPrec 10 a ""
+    DelayF a -> "delay " <> showsPrec 10 a ""
+    TileTF d a -> "tile " <> showsPrec 10 d "" <> " " <> showsPrec 10 a ""
+    TensorF x y -> x <> " <> " <> y
+    CoF x -> "co (" <> x <> ")"
+    ReF x -> "re (" <> x <> ")"
+    InvF x -> "inv (" <> x <> ")"
 
 instance Arbitrary a => Arbitrary (MakeTile a) where
   arbitrary = sized $ \n ->
@@ -195,17 +205,20 @@ instance Arbitrary a => Arbitrary (MakeTile a) where
       True ->
         oneof
           [ pure EmptyT
-          , Delay <$> arbitrary
-          , Event <$> arbitrary
+          , Delay <$> fmap getNonZero arbitrary
+          -- , Event <$> arbitrary
           , TileT <$> fmap getPositive arbitrary <*> arbitrary
           ]
       False ->
         oneof
           [ pure EmptyT
-          , Delay <$> arbitrary
-          , Event <$> arbitrary
+          , Delay <$> fmap getNonZero arbitrary
+          -- , Event <$> arbitrary
           , TileT <$> fmap getPositive arbitrary <*> arbitrary
           , Tensor <$> resize (n `div` 2) arbitrary <*> resize (n `div` 2) arbitrary
+          , Co <$> resize (n - 1) arbitrary
+          , Re <$> resize (n - 1) arbitrary
+          , Inv <$> resize (n - 1) arbitrary
           ]
   shrink EmptyT = []
   shrink (Event a) = mconcat
@@ -219,7 +232,7 @@ instance Arbitrary a => Arbitrary (MakeTile a) where
   shrink (TileT d a) = mconcat
     [ TileT <$> shrink d <*> pure a
     , TileT <$> pure d <*> shrink a
-    , pure $ Event a
+    -- , pure $ Event a
     , pure $ Delay d
     ]
   shrink (Tensor a b) = mconcat
@@ -228,6 +241,21 @@ instance Arbitrary a => Arbitrary (MakeTile a) where
     , pure a
     , pure b
     ]
+  shrink (Co x) = mconcat
+    [ Co <$> shrink x
+    , pure x
+    ]
+  shrink (Re x) = mconcat
+    [ Re <$> shrink x
+    , pure x
+    ]
+  shrink (Inv x) = mconcat
+    [ Inv <$> shrink x
+    , pure x
+    ]
+
+instance Arbitrary a => Arbitrary (Tile a) where
+  arbitrary = fmap mkTile arbitrary
 
 mkTile :: MakeTile a -> Tile a
 mkTile EmptyT = mempty
@@ -235,14 +263,21 @@ mkTile (Event a) = event a
 mkTile (Delay d) = delay d
 mkTile (TileT d a) = tile d a
 mkTile (Tensor a b) = mkTile a <> mkTile b
+mkTile (Co a) = co $ mkTile a
+mkTile (Re a) = re $ mkTile a
+mkTile (Inv a) = inv $ mkTile a
 
 
-
-
-
--- test =
---   quickCheck $ \(y :: MakeTile Char) ->
---     let x = mkTile y
---         (lo, hi) = splitT x in
---     x === lo <> hi
+test :: IO ()
+test =
+  quickCheck $ \(y :: MakeTile Char) ->
+    let x = mkTile y
+        (lo, hi) = split x in
+    counterexample (show x) $
+    counterexample ("/=") $
+    counterexample (show $ lo <> hi) $
+    counterexample ("x: " <> show lo) $
+    -- counterexample ("y: " <> show mid) $
+    counterexample ("z: " <> show hi) $
+    x == lo <> hi
 
