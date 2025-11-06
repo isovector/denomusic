@@ -238,6 +238,8 @@ score = mconcat
   ]
 
 main :: IO ()
-main = playTile score
-
+main =
+  playTile $ song >>= \case
+    (C, _) -> pure (C, 2)
+    x -> pure x
 

@@ -7,6 +7,11 @@
 
 module Tile where
 
+import Data.List (sort)
+import Data.Containers.ListUtils (nubOrd)
+import Data.Foldable
+import Test.QuickCheck hiding (scale)
+import Control.Monad
 import Control.DeepSeq (NFData)
 import Data.Traversable
 import Control.Monad.State
@@ -21,14 +26,32 @@ import Data.Functor.Foldable.TH
 
 $(makeBaseFunctor [''E.Music])
 
+
 data Tile a = Tile Rational (SHeap a)
-  deriving stock (Eq, Show, Functor, Foldable, Traversable)
+  deriving stock (Show, Functor, Foldable, Traversable)
+
+instance Ord a => Eq (Tile a) where
+  t1 == t2 = duration t1 == duration t2 && flatten t1 == flatten t2
 
 instance Semigroup (Tile a) where
   (<>) = (%%)
 
 instance Monoid (Tile a) where
   mempty = delay 0
+
+
+instance Applicative Tile where
+  pure = tile 1
+  (<*>) = ap
+
+instance Monad Tile where
+  Tile d Empty >>= _ = Tile d Empty
+  Tile d (SHeap t es l r) >>= f =
+    let es' = fmap (fmap f) es
+        es'' = fmap (uncurry scaleTo) es'
+        es''' = getSimul $ foldMap (Simul . co . re) es''
+     in delay t <> es''' <> (Tile (d - t) (mergeSH l r) >>= f)
+
 
 data SHeap a = Empty | SHeap Rational (Seq (Rational, a)) (SHeap a) (SHeap a)
   deriving stock (Eq, Show, Functor, Foldable, Traversable)
@@ -66,7 +89,6 @@ mergeSH l Empty = l
 mergeSH Empty r = r
 mergeSH heap1@(SHeap d1 e1 l1 r1) heap2@(SHeap d2 e2 l2 r2) =
   case compare d1 d2 of
-    -- TODO(sandy): should this be ll and rr?
     EQ -> SHeap d1 (e1 <> e2) (mergeSH l1 r1) (mergeSH l2 r2)
     LT -> SHeap d1 e1 (mergeSH r1 (shiftSH (-d1) heap2)) l1
     GT -> SHeap d2 e2 (mergeSH r2 (shiftSH (-d2) heap1)) l2
@@ -83,6 +105,21 @@ data Events a = Events
   , e_at :: Rational
   }
   deriving stock (Show)
+
+instance Ord a => Eq (Events a) where
+  Events e1 a1 == Events e2 a2 = a1 == a2 && sort (nubOrd (toList e1)) == sort (nubOrd (toList e2))
+
+-- TODO(sandy): broken; fails when the first event is negative and the start pos is more negative
+
+-- splitT :: Tile a -> (Tile a, Tile a)
+-- splitT (Tile d Empty)
+--   | d < 0 = (Tile d Empty, mempty)
+--   | otherwise = (mempty, Tile d Empty)
+-- splitT t@(Tile d (SHeap i e l r))
+--   | i < 0 =
+--       let (x, y) = splitT $ Tile (d - i) (mergeSH l r)
+--        in (Tile (d - duration y)(SHeap i e Empty Empty) <> x, y)
+--   | otherwise = (mempty, t)
 
 uncons :: Tile a -> Maybe (Events a, Tile a)
 uncons (Tile _ Empty) = Nothing
@@ -143,4 +180,69 @@ playTile
   = E.playDev 2
   . toMusic
 
+
+data MakeTile a
+  = EmptyT
+  | Event a
+  | Delay Rational
+  | TileT Rational a
+  | Tensor (MakeTile a) (MakeTile a)
+  deriving stock (Eq, Ord, Show)
+
+instance Arbitrary a => Arbitrary (MakeTile a) where
+  arbitrary = sized $ \n ->
+    case n <= 1 of
+      True ->
+        oneof
+          [ pure EmptyT
+          , Delay <$> arbitrary
+          , Event <$> arbitrary
+          , TileT <$> fmap getPositive arbitrary <*> arbitrary
+          ]
+      False ->
+        oneof
+          [ pure EmptyT
+          , Delay <$> arbitrary
+          , Event <$> arbitrary
+          , TileT <$> fmap getPositive arbitrary <*> arbitrary
+          , Tensor <$> resize (n `div` 2) arbitrary <*> resize (n `div` 2) arbitrary
+          ]
+  shrink EmptyT = []
+  shrink (Event a) = mconcat
+    [ Event <$> shrink a
+    , pure EmptyT
+    ]
+  shrink (Delay d) = mconcat
+    [ Delay <$> shrink d
+    , pure EmptyT
+    ]
+  shrink (TileT d a) = mconcat
+    [ TileT <$> shrink d <*> pure a
+    , TileT <$> pure d <*> shrink a
+    , pure $ Event a
+    , pure $ Delay d
+    ]
+  shrink (Tensor a b) = mconcat
+    [ Tensor <$> shrink a <*> pure b
+    , Tensor <$> pure a <*> shrink b
+    , pure a
+    , pure b
+    ]
+
+mkTile :: MakeTile a -> Tile a
+mkTile EmptyT = mempty
+mkTile (Event a) = event a
+mkTile (Delay d) = delay d
+mkTile (TileT d a) = tile d a
+mkTile (Tensor a b) = mkTile a <> mkTile b
+
+
+
+
+
+-- test =
+--   quickCheck $ \(y :: MakeTile Char) ->
+--     let x = mkTile y
+--         (lo, hi) = splitT x in
+--     x === lo <> hi
 
