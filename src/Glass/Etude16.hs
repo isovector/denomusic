@@ -1,5 +1,6 @@
-{-# LANGUAGE LambdaCase #-}
-{-# OPTIONS_GHC -fno-warn-type-defaults #-}
+{-# LANGUAGE LambdaCase                           #-}
+{-# OPTIONS_GHC -fno-warn-incomplete-uni-patterns #-}
+{-# OPTIONS_GHC -fno-warn-type-defaults           #-}
 
 module Glass.Etude16 where
 
@@ -7,6 +8,7 @@ import Data.Semigroup
 import Data.Ratio
 import Euterpea (Pitch, PitchClass(..))
 import Tile
+import Theory.Chords
 
 
 bassRhythm :: Tile a -> Tile a -> Tile a
@@ -62,7 +64,9 @@ strike2 = mconcat
   ]
 
 bass1, bass1Twice :: Tile Pitch
-bass1 = bassTemplate (D, 3) (G, 3) (Bf, 3)
+bass1 =
+  let [a, b, c] = inversion 2 $ minor G 2
+   in bassTemplate a b c
 bass1Twice = stimes 2 bass1
 
 sec1 :: Tile Pitch
@@ -204,20 +208,20 @@ rh9Template a = stimes 7 $ scaleTo (1 % 7) a
 
 sec9 :: Tile Pitch
 sec9 = mconcat
-  [ bar  (chord [(G,  4), (Bf, 4), (D,  5)])
+  [ bar  (chord $ minor G 4)
          (octaveChord G 1)
-         (chord [(G,  3), (Bf, 3), (D,  4)])
+         (chord $ minor G 3)
   , bar' (chord [(F,  4), (Bf, 4), (D,  5)])
          (chord [(F,  3), (Bf, 3), (D,  4)])
   , bar' (chord [(G,  4), (Bf, 4), (Ef, 5)])
-         (chord [(Ef, 3), (G,  3), (Bf, 4)])
+         (chord $ maj Ef 3)
   , bar' (chord [(A,  4), (C,  5), (Ef, 5)])
          (chord [(Ef, 3), (A,  3), (C,  4)])
-  , bar  (chord [(F,  4), (A,  4), (C,  5)])
+  , bar  (chord $ maj F 4)
          (octaveChord F 1)
-         (chord [(C,  3), (F,  3), (A,  4)])
+         (chord $ inversion 2 $ maj F 2)
   , bar' (chord [(F,  4), (A,  4), (D,  5)])
-         (chord [(C,  3), (F,  3), (A,  4)])
+         (chord $ inversion 2 $ maj F 2)
   , bar  (chord [(Fs, 4), (A,  4), (Ds, 5)])
          (octaveChord D 1)
          (chord [(Fs, 3), (A,  3), (D,  4)])
@@ -238,7 +242,7 @@ sec9 = mconcat
 
 score :: Tile Pitch
 score = mconcat
-  [ sec5
+  [ sec9
   ]
 
 main :: IO ()

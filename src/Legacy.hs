@@ -6,58 +6,8 @@ import Control.Applicative
 import Control.Monad
 import Euterpea
 import Euterpea.IO.MIDI.Play
+import Theory.Chords hiding (invert)
 
-maj :: PitchClass -> Octave -> [Pitch]
-maj = curry $ \r ->
-  [ r
-  , trans 4 r
-  , trans 7 r
-  ]
-
-power :: PitchClass -> Octave -> [Pitch]
-power = curry $ \r ->
-  [ r
-  , trans 7 r
-  , trans 12 r
-  ]
-
-minor :: PitchClass -> Octave -> [Pitch]
-minor = curry $ \r ->
-  [ r
-  , trans 3 r
-  , trans 7 r
-  ]
-
-dim :: PitchClass -> Octave -> [Pitch]
-dim = curry $ \r ->
-  [ r
-  , trans 3 r
-  , trans 6 r
-  ]
-
-maj7 :: PitchClass -> Octave -> [Pitch]
-maj7 = curry $ \r ->
-  [ r
-  , trans 4 r
-  , trans 7 r
-  , trans 11 r
-  ]
-
-min7 :: PitchClass -> Octave -> [Pitch]
-min7 = curry $ \r ->
-  [ r
-  , trans 3 r
-  , trans 7 r
-  , trans 10 r
-  ]
-
-dom7 :: PitchClass -> Octave -> [Pitch]
-dom7 = curry $ \r ->
-  [ r
-  , trans 4 r
-  , trans 7 r
-  , trans 10 r
-  ]
 
 musicChord :: Dur -> [Pitch] -> Music Pitch
 musicChord d = chord . fmap (note d)
