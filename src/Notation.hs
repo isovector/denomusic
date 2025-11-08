@@ -1,14 +1,25 @@
+{-# LANGUAGE DerivingStrategies                   #-}
+{-# OPTIONS_GHC -fno-warn-incomplete-uni-patterns #-}
+{-# OPTIONS_GHC -fno-warn-orphans                 #-}
 
 module Notation where
 
-import Data.List (partition)
+import Text.Pretty  (pretty)
+import Data.Containers.ListUtils (nubOrd)
+import Control.Exception
+import Data.Bifunctor
+import Data.Sequence qualified as Seq
+import Data.Sequence (Seq(..))
+import Data.IntervalMap.FingerTree (IntervalMap, Interval(..))
+import Data.IntervalMap.FingerTree qualified as IM
 import Data.Maybe
 import Data.Foldable
-import Data.Music.Lilypond
+import Data.Music.Lilypond hiding (chord)
+import Theory.Chords
 import Euterpea qualified as E
 -- import Text.Pretty (pretty)
-import Tile
-import Data.Bool
+import Score hiding (im)
+import Data.Tree.DUAL
 
 
 toPitch :: E.Pitch -> Pitch
@@ -53,42 +64,112 @@ pitchClassToPitchAndAccidental E.Bf  = (B, -1)
 pitchClassToPitchAndAccidental E.Bs  = (B, 1)
 pitchClassToPitchAndAccidental E.Bss = (B, 2)
 
-forking :: [(Rational, E.Pitch)] -> Music -> Music
-forking [] m = m
-forking es m = simultaneous (forked es) m
+imToSeq :: Ord v => IntervalMap v a -> Seq (Interval v, a)
+imToSeq im =
+  case IM.bounds im of
+    Just b -> Seq.fromList $ IM.intersections b im
+    Nothing -> Seq.empty
 
-forked :: [(Rational, E.Pitch)] -> Music
-forked [] = rest
-forked es = foldr1 simultaneous $ fmap (\(d, p) -> Note (NotePitch (toPitch p) Nothing) (Just $ Duration d) []) es
+seqToIm :: Ord v => Seq (Interval v, a) -> IntervalMap v a
+seqToIm = foldMap (uncurry IM.singleton)
 
-chorded :: Rational -> [E.Pitch] -> Music
-chorded d ps = Chord (fmap ((, []) . (\p -> NotePitch p Nothing) . toPitch) ps) (Just $ Duration d) []
+overIM
+  :: Ord v
+  => (Seq (Interval v, a) -> Seq (Interval v, b))
+  -> IntervalMap v a -> IntervalMap v b
+overIM f = seqToIm . f . imToSeq
 
-toLilypond' :: [Events E.Pitch] -> Music
-toLilypond' [] = rest
-toLilypond' (Events notes _ : es) = do
-  let min_dur = minimum $ fmap fst notes
-      mnext_wait = fmap e_at $ listToMaybe es
-  case mnext_wait of
-    Nothing -> forked (toList notes)
-    Just next_wait ->
-      case min_dur <= next_wait of
-        True -> do
-          -- we can fit in at least one note before the next section
-          let (short, long) = partition ((== min_dur) . fst) $ toList notes
-          let remaining = toLilypond' es
-          forking
-            long
-            $ sequential (chorded min_dur $ fmap snd short)
-            $ (bool (sequential (Rest (Just $ Duration $ next_wait - min_dur) [])) id (min_dur == next_wait)) remaining
-        False -> do
-          let remaining = toLilypond' es
-          forking (toList notes)
-            $ sequential (Rest (Just $ Duration $ next_wait) []) remaining
+everywhere
+  :: PostEvent
+  -> Seq (Interval v, ([PostEvent], a))
+  -> Seq (Interval v, ([PostEvent], a))
+everywhere pe = fmap $ fmap $ first (pe :)
+
+around
+  :: PostEvent
+  -> PostEvent
+  -> Seq (Interval v, ([PostEvent], a))
+  -> Seq (Interval v, ([PostEvent], a))
+around _ _ Empty = Empty
+around s e ((i, (pes, a)) :<| Empty) = (i, (s : e : pes, a)) :<| Empty
+around s e ((i1, (pes1, a1)) :<| (xs :|> (i2, (pes2, a2)))) =
+  (i1, (s : pes1, a1)) :<| (xs :|> (i2, (e : pes2, a2)))
+
+scoreToIM :: Score a -> IntervalMap Rational ([PostEvent], a)
+scoreToIM = fromMaybe mempty .
+  foldDUAL
+    (\(Envelope s o) a ->
+      let lo = min o (o + s)
+          hi = min o (o + s)
+       in IM.singleton (Interval lo hi) (mempty, a))
+    mempty
+    fold
+    (const id)
+    (\ann ->
+      case ann of
+        Phrase -> overIM $ around BeginPhraseSlur EndPhraseSlur
+    )
+    . unScore
+
+deriving stock instance Ord Markup
+deriving stock instance Ord Articulation
+deriving stock instance Ord PostEvent
+
+imToLilypond :: IntervalMap Rational ([PostEvent], E.Pitch) -> Music
+imToLilypond im =
+  case IM.leastView im of
+    Nothing -> rest
+    Just ((i, xs), im') -> do
+      let start = IM.low i
+          concurrent = IM.search start im'
+          notes = xs : fmap snd concurrent
+      assert (all ((== IM.high i) . IM.high . fst) concurrent) $
+        sequential (Rest (Just $ Duration start) []) $
+          Chord
+            (fmap ((, []) . (\p -> NotePitch p Nothing) . toPitch . snd) notes)
+            (Just $ Duration $ IM.high i - IM.low i)
+            $ nubOrd $ foldMap fst notes
 
 
-toLilypond :: Tile E.Pitch -> Music
-toLilypond = toLilypond' . flatten
+toLilypond :: Score E.Pitch -> String
+toLilypond = show . pretty . imToLilypond . scoreToIM
+
+-- forking :: [(Rational, E.Pitch)] -> Music -> Music
+-- forking [] m = m
+-- forking es m = simultaneous (forked es) m
+
+-- forked :: [(Rational, E.Pitch)] -> Music
+-- forked [] = rest
+-- forked es = foldr1 simultaneous $ fmap (\(d, p) -> Note (NotePitch (toPitch p) Nothing) (Just $ Duration d) []) es
+
+-- chorded :: Rational -> [E.Pitch] -> Music
+-- chorded d ps = Chord (fmap ((, []) . (\p -> NotePitch p Nothing) . toPitch) ps) (Just $ Duration d) []
+
+-- toLilypond' :: [Events E.Pitch] -> Music
+-- toLilypond' [] = rest
+-- toLilypond' (Events notes _ : es) = do
+--   let min_dur = minimum $ fmap fst notes
+--       mnext_wait = fmap e_at $ listToMaybe es
+--   case mnext_wait of
+--     Nothing -> forked (toList notes)
+--     Just next_wait ->
+--       case min_dur <= next_wait of
+--         True -> do
+--           -- we can fit in at least one note before the next section
+--           let (short, long) = partition ((== min_dur) . fst) $ toList notes
+--           let remaining = toLilypond' es
+--           forking
+--             long
+--             $ sequential (chorded min_dur $ fmap snd short)
+--             $ (bool (sequential (Rest (Just $ Duration $ next_wait - min_dur) [])) id (min_dur == next_wait)) remaining
+--         False -> do
+--           let remaining = toLilypond' es
+--           forking (toList notes)
+--             $ sequential (Rest (Just $ Duration $ next_wait) []) remaining
+
+
+-- toLilypond :: Tile E.Pitch -> Music
+-- toLilypond = toLilypond' . flatten
 
 
 

@@ -7,8 +7,11 @@ module Glass.Etude16 where
 import Data.Semigroup
 import Data.Ratio
 import Euterpea (Pitch, PitchClass(..))
-import Tile
+import Score
 import Theory.Chords
+
+type Tile = Score
+playTile = playScore
 
 
 bassRhythm :: Tile a -> Tile a -> Tile a
@@ -242,7 +245,7 @@ sec9 = mconcat
 
 score :: Tile Pitch
 score = mconcat
-  [ sec9
+  [ song
   ]
 
 main :: IO ()
