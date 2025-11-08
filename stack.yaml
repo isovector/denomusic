@@ -24,3 +24,5 @@ nix:
   packages:
     - pkg-config
     - alsa-lib
+    - lilypond
+    - evince

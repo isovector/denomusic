@@ -28,6 +28,9 @@ library
       Glass.Etude16
       Legacy
       Notation
+      Pieces.Test
+      Score
+      Theory.Chords
       Tile
   other-modules:
       Paths_denomusic
@@ -38,6 +41,7 @@ library
   ghc-options: -Wall -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints
   build-depends:
       Euterpea
+    , MemoTrie
     , QuickCheck
     , base >=4.7 && <5
     , checkers
@@ -52,6 +56,7 @@ library
     , monoid-extras
     , mtl
     , prettify
+    , process
     , random
     , recursion-schemes
     , split

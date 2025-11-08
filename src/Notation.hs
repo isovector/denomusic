@@ -1,9 +1,29 @@
+{-# LANGUAGE DeriveAnyClass                       #-}
 {-# LANGUAGE DerivingStrategies                   #-}
+{-# LANGUAGE LambdaCase                           #-}
+{-# LANGUAGE TypeFamilies                         #-}
+{-# OPTIONS_GHC -fno-warn-deprecations            #-}
 {-# OPTIONS_GHC -fno-warn-incomplete-uni-patterns #-}
 {-# OPTIONS_GHC -fno-warn-orphans                 #-}
 
 module Notation where
 
+import Data.Bool
+import Data.Ratio
+import Control.Lens ((&), (.~), (%~), (+~), (<>~), _2)
+import Control.Lens qualified as L
+import GHC.Generics
+import Data.Ord
+import Data.MemoTrie
+import Data.List (sortOn)
+import Data.List.NonEmpty (NonEmpty(..))
+import Theory.Chords
+import qualified Data.Map as M
+import qualified Data.Set as S
+import qualified Data.Set.Internal (Set(..))
+import Data.Set (Set)
+import Debug.Trace
+import System.Cmd (rawSystem)
 import Text.Pretty  (pretty)
 import Data.Containers.ListUtils (nubOrd)
 import Control.Exception
@@ -15,17 +35,17 @@ import Data.IntervalMap.FingerTree qualified as IM
 import Data.Maybe
 import Data.Foldable
 import Data.Music.Lilypond hiding (chord)
-import Theory.Chords
 import Euterpea qualified as E
 -- import Text.Pretty (pretty)
 import Score hiding (im)
 import Data.Tree.DUAL
+import GHC.Real
 
 
 toPitch :: E.Pitch -> Pitch
 toPitch (pc, o) =
   let (pn, a) = pitchClassToPitchAndAccidental pc
-   in  Pitch (pn, a, o)
+   in  Pitch (pn, a, o + 1)
 
 pitchClassToPitchAndAccidental :: E.PitchClass -> (PitchName, Int)
 pitchClassToPitchAndAccidental E.C   = (C, 0)
@@ -100,7 +120,7 @@ scoreToIM = fromMaybe mempty .
   foldDUAL
     (\(Envelope s o) a ->
       let lo = min o (o + s)
-          hi = min o (o + s)
+          hi = max o (o + s)
        in IM.singleton (Interval lo hi) (mempty, a))
     mempty
     fold
@@ -115,6 +135,9 @@ deriving stock instance Ord Markup
 deriving stock instance Ord Articulation
 deriving stock instance Ord PostEvent
 
+imsToLilypond :: [IntervalMap Rational ([PostEvent], E.Pitch)] -> Music
+imsToLilypond = foldr1 simultaneous .  fmap imToLilypond
+
 imToLilypond :: IntervalMap Rational ([PostEvent], E.Pitch) -> Music
 imToLilypond im =
   case IM.leastView im of
@@ -123,53 +146,138 @@ imToLilypond im =
       let start = IM.low i
           concurrent = IM.search start im'
           notes = xs : fmap snd concurrent
-      assert (all ((== IM.high i) . IM.high . fst) concurrent) $
-        sequential (Rest (Just $ Duration start) []) $
-          Chord
+      let remaining = imToLilypond im'
+      sequential
+          -- (sequential (Rest (Just $ Duration start) []) $
+          (Chord
             (fmap ((, []) . (\p -> NotePitch p Nothing) . toPitch . snd) notes)
             (Just $ Duration $ IM.high i - IM.low i)
-            $ nubOrd $ foldMap fst notes
+            $ nubOrd $ foldMap fst notes) remaining
 
 
 toLilypond :: Score E.Pitch -> String
-toLilypond = show . pretty . imToLilypond . scoreToIM
+toLilypond = show . pretty . imsToLilypond . dp (E.absPitch . snd) . traversalOrder . scoreToIM
 
--- forking :: [(Rational, E.Pitch)] -> Music -> Music
--- forking [] m = m
--- forking es m = simultaneous (forked es) m
+main :: IO ()
+main = do
+  let lp = read @String $ show $ pretty $ toLilypond $ chord [(E.C, 3), (E.C, 5)] <> tile 1 (E.D, 5)
+  writeFile "/tmp/out.lily" $ "\\absolute\n" <> lp
+  _ <- rawSystem "lilypond" ["-o", "/tmp/song", "/tmp/out.lily"]
+  -- rawSystem "evince" ["/tmp/song.pdf"]
+  pure ()
 
--- forked :: [(Rational, E.Pitch)] -> Music
--- forked [] = rest
--- forked es = foldr1 simultaneous $ fmap (\(d, p) -> Note (NotePitch (toPitch p) Nothing) (Just $ Duration d) []) es
+data Terminal a = Start a | Stop a
+  deriving stock (Eq, Ord, Show, Functor, Foldable, Traversable)
 
--- chorded :: Rational -> [E.Pitch] -> Music
--- chorded d ps = Chord (fmap ((, []) . (\p -> NotePitch p Nothing) . toPitch) ps) (Just $ Duration d) []
+traversalOrder :: Ord v => IntervalMap v a -> [(Interval v, a)]
+traversalOrder = sortOn (\((Interval lo hi), _) -> (lo, hi)) . toList . imToSeq
 
--- toLilypond' :: [Events E.Pitch] -> Music
--- toLilypond' [] = rest
--- toLilypond' (Events notes _ : es) = do
---   let min_dur = minimum $ fmap fst notes
---       mnext_wait = fmap e_at $ listToMaybe es
---   case mnext_wait of
---     Nothing -> forked (toList notes)
---     Just next_wait ->
---       case min_dur <= next_wait of
---         True -> do
---           -- we can fit in at least one note before the next section
---           let (short, long) = partition ((== min_dur) . fst) $ toList notes
---           let remaining = toLilypond' es
---           forking
---             long
---             $ sequential (chorded min_dur $ fmap snd short)
---             $ (bool (sequential (Rest (Just $ Duration $ next_wait - min_dur) [])) id (min_dur == next_wait)) remaining
---         False -> do
---           let remaining = toLilypond' es
---           forking (toList notes)
---             $ sequential (Rest (Just $ Duration $ next_wait) []) remaining
+data Timed a
+  = Timed a :+: Timed a
+  | Rest Rational
+  | Notes (NonEmpty a) Rational
+  | End
+  deriving stock Generic
+
+deriving stock instance Generic (Ratio a)
+
+instance HasTrie a => HasTrie (Ratio a) where
+  newtype Ratio a :->: x = RatioTrie { unRatioTrie :: Reg (Ratio a) :->: x }
+  trie = trieGeneric RatioTrie
+  untrie = untrieGeneric unRatioTrie
+  enumerate = enumerateGeneric unRatioTrie
+
+instance HasTrie a => HasTrie (Interval a) where
+  newtype Interval a :->: x = IntervalTrie { unIntervalTrie :: Reg (Interval a) :->: x }
+  trie = trieGeneric IntervalTrie
+  untrie = untrieGeneric unIntervalTrie
+  enumerate = enumerateGeneric unIntervalTrie
+
+deriving stock instance Generic (Set a)
+
+instance HasTrie a => HasTrie (Set a) where
+  newtype Set a :->: x = SetTrie { unSetTrie :: Reg (Set a) :->: x }
+  trie = trieGeneric SetTrie
+  untrie = untrieGeneric unSetTrie
+  enumerate = enumerateGeneric unSetTrie
+
+type Cost = Int
+
+data Valid = Valid | Invalid
+  deriving (Eq, Ord, Show)
 
 
--- toLilypond :: Tile E.Pitch -> Music
--- toLilypond = toLilypond' . flatten
+
+-- | Let's do some dynamic programming to figure out how the hell to break an
+-- interval map into musical voices.
+dp :: forall a. (a -> E.AbsPitch) -> [(Interval Rational, a)] -> [IntervalMap Rational a]
+dp f intervals = fst $ go 0 [] []
+  where
+    im = M.fromList $ zip [0..] intervals
+
+    go
+      :: Int
+      -- \^ The index into @im@ we're currently looking at
+      -> [Interval Rational]
+      -- \^ The last interval inserted into the given voice. Used to make sure
+      -- we don't overlap, and that we can merge into chords if the durations
+      -- are identical.
+      -> [Set E.AbsPitch]
+      -- \^ The last pitch(es) we inserted into the given voice. Used to
+      -- compute ongoing costs.
+      -> ([IntervalMap Rational a], Cost)
+    go = memo3 $
+      \ix lastintervals lastchords ->
+        case (M.lookup ix im) of
+          Nothing ->
+            -- In the base case, just make sure we have sufficient empty voices.
+            (replicate (length lastintervals) mempty, 0)
+          Just (i, a) -> do
+            let a_set = S.singleton $ f a
+
+            -- Otherwise compute the minimum of:
+            minimumBy (comparing snd) $ mconcat
+              [ -- We can always add a new voice if the problem is otherwise
+                -- intractable.
+                pure $
+                  let (res, cost) =
+                        go (ix + 1)
+                           (lastintervals ++ [i])
+                           (lastchords ++ [a_set])
+                  in ( res & L.ix (length lastintervals) %~ IM.insert i a
+                      , cost + 100
+                      )
+              , do
+                  -- Or, for each existing voice...
+                  (vix, vint) <- zip [0..] lastintervals
+                  case (vint == i, IM.high vint <= IM.low i) of
+                    -- Check if this interval is the same as the last one we
+                    -- inserted. If so, we can add this note as part of
+                    -- a chord.
+                    (True, _) -> pure $
+                      let (res, cost) =
+                            go (ix + 1)
+                               lastintervals
+                               (lastchords & L.ix vix <>~ a_set)
+                          chordCost = bool 0 10000 $ any ((> 12) . abs . subtract (f a)) $ lastchords !! vix
+                      in ( res & L.ix vix %~ IM.insert i a
+                          , cost + chordCost
+                          )
+                    -- Otherwise, ensure that this interval occurs AFTER the
+                    -- last one. Otherwise it overlaps and we can't use this
+                    -- voice.
+                    (_, True) -> pure $
+                      let noteCost = minimum $ fmap (abs . subtract (f a)) $ S.toList $ lastchords !! vix
+                          (res, cost) =
+                            go (ix + 1)
+                               (lastintervals & L.ix vix .~ i)
+                               (lastchords & L.ix vix .~ S.singleton (f a))
+                      in ( res & L.ix vix %~ IM.insert i a
+                          , cost + noteCost
+                          )
+                    _ -> mempty
+              ]
+
 
 
 

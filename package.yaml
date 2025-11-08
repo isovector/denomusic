@@ -41,6 +41,8 @@ dependencies:
 - deepseq
 - lilypond
 - prettify
+- process
+- MemoTrie
 
 default-extensions: []
 

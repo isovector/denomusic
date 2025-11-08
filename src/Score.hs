@@ -4,12 +4,10 @@
 module Score where
 
 import Control.DeepSeq (NFData)
-import Control.Monad.State
 import Data.List (sortOn)
 import Data.Maybe
 import Data.Monoid.Action
 import Data.Semigroup
-import Data.Traversable
 import Data.Tree.DUAL hiding (flatten)
 import Data.Tree.DUAL qualified as D
 import Euterpea (Music (..), rest)
@@ -86,6 +84,9 @@ fork a b = re a <> b
 join :: Score a -> Score a -> Score a
 join a b = a <> co b
 
+phrase :: Score a -> Score a
+phrase = Score . annot Phrase . unScore
+
 
 newtype Simul a = Simul { getSimul :: Score a }
 
@@ -105,13 +106,9 @@ flatten = sortOn (e_offset . snd) . D.flatten . unScore
 
 
 toMusic :: Score a -> Music a
-toMusic s = flip evalState 0 $ do
-  es <- for (flatten s) $ \(e, Envelope d t) -> do
-    time <- get
-    let now = time + t
-    put now
-    pure $ rest t :+: E.note d e
-  pure $ foldr (:=:) (rest 0) es
+toMusic s = do
+  let es = flip fmap (flatten s) $ \(e, Envelope d t) -> rest t :+: E.note d e
+  foldr (:=:) (rest 0) es
 
 
 chord :: [a] -> Score a
@@ -125,7 +122,4 @@ playScore :: (E.ToMusic1 a, NFData a) => Score a -> IO ()
 playScore
   = E.playDev 2
   . toMusic
-
--- main :: IO ()
--- main = playScore @(PitchClass, Int) $ stimes 4 $ tile (1 / 4) (C, 4)
 
