@@ -15,8 +15,8 @@ import Data.Semigroup
 
 sec1 :: Score Pitch
 sec1 = scale (1/8) $ mconcat
-  [ stimes 2 $ foldMap (tile 1) $ minor B 4
-  , foldMap (tile 1) $ reverse $ take 2 $ minor B 1
+  [ stimes 2 $ foldMap (tile 1) (minor B 3)
+  , foldMap (tile 1) (take 2 $ minor B 3)
   ]
 
 sec2 :: Score Pitch
@@ -34,7 +34,6 @@ score :: Seq (Score Pitch)
 score = Seq.fromList
   [ sec1
   , sec1
-  , sec2
   , sec2
   -- , re (tile 1 (B, 2)) <> sec1
   -- , re (tile 1 (B, 1)) <> sec1
