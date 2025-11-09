@@ -31,7 +31,6 @@ library
       Pieces.Test
       Score
       Theory.Chords
-      Tile
   other-modules:
       Paths_denomusic
   autogen-modules:
