@@ -33,7 +33,7 @@ instance Num a => Monoid (Envelope a) where
 newtype Score a = Score
   { unScore :: DUALTree (Envelope Rational) (Sum Rational) Ann a
   }
-  deriving newtype (Show)
+  deriving newtype (Show, Functor)
 
 instance Semigroup (Score a) where
   sa@(Score a) <> Score b =

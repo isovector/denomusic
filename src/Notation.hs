@@ -20,7 +20,7 @@ import Data.Foldable
 import Data.Function
 import Data.IntervalMap.FingerTree (IntervalMap, Interval(..))
 import Data.IntervalMap.FingerTree qualified as IM
-import Data.List (sortOn, groupBy)
+import Data.List (sortOn, groupBy, partition)
 import Data.Maybe
 import Data.MemoTrie
 import Data.Music.Lilypond hiding (chord)
@@ -138,7 +138,7 @@ grouping :: Eq a => [(a, b)] -> [(a, [b])]
 grouping = fmap (fst . head &&& fmap snd) . groupBy (on (==) fst)
 
 imsToLilypond :: [IntervalMap Rational ([PostEvent], E.Pitch)] -> Music
-imsToLilypond = foldr1 simultaneous .  fmap (flip evalState 0 . imToLilypond . grouping. traversalOrder)
+imsToLilypond = Simultaneous True .  fmap (flip evalState 0 . imToLilypond . grouping. traversalOrder)
 
 iDur :: Interval Rational -> Rational
 iDur (Interval lo hi) = hi - lo
@@ -168,10 +168,35 @@ delayed :: Rational -> Music -> Music
 delayed 0 m = m
 delayed d m = sequential (Rest (Just $ Duration d) []) m
 
+average :: [Int] -> Float
+average i = fromIntegral (sum i) / fromIntegral (length i)
+
+averagePitch :: (a -> E.AbsPitch) -> IntervalMap Rational a -> E.AbsPitch
+averagePitch f = round . average . fmap f . toList
+
+sortVoices :: (a -> E.AbsPitch) -> [IntervalMap Rational a] -> [IntervalMap Rational a]
+sortVoices f = sortOn $ averagePitch f
+
+toVoices :: Score E.Pitch -> [IntervalMap Rational ([PostEvent], E.Pitch)]
+toVoices = sortVoices (E.absPitch . snd) . dp (E.absPitch . snd) . traversalOrder . scoreToIM
+
+inject :: (Music, Music) -> Music
+inject (treble, bass) =
+  New "GrandStaff" Nothing $ Simultaneous False
+    [ New "Staff" Nothing $ sequential (Clef Treble) treble
+    , New "Staff" Nothing $ sequential (Clef Bass) bass
+    ]
+
 
 
 toLilypond :: Score E.Pitch -> String
-toLilypond = show . pretty . imsToLilypond . dp (E.absPitch . snd) . traversalOrder . scoreToIM
+toLilypond
+  = show
+  . pretty
+  . inject
+  . (bimap imsToLilypond imsToLilypond)
+  . partition ((>= E.absPitch (E.C, 4))
+  . averagePitch (E.absPitch . snd)) . toVoices;
 
 header :: String
 header = unlines
@@ -179,9 +204,10 @@ header = unlines
   , "\\absolute"
   ]
 
-main :: IO ()
-main = do
-  let lp = read @String $ show $ pretty $ toLilypond $ re (tile 1 (E.C, 3)) <> phrase (tile (1/2) (E.C, 5) <> tile (1/2) (E.D, 5)) <> tile 1 (E.C, 5)
+
+toPdf :: Score E.Pitch -> IO ()
+toPdf m = do
+  let lp = read @String $ show $ pretty $ toLilypond m
   writeFile "/tmp/out.lily" $ header <> lp
   _ <- rawSystem "lilypond" ["-o", "/tmp/song", "/tmp/out.lily"]
   pure ()
@@ -220,6 +246,11 @@ data Valid = Valid | Invalid
   deriving (Eq, Ord, Show)
 
 
+whenEmpty :: Int -> a -> [a] -> [a]
+whenEmpty _ a [] = [a]
+whenEmpty i a as
+  | i < 2 = a : as
+  | otherwise = as
 
 -- | Let's do some dynamic programming to figure out how the hell to break an
 -- interval map into musical voices.
@@ -240,7 +271,7 @@ dp f intervals = fst $ go 0 [] []
       -- compute ongoing costs.
       -> ([IntervalMap Rational a], Cost)
     go = memo3 $ \ix lastintervals lastchords ->
-      case (M.lookup ix im) of
+      case M.lookup ix im of
         Nothing ->
           -- In the base case, just make sure we have sufficient empty voices.
           (replicate (length lastintervals) mempty, 0)
@@ -248,18 +279,17 @@ dp f intervals = fst $ go 0 [] []
           let a_set = S.singleton $ f a
 
           -- Otherwise compute the minimum of:
-          minimumBy (comparing snd) $ mconcat
-            [ -- We can always add a new voice if the problem is otherwise
+          minimumBy (comparing snd) $ whenEmpty (length lastintervals)
+            ( -- We can always add a new voice if the problem is otherwise
               -- intractable.
-              pure $
                 let (res, cost) =
                       go (ix + 1)
                           (lastintervals ++ [i])
                           (lastchords ++ [a_set])
                 in ( res & L.ix (length lastintervals) %~ IM.insert i a
-                    , cost + 100
-                    )
-            , do
+                    , cost + 20
+                    ))
+            $ do
                 -- Or, for each existing voice...
                 (vix, vint) <- zip [0..] lastintervals
                 case (vint == i, IM.high vint <= IM.low i) of
@@ -271,21 +301,29 @@ dp f intervals = fst $ go 0 [] []
                           go (ix + 1)
                               lastintervals
                               (lastchords & L.ix vix <>~ a_set)
-                        chordCost = bool 0 10000 $ any ((> 12) . abs . subtract (f a)) $ lastchords !! vix
+                        chordCost = bool 0 100000 $ any ((> 12) . abs . subtract (f a)) $ lastchords !! vix
                     in ( res & L.ix vix %~ IM.insert i a
                         , cost + chordCost
                         )
                   -- Otherwise, ensure that this interval occurs AFTER the
                   -- last one. Otherwise it overlaps and we can't use this
                   -- voice.
+                  --
+                  -- Also, there is a cost to breaking up a chord! This helps
+                  -- ensure that voices that are used for chords don't get
+                  -- broken and steal notes from other "melodic" voices.
                   (_, True) -> pure $
-                    let noteCost = minimum $ fmap (abs . subtract (f a)) $ S.toList $ lastchords !! vix
+                    let min_jump = minimum $ fmap (abs . subtract (f a)) $ S.toList $ lastchords !! vix
+                        noteCost =
+                          case min_jump > 12 of
+                            True -> 1000
+                            False -> min_jump
+                        breakChordCost = bool 0 100 $ (> 1) $ S.size $ lastchords !! vix
                         (res, cost) =
                           go (ix + 1)
                               (lastintervals & L.ix vix .~ i)
                               (lastchords & L.ix vix .~ S.singleton (f a))
                     in ( res & L.ix vix %~ IM.insert i a
-                        , cost + noteCost
+                        , cost + noteCost + breakChordCost
                         )
                   _ -> mempty
-            ]

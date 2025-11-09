@@ -43,6 +43,7 @@ dependencies:
 - prettify
 - process
 - MemoTrie
+- async
 
 default-extensions: []
 
