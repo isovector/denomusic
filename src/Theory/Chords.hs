@@ -11,6 +11,11 @@ module Theory.Chords
   , maj7
   , min7
   , dom7
+
+  , nthMode
+  , ionianSemitones
+  , addSemitonesToPitchClass
+  , addAscendingOctave
   ) where
 
 import Data.Bool (bool)
@@ -46,21 +51,23 @@ dropEverySecond (a1 : _ : as) = a1 : dropEverySecond as
 -- in the first 'PitchClass' in order to get a generator for their key.
 chordic
   :: PitchClass  -- ^ tonic key
+  -> Int  -- ^ mode
   -> Int  -- ^ chord degree
   -> Int  -- ^ chord type (eg 7th)
   -> Octave -- ^) register
   -> [Pitch]
-chordic pc deg ty o
+chordic pc mode deg ty o
   = take ((ty + 1) `div` 2)
   $ dropEverySecond
   $ addAscendingOctave o
   $ fmap (addSemitonesToPitchClass pc)
   $ nthMode deg
+  $ nthMode mode
   $ ionianSemitones
 
 
 maj :: PitchClass -> Int -> [Pitch]
-maj pc o = chordic pc 1 5 o
+maj pc o = chordic pc 1 1 5 o
 
 power :: PitchClass -> Int -> [Pitch]
 power = curry $ \r ->
@@ -70,19 +77,19 @@ power = curry $ \r ->
   ]
 
 minor :: PitchClass -> Int -> [Pitch]
-minor pc o = chordic (addSemitonesToPitchClass pc 3) 6 5 o
+minor pc o = chordic (addSemitonesToPitchClass pc 3) 1 6 5 o
 
 dim :: PitchClass -> Int -> [Pitch]
-dim pc o = chordic (addSemitonesToPitchClass pc 1) 7 5 o
+dim pc o = chordic (addSemitonesToPitchClass pc 1) 1 7 5 o
 
 maj7 :: PitchClass -> Int -> [Pitch]
-maj7 pc o = chordic pc 1 7 o
+maj7 pc o = chordic pc 1 1 7 o
 
 min7 :: PitchClass -> Int -> [Pitch]
-min7 pc o = chordic (addSemitonesToPitchClass pc 3) 6 7 o
+min7 pc o = chordic (addSemitonesToPitchClass pc 3) 1 6 7 o
 
 dom7 :: PitchClass -> Int -> [Pitch]
-dom7 pc o = chordic (addSemitonesToPitchClass pc 5) 5 7 o
+dom7 pc o = chordic (addSemitonesToPitchClass pc 5) 1 5 7 o
 
 
 invert :: [Pitch] -> [Pitch]
