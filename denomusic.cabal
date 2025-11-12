@@ -27,7 +27,9 @@ library
   exposed-modules:
       Glass.Etude16
       Legacy
+      Lilypond
       Notation
+      Notation2
       Pieces.Test
       Score
       Theory.Chords
@@ -55,7 +57,7 @@ library
     , linear
     , monoid-extras
     , mtl
-    , prettify
+    , pretty
     , process
     , random
     , recursion-schemes

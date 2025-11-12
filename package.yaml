@@ -40,7 +40,7 @@ dependencies:
 - recursion-schemes
 - deepseq
 - lilypond
-- prettify
+- pretty
 - process
 - MemoTrie
 - async

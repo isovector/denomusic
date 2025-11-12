@@ -23,7 +23,8 @@ import Data.IntervalMap.FingerTree qualified as IM
 import Data.List (sortOn, groupBy, partition)
 import Data.Maybe
 import Data.MemoTrie
-import Data.Music.Lilypond hiding (chord)
+import Lilypond hiding (chord)
+import Data.Music.Lilypond.Pitch
 import Data.Ord
 import Data.Ratio
 import Data.Sequence (Seq(..))
@@ -35,10 +36,10 @@ import GHC.Generics
 import GHC.Real
 import Score hiding (im)
 import System.Cmd (rawSystem)
-import Text.Pretty  (pretty)
 import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Data.Set.Internal (Set(..))
+import Text.PrettyPrint.HughesPJClass (pPrint)
 
 
 toPitch :: E.Pitch -> Pitch
@@ -145,10 +146,10 @@ iDur (Interval lo hi) = hi - lo
 
 mkNotes :: Interval Rational -> [([PostEvent], E.Pitch)] -> Music
 mkNotes i [] = Rest (Just $ Duration $ iDur i) []
-mkNotes i [(ps, e)] = Note (NotePitch (toPitch e) Nothing) (Just $ Duration $ iDur i) ps
+mkNotes i [(ps, e)] = Note (NotePitch $ toPitch e) (Just $ Duration $ iDur i) ps
 mkNotes i notes =
   Chord
-    (fmap ((, []) . (\p -> NotePitch p Nothing) . toPitch . snd) notes)
+    (fmap ((, []) . NotePitch . toPitch . snd) notes)
     (Just $ Duration $ IM.high i - IM.low i)
     $ nubOrd $ foldMap fst notes
 
@@ -192,7 +193,7 @@ inject (treble, bass) =
 toLilypond :: Score E.Pitch -> String
 toLilypond
   = show
-  . pretty
+  . pPrint
   . inject
   . (bimap imsToLilypond imsToLilypond)
   . partition ((>= E.absPitch (E.C, 4))
@@ -207,7 +208,7 @@ header = unlines
 
 toPdf :: Score E.Pitch -> IO ()
 toPdf m = do
-  let lp = read @String $ show $ pretty $ toLilypond m
+  let lp = read @String $ show $ pPrint $ toLilypond m
   writeFile "/tmp/out.lily" $ header <> lp
   _ <- rawSystem "lilypond" ["-o", "/tmp/song", "/tmp/out.lily"]
   pure ()
