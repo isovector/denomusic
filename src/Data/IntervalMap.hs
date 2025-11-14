@@ -23,38 +23,34 @@ import Unsafe.Coerce
 
 
 data Node v a = Node (Interval v) a
-    deriving (Eq, Ord, Show, Read
-        , Generic
-        , NFData
-        )
+  deriving (Eq, Ord, Show, Read, Generic, NFData)
 
 instance Functor (Node v) where
-    fmap f (Node i x) = Node i (f x)
+  fmap f (Node i x) = Node i (f x)
 
 instance Foldable (Node v) where
-    foldMap f (Node _ x) = f x
+  foldMap f (Node _ x) = f x
 
 instance Traversable (Node v) where
-    traverse f (Node i x) = Node i <$> f x
+  traverse f (Node i x) = Node i <$> f x
 
 -- rightmost interval (including largest lower bound) and largest upper bound.
 data IntInterval v = NoInterval | IntInterval (Interval v) v
-    deriving (Generic, NFData)
+  deriving (Generic, NFData)
 
 instance Ord v => Semigroup (IntInterval v) where
-    (<>) = intervalUnion
+  (<>) = intervalUnion
 
 instance Ord v => Monoid (IntInterval v) where
-    mempty = NoInterval
+  mempty = NoInterval
 
 intervalUnion :: Ord v => IntInterval v -> IntInterval v -> IntInterval v
-NoInterval `intervalUnion` i  = i
-i `intervalUnion` NoInterval  = i
-IntInterval _ hi1 `intervalUnion` IntInterval int2 hi2 =
-    IntInterval int2 (max hi1 hi2)
+intervalUnion NoInterval i  = i
+intervalUnion i NoInterval  = i
+intervalUnion (IntInterval _ hi1) (IntInterval int2 hi2) = IntInterval int2 (max hi1 hi2)
 
 instance (Ord v) => Measured (IntInterval v) (Node v a) where
-    measure (Node i _) = IntInterval i (high i)
+  measure (Node i _) = IntInterval i (high i)
 
 newtype MyIntervalMap v a = MyIntervalMap (FingerTree (IntInterval v) (Node v a))
 
@@ -70,11 +66,10 @@ pattern IntervalMap ft <- (unsafeCoerce -> MyIntervalMap ft)
 -- @x@ is the associated value, and @m'@ is the rest of the map.
 --
 -- @since 0.1.3.0
-greatestView :: Ord v =>
-    IntervalMap v a -> Maybe ((Interval v, a), IntervalMap v a)
+greatestView :: Ord v => IntervalMap v a -> Maybe ((Interval v, a), IntervalMap v a)
 greatestView (IntervalMap t) = case FT.viewr t of
-    EmptyR -> Nothing
-    t' FT.:> Node i a -> Just ((i, a), IntervalMap t')
+  EmptyR -> Nothing
+  t' FT.:> Node i a -> Just ((i, a), IntervalMap t')
 
 
 toList :: Ord v => IntervalMap v a -> [(Interval v, a)]
@@ -87,11 +82,10 @@ toList (IntervalMap im0) = go im0
 
 
 data Query v a = Query
-  { q_before :: IntervalMap v a
-  , q_between :: IntervalMap v a
-  , q_after :: IntervalMap v a
+  { q_no :: IntervalMap v a
+  , q_yes :: IntervalMap v a
   }
-  deriving stock Functor
+  deriving stock (Eq, Ord, Show, Functor)
 
 -- | /O(k log (n/\//k))/.  All intervals that intersect with the given
 -- interval, in lexicographical order.
@@ -113,9 +107,9 @@ searchQuery p = inRangeQuery p p
 -- interval, in lexicographical order.
 inRangeQuery :: forall v a. (Ord v) => v -> v -> IntervalMap v a -> Query v a
 inRangeQuery lo hi (IntervalMap t) =
-  let (before, rest) = FT.split (greater hi) t
-      (after, results) = partition (atleast lo) rest
-   in Query (IntervalMap before) (IntervalMap results) (IntervalMap after)
+  let (rest, after) = FT.split (greater hi) t
+      (before, results) = partition (atleast lo) rest
+   in Query (IntervalMap $ before <> after) (IntervalMap results)
 
 partition :: Measured v a => (v -> Bool) -> FingerTree v a -> (FingerTree v a, FingerTree v a)
 partition f ft = do
