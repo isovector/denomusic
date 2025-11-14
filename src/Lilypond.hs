@@ -22,17 +22,18 @@
 -------------------------------------------------------------------------------------
 module Lilypond where
 
+import Control.Lens (Traversal', (%~), unsafePartsOf)
 import Data.Maybe
 import Control.Arrow ((<<<), (***), first)
 import Data.Char
-import Data.Functor.Foldable (cata, embed)
+import Data.Functor.Foldable (cata, embed, project)
 import Data.Functor.Foldable.TH
 import Data.Music.Lilypond.Dynamics (Dynamics)
 import Data.Music.Lilypond.Pitch
 import Data.Ratio
 import Data.String
 import Text.PrettyPrint.HughesPJClass hiding (Mode, (<>), first)
-import Data.List (minimumBy)
+import Data.List (minimumBy, unsnoc)
 import Data.Ord (comparing)
 
 instance Pretty Pitch where
@@ -63,7 +64,7 @@ instance Pretty Dynamics where
 data Music
     = Rest Rational [PostEvent]             -- ^ Single rest.
     | Note Note Rational [PostEvent]        -- ^ Single note.
-    | Chord [(Note, [ChordPostEvent])] Rational [PostEvent]     -- ^ Single chord.
+    | Chord [(Note, [PostEvent])] Rational [PostEvent]     -- ^ Single chord.
     | Sequential   [Music]                          -- ^ Sequential composition.
     | Simultaneous Bool [Music]                     -- ^ Parallel composition (split voices?).
     | Repeat Bool Int Music (Maybe (Music, Music))  -- ^ Repetition (unfold?, times, music, alternative).
@@ -78,7 +79,7 @@ data Music
     | New String (Maybe String) Music               -- ^ New expression.
     | Context String (Maybe String) Music           -- ^ Context expression.
     | Revert String
-    deriving (Eq, Show)
+    deriving stock (Eq, Show)
 
 
 -- | Articulations. These include ornaments.
@@ -122,7 +123,7 @@ data Articulation
     | Segno
     | Coda
     | VarCoda
-    deriving (Eq, Show)
+    deriving stock (Eq, Show)
 
 newtype Duration  = Duration Rational
   deriving newtype (Eq, Ord, Num, Enum, Fractional, Real, RealFrac, Show)
@@ -131,7 +132,7 @@ data Direction
     = Above
     | Default
     | Below
-    deriving (Eq, Ord, Show)
+    deriving stock (Eq, Ord, Show)
 
 data Markup
     = MarkupText String
@@ -156,12 +157,12 @@ data Markup
     | Tiny Markup
     | TypewriterFont Markup
     | Upright Markup
-    deriving (Eq, Show)
+    deriving stock (Eq, Show)
 
 data Note
     = NotePitch Pitch
     | DrumNotePitch (Maybe Duration)
-    deriving (Eq, Show)
+    deriving stock (Eq, Show)
 
 
 data Clef
@@ -177,11 +178,11 @@ data Clef
     | SubBass
     | Percussion
     | Tab
-    deriving (Eq, Show)
+    deriving stock (Eq, Show)
 
 data ChordPostEvent
-    = Harmonic
-    deriving (Eq, Show)
+  = Harmonic
+  deriving stock (Eq, Show)
 
 data PostEvent
     = Articulation Direction Articulation
@@ -197,9 +198,10 @@ data PostEvent
     | BeginCresc
     | BeginDim
     | EndCrescDim
+    | Arpeggio
     | Text Direction String
     | Markup Direction Markup
-    deriving (Eq, Show)
+    deriving stock (Eq, Show)
 
 
 instance Pretty Music where
@@ -298,6 +300,7 @@ instance Pretty PostEvent where
     pPrint BeginCresc           = "\\<"
     pPrint BeginDim             = "\\>"
     pPrint EndCrescDim          = "\\!"
+    pPrint Arpeggio             = "\\arpeggio"
     pPrint (Text d s)           = pPrint d <> (text . show) s -- add quotes
     pPrint (Markup d m)         = pPrint d <> ("\\markup" <+> pPrint m)
     pPrintList _                = hcat . fmap pPrint
@@ -482,6 +485,17 @@ getDuration = \case
     _ -> Nothing
 
 
+-- | doesn't target the post events inside of chords
+groupedPostEvents :: Traversal' Music [PostEvent]
+groupedPostEvents f =
+  \case
+    RestF a b -> Rest a <$> f b
+    NoteF a b c -> Note a b <$> f c
+    ChordF a b c -> Chord a b <$> f c
+    z -> fmap embed $ traverse (groupedPostEvents f) z
+  . project
+
+
 -- | Fold a tuplet tree back into pieces of sequential music. This essentially
 -- compiles it back down to combinations of notes, chords, sequentials and
 -- tuplets.
@@ -492,6 +506,24 @@ foldTupletTree (One d (Rest _ c)) = pure $ Rest d c
 foldTupletTree One{} = error "foldTupletTree: impossible"
 foldTupletTree (Many as) = foldTupletTree =<< as
 foldTupletTree (TupletTree d as) = pure $ Tuplet (1 / d) Nothing $ Sequential $ foldTupletTree as
+
+addPhrase :: Music -> Music
+addPhrase = unsafePartsOf groupedPostEvents %~ wrapping BeginPhraseSlur EndPhraseSlur
+
+addSlur :: Music -> Music
+addSlur = unsafePartsOf groupedPostEvents %~ wrapping BeginSlur EndSlur
+
+addArticulation :: Articulation -> Music -> Music
+addArticulation a = groupedPostEvents %~ (Articulation Default a :)
+
+wrapping :: a -> a -> [[a]] -> [[a]]
+wrapping _ _ [] = []
+wrapping lo hi as
+  | Just (as', alast) <- unsnoc as
+  = case as' of
+      [] -> pure $ lo : hi : alast
+      (a0 : as'') -> (lo : a0) : as'' ++ [hi : alast]
+  | otherwise = fmap (\xs -> lo : hi : xs) as
 
 
 -- | Parse a series of notes into a tuplet tree, recursively.
