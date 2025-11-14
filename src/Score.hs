@@ -3,6 +3,8 @@
 
 module Score where
 
+import Data.String (IsString(..))
+import Control.Applicative ((<|>))
 import Control.DeepSeq (NFData)
 import Data.List (sortOn)
 import Data.Maybe
@@ -17,18 +19,20 @@ import Euterpea qualified as E
 data Ann = Phrase
   deriving stock Show
 
+
 data Envelope a = Envelope
   { e_scale :: a
   , e_offset :: a
+  , e_voice :: Maybe Voice
   }
   deriving stock (Show, Functor)
 
 instance Num a => Semigroup (Envelope a) where
-  Envelope s1 o1 <> Envelope s2 o2 =
-    Envelope (s1 * s2) (s1 * o2 + o1)
+  Envelope s1 o1 v1 <> Envelope s2 o2 v2 =
+    Envelope (s1 * s2) (s1 * o2 + o1) $ v2 <|> v1
 
 instance Num a => Monoid (Envelope a) where
-  mempty = Envelope 1 0
+  mempty = Envelope 1 0 Nothing
 
 newtype Score a = Score
   { unScore :: DUALTree (Envelope Rational) (Sum Rational) Ann a
@@ -37,7 +41,7 @@ newtype Score a = Score
 
 instance Semigroup (Score a) where
   sa@(Score a) <> Score b =
-    Score $ a <> applyD (Envelope 1 $ duration sa) b
+    Score $ a <> applyD (Envelope 1 (duration sa) Nothing) b
 
 instance Monoid (Score a) where
   mempty = Score mempty
@@ -45,6 +49,16 @@ instance Monoid (Score a) where
 
 instance Num a => Action (Envelope a) (Sum a) where
   act e (Sum s) = Sum $ e_scale e * s
+
+data Voice
+  = Soprano | Alto | Tenor | Bass | LeftHand | RightHand | Custom String
+  deriving stock (Eq, Ord, Show)
+
+instance IsString Voice where
+  fromString = Custom
+
+voice :: Voice -> Score a -> Score a
+voice v = Score . applyD (Envelope 1 0 $ Just v) . unScore
 
 duration :: Score a -> Rational
 duration = getSum . fromMaybe mempty . getU . unScore
@@ -59,7 +73,7 @@ delay :: Rational -> Score a
 delay d = Score $ leafU $ Sum d
 
 scale :: Rational -> Score a -> Score a
-scale d (Score s) = Score $ applyD (Envelope d 0) s
+scale d (Score s) = Score $ applyD (Envelope d 0 Nothing) s
 
 scaleTo :: Rational -> Score a -> Score a
 scaleTo d t =
@@ -67,6 +81,11 @@ scaleTo d t =
     0 -> mempty
     dur -> scale (d / dur) t
 
+lh :: Score a -> Score a
+lh = voice LeftHand
+
+rh :: Score a -> Score a
+rh = voice RightHand
 
 inv :: Score a -> Score a
 inv t = let d = duration t in delay (- d) <> t <> delay (- d)
@@ -107,7 +126,7 @@ flatten = sortOn (e_offset . snd) . D.flatten . unScore
 
 toMusic :: Score a -> Music a
 toMusic s = do
-  let es = flip fmap (flatten s) $ \(e, Envelope d t) -> rest t :+: E.note d e
+  let es = flip fmap (flatten s) $ \(e, Envelope d t _v) -> rest t :+: E.note d e
   foldr (:=:) (rest 0) es
 
 
