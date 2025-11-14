@@ -22,7 +22,6 @@
 -------------------------------------------------------------------------------------
 module Lilypond where
 
-import Debug.Trace
 import Data.Maybe
 import Control.Arrow ((<<<), (***), first)
 import Data.Char
@@ -125,7 +124,7 @@ data Articulation
     | VarCoda
     deriving (Eq, Show)
 
-newtype Duration   = Duration { getDuration :: Rational }
+newtype Duration  = Duration Rational
   deriving newtype (Eq, Ord, Num, Enum, Fractional, Real, RealFrac, Show)
 
 data Direction
@@ -446,6 +445,8 @@ removeSingleChords = cata $ \case
   ChordF [(n,_)] d p -> Note n d p
   x -> embed x
 
+
+-- | A tree for parsing tuplets into.
 data TupletTree a
   = One Rational a
   | Many [TupletTree a]
@@ -461,43 +462,53 @@ instance Semigroup (TupletTree a) where
 instance Monoid (TupletTree a) where
   mempty = Many mempty
 
+
+-- | Fold over a piece of music, turning series of non-standard-duration notes
+-- into tuplets.
 makeTuplets :: Music -> Music
 makeTuplets = cata $ \case
   SequentialF xs
-    | traceShowId $ any (not . isDivisibleBy @Double 2 . fromMaybe 2 . getD) xs
-    -> Sequential $ toMusic $ tupler $ fromMusic xs
+    | any (not . isDivisibleBy @Double 2 . fromMaybe 2 . getDuration) xs
+    -> Sequential $ foldTupletTree $ parseTupletTree $ mapMaybe (\x -> fmap (, x) $ getDuration x) xs
   x -> embed x
 
-getD :: Music -> Maybe (Rational)
-getD = \case
+
+-- | For pieces of music that are tupletizable, get their durations.
+getDuration :: Music -> Maybe Rational
+getDuration = \case
     Note _ b _ -> Just b
     Rest b _ -> Just b
     Chord _ b _ -> Just b
     _ -> Nothing
 
-fromMusic :: [Music] -> [(Rational, Music)]
-fromMusic = mapMaybe $ \x -> fmap (, x) $ getD x
 
-toMusic :: TupletTree Music -> [Music]
-toMusic (One d (Chord a _ c)) = pure $ Chord a d c
-toMusic (One d (Note a _ c)) = pure $ Note a d c
-toMusic (One d (Rest _ c)) = pure $ Rest d c
-toMusic One{} = error "toMusic: impossible"
-toMusic (Many as) = toMusic =<< as
-toMusic (TupletTree d as) = pure $ Tuplet (1 / d) Nothing $ Sequential $ toMusic as
+-- | Fold a tuplet tree back into pieces of sequential music. This essentially
+-- compiles it back down to combinations of notes, chords, sequentials and
+-- tuplets.
+foldTupletTree :: TupletTree Music -> [Music]
+foldTupletTree (One d (Chord a _ c)) = pure $ Chord a d c
+foldTupletTree (One d (Note a _ c)) = pure $ Note a d c
+foldTupletTree (One d (Rest _ c)) = pure $ Rest d c
+foldTupletTree One{} = error "foldTupletTree: impossible"
+foldTupletTree (Many as) = foldTupletTree =<< as
+foldTupletTree (TupletTree d as) = pure $ Tuplet (1 / d) Nothing $ Sequential $ foldTupletTree as
 
-tupler :: [(Rational, a)] -> TupletTree a
-tupler [] = mempty
-tupler ((d, a) : xs)
-  | isDivisibleBy @Double 2 $ denominator d = One d a <> tupler xs
+
+-- | Parse a series of notes into a tuplet tree, recursively.
+parseTupletTree :: [(Rational, a)] -> TupletTree a
+parseTupletTree [] = mempty
+parseTupletTree ((d, a) : xs)
+  | isDivisibleBy @Double 2 $ denominator d = One d a <> parseTupletTree xs
   | otherwise =
-      let (this, that) = spanning $ (d, a) : xs
+      let (this, that) = partitionIntoPowerOfTwo $ (d, a) : xs
           (mult, this') = tupletize this
-       in TupletTree mult (tupler this') <> tupler that
+       in TupletTree mult (parseTupletTree this') <> parseTupletTree that
 
 
-spanning :: [(Rational, a)] -> ([(Rational, a)], [(Rational, a)])
-spanning = go 0
+-- | Given a token stream, split it into two groups. The first group has the
+-- property that its durations sum to a power of two.
+partitionIntoPowerOfTwo :: [(Rational, a)] -> ([(Rational, a)], [(Rational, a)])
+partitionIntoPowerOfTwo = go 0
   where
     go _ [] = ([], [])
     go total (da@(d, _) : as) =
@@ -508,17 +519,12 @@ spanning = go 0
            in (da : outa, outb)
 
 
-
+-- | An algorithm to generate tuplets, as given in
+-- https://lists.gnu.org/archive/html/lilypond-user/2008-06/msg00070.html.
 tupletize :: [(Rational, a)] -> (Rational, [(Rational, a)])
 tupletize rs = do
   let smallest = minimumBy (comparing (isDivisibleBy @Double 2 . denominator) <> comparing denominator) $ fmap fst rs
       power = 2 ^ (floor @Double @Int (logBase 2 (fromIntegral $ denominator smallest) ))
       multiplier = smallest * power
    in (multiplier, fmap (first (/ multiplier)) rs)
-
-
--- tuplize :: MusicF Music -> Music
--- tuplize (SequentialF xs) = Sequential
---   $ groupBy _ xs
-
 
