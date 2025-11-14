@@ -34,7 +34,7 @@ import Data.Tree.DUAL
 import Euterpea qualified as E
 import GHC.Generics
 import GHC.Real
-import Score hiding (im)
+import Score hiding (im, Voice(..))
 import System.Cmd (rawSystem)
 import qualified Data.Map as M
 import qualified Data.Set as S
@@ -118,7 +118,7 @@ around s e ((i1, (pes1, a1)) :<| (xs :|> (i2, (pes2, a2)))) =
 scoreToIM :: Score a -> IntervalMap Rational ([PostEvent], a)
 scoreToIM = fromMaybe mempty .
   foldDUAL
-    (\(Envelope s o) a ->
+    (\(Envelope s o _) a ->
       let lo = min o (o + s)
           hi = max o (o + s)
        in IM.singleton (Interval lo hi) (mempty, a))
@@ -139,18 +139,18 @@ grouping :: Eq a => [(a, b)] -> [(a, [b])]
 grouping = fmap (fst . head &&& fmap snd) . groupBy (on (==) fst)
 
 imsToLilypond :: [IntervalMap Rational ([PostEvent], E.Pitch)] -> Music
-imsToLilypond = Simultaneous True .  fmap (flip evalState 0 . imToLilypond . grouping. traversalOrder)
+imsToLilypond = makeTuplets . Simultaneous True .  fmap (flip evalState 0 . imToLilypond . grouping. traversalOrder)
 
 iDur :: Interval Rational -> Rational
 iDur (Interval lo hi) = hi - lo
 
 mkNotes :: Interval Rational -> [([PostEvent], E.Pitch)] -> Music
-mkNotes i [] = Rest (Just $ Duration $ iDur i) []
-mkNotes i [(ps, e)] = Note (NotePitch $ toPitch e) (Just $ Duration $ iDur i) ps
+mkNotes i [] = Rest (iDur i) []
+mkNotes i [(ps, e)] = Note (NotePitch $ toPitch e) (iDur i) ps
 mkNotes i notes =
   Chord
     (fmap ((, []) . NotePitch . toPitch . snd) notes)
-    (Just $ Duration $ IM.high i - IM.low i)
+    (IM.high i - IM.low i)
     $ nubOrd $ foldMap fst notes
 
 imToLilypond :: [(Interval Rational, [([PostEvent], E.Pitch)])] -> State Rational Music
@@ -167,7 +167,7 @@ imToLilypond ((i, es) : is) = do
 
 delayed :: Rational -> Music -> Music
 delayed 0 m = m
-delayed d m = sequential (Rest (Just $ Duration d) []) m
+delayed d m = sequential (Rest d []) m
 
 average :: [Int] -> Float
 average i = fromIntegral (sum i) / fromIntegral (length i)

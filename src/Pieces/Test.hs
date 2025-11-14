@@ -105,7 +105,8 @@ sec3 = mconcat
 
 score :: Seq (Score Pitch)
 score = Seq.fromList
-  [ sec3
+  [ stimes 12 $ tile (1/12) (C, 4)
+  -- sec3
   -- , sec2
   ]
 

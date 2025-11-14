@@ -22,16 +22,19 @@
 -------------------------------------------------------------------------------------
 module Lilypond where
 
+import Debug.Trace
+import Data.Maybe
+import Control.Arrow ((<<<), (***), first)
 import Data.Char
-import Control.Arrow ((<<<), (***))
-import Data.Ratio
-import Data.String
 import Data.Functor.Foldable (cata, embed)
 import Data.Functor.Foldable.TH
-
-import Data.Music.Lilypond.Pitch
 import Data.Music.Lilypond.Dynamics (Dynamics)
-import Text.PrettyPrint.HughesPJClass hiding (Mode, (<>))
+import Data.Music.Lilypond.Pitch
+import Data.Ratio
+import Data.String
+import Text.PrettyPrint.HughesPJClass hiding (Mode, (<>), first)
+import Data.List (minimumBy)
+import Data.Ord (comparing)
 
 instance Pretty Pitch where
     pPrint (Pitch (c,a,o)) = text $ pc c ++ acc a ++ oct (o-4)
@@ -59,14 +62,14 @@ instance Pretty Dynamics where
 --   Use the 'Pretty' instance to convert into Lilypond syntax.
 --
 data Music
-    = Rest (Maybe Duration) [PostEvent]             -- ^ Single rest.
-    | Note Note (Maybe Duration) [PostEvent]        -- ^ Single note.
-    | Chord [(Note, [ChordPostEvent])] (Maybe Duration) [PostEvent]     -- ^ Single chord.
+    = Rest Rational [PostEvent]             -- ^ Single rest.
+    | Note Note Rational [PostEvent]        -- ^ Single note.
+    | Chord [(Note, [ChordPostEvent])] Rational [PostEvent]     -- ^ Single chord.
     | Sequential   [Music]                          -- ^ Sequential composition.
     | Simultaneous Bool [Music]                     -- ^ Parallel composition (split voices?).
     | Repeat Bool Int Music (Maybe (Music, Music))  -- ^ Repetition (unfold?, times, music, alternative).
     | Tremolo Int Music                             -- ^ Tremolo (multiplier).
-    | Times Rational Music                          -- ^ Stretch music (multiplier).
+    | Tuplet Rational (Maybe Int) Music                          -- ^ Stretch music (multiplier).
     | Transpose Pitch Pitch Music                   -- ^ Transpose music (from to).
     | Relative Pitch Music                          -- ^ Use relative octave (octave).
     | Clef Clef                                     -- ^ Clef.
@@ -201,12 +204,12 @@ data PostEvent
 
 
 instance Pretty Music where
-    pPrint (Rest d p)       = "r" <> maybe "" pPrint d <> pPrintList prettyNormal p
+    pPrint (Rest d p)       = "r" <> pPrint (Duration d) <> pPrintList prettyNormal p
 
-    pPrint (Note n d p)     = pPrint n <> maybe "" pPrint d <> pPrintList prettyNormal p
+    pPrint (Note n d p)     = pPrint n <> pPrint (Duration d) <> pPrintList prettyNormal p
 
     pPrint (Chord ns d p)   = "<" <> nest 4 (sepByS "" $ fmap (uncurry (<>) <<< pPrint *** pPrint) ns) <> char '>'
-                                  <> maybe "" pPrint d <> pPrintList prettyNormal p
+                                  <> pPrint (Duration d) <> pPrintList prettyNormal p
 
     pPrint (Sequential xs)  = "{" <+> nest 4 ((hsep . fmap pPrint) xs) <+> "}"
 
@@ -223,8 +226,8 @@ instance Pretty Music where
     pPrint (Tremolo n x) =
         "\\repeat tremolo" <+> pPrint n <+> pPrint x
 
-    pPrint (Times n x) =
-        "\\times" <+> frac n <+> pPrint x
+    pPrint (Tuplet n z x) =
+        "\\tuplet" <+> frac n <+> maybe "" pPrint z <+> pPrint x
         where
             frac m = pPrint (numerator m) <> "/" <> pPrint (denominator m)
 
@@ -379,37 +382,15 @@ instance Pretty Direction where
 -- | Notated time in fractions, in @[2^^i | i <- [-10..3]]@.
 
 instance Pretty Duration where
-    pPrint a = text $ pnv (toRational nv) ++ pds ds
+    pPrint a =
+      case separateDots a of
+        Just (nv, ds) -> text $ pnv (toRational nv) ++ pds ds
+        Nothing -> error $ "can't handle duration " <> show a
         where
             pnv 4 = "\\longa"
             pnv 2 = "\\breve"
             pnv n = show (denominator n)
             pds n = concat $ replicate n "."
-            (nv, ds) = separateDots a
-
--- | Construct a rest of default duration @1/4@.
---
---   Use the 'VectorSpace' methods to change duration.
---
-rest :: Music
-rest = Rest (Just $ 1/4) []
-
--- | Construct a note of default duration @1/4@.
---
---   Use the 'VectorSpace' methods to change duration.
---
-note :: Note -> Music
-note n = Note n (Just $ 1/4) []
-
--- | Construct a chord of default duration @1/4@.
---
---   Use the 'VectorSpace' methods to change duration.
---
-chord :: [Note] -> Music
-chord ns = Chord (fmap (\x -> (x,[])) ns) (Just $ 1/4) []
-
-chordWithPost :: [(Note, [ChordPostEvent])] -> Music
-chordWithPost ns = Chord ns (Just $ 1/4) []
 
 
 sequential :: Music -> Music -> Music
@@ -435,16 +416,14 @@ sepByS d = sep . punctuate d
 
 
 
-separateDots :: Duration -> (Duration, Int)
+separateDots :: Duration -> Maybe (Duration, Int)
 separateDots = separateDots' [2/3, 6/7, 14/15, 30/31, 62/63]
 
-separateDots' :: [Duration] -> Duration -> (Duration, Int)
-separateDots' []         nv = error $ "separateDots: " <> show nv
+separateDots' :: [Duration] -> Duration -> Maybe (Duration, Int)
+separateDots' [] _ = Nothing
 separateDots' (d:divs) nv
-    | isDivisibleBy @Double 2 nv = (nv,  0)
-    | otherwise          = (nv', dots' + 1)
-    where
-        (nv', dots')    = separateDots' divs (nv*d)
+    | isDivisibleBy @Double 2 nv = Just (nv,  0)
+    | otherwise                  = fmap (fmap (+ 1)) $ separateDots' divs (nv*d)
 
 logBaseR :: forall a . (RealFloat a) => Rational -> Rational -> a
 logBaseR k n
@@ -466,4 +445,80 @@ removeSingleChords :: Music -> Music
 removeSingleChords = cata $ \case
   ChordF [(n,_)] d p -> Note n d p
   x -> embed x
+
+data TupletTree a
+  = One Rational a
+  | Many [TupletTree a]
+  | TupletTree Rational (TupletTree a)
+  deriving stock (Eq, Ord, Show, Functor, Foldable, Traversable)
+
+instance Semigroup (TupletTree a) where
+  Many t1 <> Many t2 = Many (t1 <> t2)
+  Many t1 <> t2 = Many (t1 <> (pure t2))
+  t1 <> Many t2 = Many (t1 : t2)
+  t1 <> t2 = Many [t1, t2]
+
+instance Monoid (TupletTree a) where
+  mempty = Many mempty
+
+makeTuplets :: Music -> Music
+makeTuplets = cata $ \case
+  SequentialF xs
+    | traceShowId $ any (not . isDivisibleBy @Double 2 . fromMaybe 2 . getD) xs
+    -> Sequential $ toMusic $ tupler $ fromMusic xs
+  x -> embed x
+
+getD :: Music -> Maybe (Rational)
+getD = \case
+    Note _ b _ -> Just b
+    Rest b _ -> Just b
+    Chord _ b _ -> Just b
+    _ -> Nothing
+
+fromMusic :: [Music] -> [(Rational, Music)]
+fromMusic = mapMaybe $ \x -> fmap (, x) $ getD x
+
+toMusic :: TupletTree Music -> [Music]
+toMusic (One d (Chord a _ c)) = pure $ Chord a d c
+toMusic (One d (Note a _ c)) = pure $ Note a d c
+toMusic (One d (Rest _ c)) = pure $ Rest d c
+toMusic One{} = error "toMusic: impossible"
+toMusic (Many as) = toMusic =<< as
+toMusic (TupletTree d as) = pure $ Tuplet (1 / d) Nothing $ Sequential $ toMusic as
+
+tupler :: [(Rational, a)] -> TupletTree a
+tupler [] = mempty
+tupler ((d, a) : xs)
+  | isDivisibleBy @Double 2 $ denominator d = One d a <> tupler xs
+  | otherwise =
+      let (this, that) = spanning $ (d, a) : xs
+          (mult, this') = tupletize this
+       in TupletTree mult (tupler this') <> tupler that
+
+
+spanning :: [(Rational, a)] -> ([(Rational, a)], [(Rational, a)])
+spanning = go 0
+  where
+    go _ [] = ([], [])
+    go total (da@(d, _) : as) =
+      case isDivisibleBy @Double 2 $ total + d of
+        True -> ([da], as)
+        False ->
+          let (outa, outb) = go (total + d) as
+           in (da : outa, outb)
+
+
+
+tupletize :: [(Rational, a)] -> (Rational, [(Rational, a)])
+tupletize rs = do
+  let smallest = minimumBy (comparing (isDivisibleBy @Double 2 . denominator) <> comparing denominator) $ fmap fst rs
+      power = 2 ^ (floor @Double @Int (logBase 2 (fromIntegral $ denominator smallest) ))
+      multiplier = smallest * power
+   in (multiplier, fmap (first (/ multiplier)) rs)
+
+
+-- tuplize :: MusicF Music -> Music
+-- tuplize (SequentialF xs) = Sequential
+--   $ groupBy _ xs
+
 
