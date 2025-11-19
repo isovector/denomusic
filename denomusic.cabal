@@ -25,12 +25,14 @@ source-repository head
 
 library
   exposed-modules:
+      Data.IntervalMap
       Glass.Etude16
       Legacy
       Lilypond
       Notation
       Notation2
       Pieces.Test
+      Pieces.Tune
       Score
       Theory.Chords
   other-modules:
