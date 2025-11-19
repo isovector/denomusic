@@ -22,6 +22,7 @@
 -------------------------------------------------------------------------------------
 module Lilypond where
 
+import Debug.Trace (trace)
 import Control.Lens (Traversal', (%~), unsafePartsOf)
 import Data.Maybe
 import Control.Arrow ((<<<), (***), first)
@@ -387,7 +388,7 @@ instance Pretty Duration where
     pPrint a =
       case separateDots a of
         Just (nv, ds) -> text $ pnv (toRational nv) ++ pds ds
-        Nothing -> error $ "can't handle duration " <> show a
+        Nothing -> trace ("can't handle duration " <> show a) "\\breve"
         where
             pnv 4 = "\\longa"
             pnv 2 = "\\breve"

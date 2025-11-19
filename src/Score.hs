@@ -3,6 +3,7 @@
 
 module Score where
 
+import Control.Monad
 import Data.String (IsString(..))
 import Control.Applicative ((<|>))
 import Control.DeepSeq (NFData)
@@ -46,6 +47,16 @@ instance Semigroup (Score a) where
 instance Monoid (Score a) where
   mempty = Score mempty
 
+instance Applicative Score where
+  pure = note
+  (<*>) = ap
+
+instance Monad Score where
+  -- doesn't respect annotations!
+  s >>= f =
+    (flip foldMap (flatten s) $ \(a, Envelope dur off v) ->
+      re $ mappend (delay off) $ maybe id voiced v $ scale dur $ f a) <> delay (duration s)
+
 
 instance Num a => Action (Envelope a) (Sum a) where
   act e (Sum s) = Sum $ e_scale e * s
@@ -57,8 +68,8 @@ data Voice
 instance IsString Voice where
   fromString = Custom
 
-voice :: Voice -> Score a -> Score a
-voice v = Score . applyD (Envelope 1 0 $ Just v) . unScore
+voiced :: Voice -> Score a -> Score a
+voiced v = Score . applyD (Envelope 1 0 $ Just v) . unScore
 
 duration :: Score a -> Rational
 duration = getSum . fromMaybe mempty . getU . unScore
@@ -82,10 +93,10 @@ scaleTo d t =
     dur -> scale (d / dur) t
 
 lh :: Score a -> Score a
-lh = voice LeftHand
+lh = voiced LeftHand
 
 rh :: Score a -> Score a
-rh = voice RightHand
+rh = voiced RightHand
 
 inv :: Score a -> Score a
 inv t = let d = duration t in delay (- d) <> t <> delay (- d)
@@ -130,6 +141,12 @@ toMusic s = do
   foldr (:=:) (rest 0) es
 
 
+unflatten :: [(a, Envelope Rational)] -> Score a
+unflatten as =
+  flip foldMap as $ \(a, Envelope dur off v) ->
+    re $ mappend (delay off) $ maybe id voiced v $ tile dur a
+
+
 chord :: [a] -> Score a
 chord = simul . fmap (tile 1)
 
@@ -141,4 +158,6 @@ playScore :: (E.ToMusic1 a, NFData a) => Score a -> IO ()
 playScore
   = E.playDev 2
   . toMusic
+
+
 
