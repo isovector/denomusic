@@ -28,3 +28,6 @@ retro s
 
 negativeHarmony :: Num a => a -> Score a -> Score a
 negativeHarmony relTo = fmap $ \p -> negate (p - relTo) + relTo
+
+negativeHarmony' :: Pitch -> Score Pitch -> Score Pitch
+negativeHarmony' c = fmap pitch . negativeHarmony (absPitch c) . fmap absPitch
