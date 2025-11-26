@@ -47,6 +47,9 @@ module APitch
 
   -- * Chords
   , invert
+
+  -- * Utils
+  , nextPitchSize
   ) where
 
 import Control.DeepSeq
@@ -120,8 +123,9 @@ toEPitchClass G = E.G
 toEPitchClass A = E.A
 toEPitchClass B = E.B
 
-newtype Scale = Scale
+data Scale = Scale
   { unScale :: [Int]
+  , s_name :: String
   }
   deriving stock (Eq, Ord, Show)
 
@@ -158,26 +162,26 @@ instance Show APitch where
       ]
 
 modal :: Int -> Scale -> Scale
-modal n (Scale is) = Scale $ drop n is <> take n is
+modal n (Scale is m) = Scale (drop n is <> take n is) $ m <> "◦" <> show (n + 1)
 
 klezmer :: Scale
-klezmer = Scale [1, 3, 1, 2, 1, 2, 2]
+klezmer = Scale [1, 3, 1, 2, 1, 2, 2] "Kz"
 
 
 hungarianMajor :: Scale
-hungarianMajor = Scale [3, 1, 2, 1, 2, 1, 2]
+hungarianMajor = Scale [3, 1, 2, 1, 2, 1, 2] "Hg"
 
 hungarianMinor :: Scale
-hungarianMinor = Scale [2, 1, 3, 1, 1, 3, 1]
+hungarianMinor = Scale [2, 1, 3, 1, 1, 3, 1] "hg"
 
 major :: Scale
-major = Scale [2, 2, 1, 2, 2, 2, 1]
+major = Scale [2, 2, 1, 2, 2, 2, 1] ""
 
 naturalMinor :: Scale
 naturalMinor = aeolian major
 
 harmonicMinor :: Scale
-harmonicMinor = Scale [2, 1, 2, 2, 1, 3, 2]
+harmonicMinor = Scale [2, 1, 2, 2, 1, 3, 2] "◦6♮7"
 
 ionian :: Scale -> Scale
 ionian = modal 0
@@ -241,7 +245,7 @@ nextPitchSize B = 1
 nextPitchSize _ = 2
 
 toPitch :: Scale -> Pitch -> APitch -> Pitch
-toPitch (Scale is) = go $ cycle is
+toPitch (Scale is _) = go $ cycle is
   where
     go _ (Pitch (c, a, o)) (AP r 0 da) = Pitch (c, a + da, o + r)
     go (x : xs) (Pitch (c, a, o)) (AP r dn da) = do
