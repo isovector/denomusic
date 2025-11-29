@@ -13,6 +13,7 @@ module APitch2
   , fromSemis
   , APitch(.., Sharp, Flat)
   , Interval(..)
+  , Scale(..)
   , ScaleForm(..)
   ) where
 

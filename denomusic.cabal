@@ -1,6 +1,6 @@
 cabal-version: 2.2
 
--- This file has been generated from package.yaml by hpack version 0.36.0.
+-- This file has been generated from package.yaml by hpack version 0.38.0.
 --
 -- see: https://github.com/sol/hpack
 
@@ -25,6 +25,8 @@ source-repository head
 
 library
   exposed-modules:
+      APitch
+      APitch2
       Combinators
       Data.IntervalMap
       Glass.Etude16
@@ -33,8 +35,11 @@ library
       Notation
       Notation2
       Pieces.Motive
+      Pieces.Pitchy
+      Pieces.Seventy
       Pieces.Test
       Pieces.Tune
+      Pitch
       Score
       Theory.Chords
   other-modules:

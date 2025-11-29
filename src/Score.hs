@@ -3,6 +3,7 @@
 
 module Score where
 
+import Data.Foldable
 import Control.Monad
 import Data.String (IsString(..))
 import Control.Applicative ((<|>))
@@ -147,8 +148,8 @@ unflatten as =
     re $ mappend (delay off) $ maybe id voiced v $ tile dur a
 
 
-chord :: [a] -> Score a
-chord = simul . fmap (tile 1)
+chord :: Foldable t => t a -> Score a
+chord = simul . fmap (tile 1) . toList
 
 im :: [a] -> Score a
 im = foldMap (tile 1)
