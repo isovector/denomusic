@@ -10,9 +10,6 @@ module APitch
   , flat
   , inverted
 
-  -- * Observations
-  , toPitch
-
   -- * Intervals
   , tonic
   , second
@@ -28,7 +25,7 @@ module APitch
   , octave
 
   -- * Scales
-  , Scale (..)
+  , ScaleForm (..)
   , major
   , naturalMinor
   , harmonicMinor
@@ -54,8 +51,6 @@ module APitch
 
 import Control.DeepSeq
 import GHC.Generics
-import Data.Semigroup
-import Data.Bool
 import Data.Music.Lilypond.Pitch
 import Euterpea qualified as E
 
@@ -123,7 +118,7 @@ toEPitchClass G = E.G
 toEPitchClass A = E.A
 toEPitchClass B = E.B
 
-data Scale = Scale
+data ScaleForm = ScaleForm
   { unScale :: [Int]
   , s_name :: String
   }
@@ -161,47 +156,47 @@ instance Show APitch where
           GT -> replicate r 'ᵃ'
       ]
 
-modal :: Int -> Scale -> Scale
-modal n (Scale is m) = Scale (drop n is <> take n is) $ m <> "◦" <> show (n + 1)
+modal :: Int -> ScaleForm -> ScaleForm
+modal n (ScaleForm is m) = ScaleForm (drop n is <> take n is) $ m <> "◦" <> show (n + 1)
 
-klezmer :: Scale
-klezmer = Scale [1, 3, 1, 2, 1, 2, 2] "Kz"
+klezmer :: ScaleForm
+klezmer = ScaleForm [1, 3, 1, 2, 1, 2, 2] "Kz"
 
 
-hungarianMajor :: Scale
-hungarianMajor = Scale [3, 1, 2, 1, 2, 1, 2] "Hg"
+hungarianMajor :: ScaleForm
+hungarianMajor = ScaleForm [3, 1, 2, 1, 2, 1, 2] "Hg"
 
-hungarianMinor :: Scale
-hungarianMinor = Scale [2, 1, 3, 1, 1, 3, 1] "hg"
+hungarianMinor :: ScaleForm
+hungarianMinor = ScaleForm [2, 1, 3, 1, 1, 3, 1] "hg"
 
-major :: Scale
-major = Scale [2, 2, 1, 2, 2, 2, 1] ""
+major :: ScaleForm
+major = ScaleForm [2, 2, 1, 2, 2, 2, 1] ""
 
-naturalMinor :: Scale
+naturalMinor :: ScaleForm
 naturalMinor = aeolian major
 
-harmonicMinor :: Scale
-harmonicMinor = Scale [2, 1, 2, 2, 1, 3, 2] "◦6♮7"
+harmonicMinor :: ScaleForm
+harmonicMinor = ScaleForm [2, 1, 2, 2, 1, 3, 2] "◦6♮7"
 
-ionian :: Scale -> Scale
+ionian :: ScaleForm -> ScaleForm
 ionian = modal 0
 
-dorian :: Scale -> Scale
+dorian :: ScaleForm -> ScaleForm
 dorian = modal 1
 
-phrygian :: Scale -> Scale
+phrygian :: ScaleForm -> ScaleForm
 phrygian = modal 2
 
-lydian :: Scale -> Scale
+lydian :: ScaleForm -> ScaleForm
 lydian = modal 3
 
-mixolydian :: Scale -> Scale
+mixolydian :: ScaleForm -> ScaleForm
 mixolydian = modal 4
 
-aeolian :: Scale -> Scale
+aeolian :: ScaleForm -> ScaleForm
 aeolian = modal 5
 
-locrian :: Scale -> Scale
+locrian :: ScaleForm -> ScaleForm
 locrian = modal 6
 
 up :: APitch -> APitch
@@ -220,39 +215,13 @@ invert :: [APitch] -> [APitch]
 invert [] = []
 invert (x : xs) = xs ++ [x <> octave]
 
-va :: Int -> APitch -> APitch
-va n p = stimes n octave <> p
-
-vb :: Int -> APitch -> APitch
-vb n p = stimes n (inverted octave) <> p
-
 deriving stock instance Generic Pitch
 deriving anyclass instance NFData Pitch
 deriving stock instance Generic PitchName
 deriving anyclass instance NFData PitchName
 
-succPitch :: PitchName -> PitchName
-succPitch B = C
-succPitch x = succ x
-
-predPitch :: PitchName -> PitchName
-predPitch C = B
-predPitch x = pred x
-
 nextPitchSize :: PitchName -> Int
 nextPitchSize E = 1
 nextPitchSize B = 1
 nextPitchSize _ = 2
-
-toPitch :: Scale -> Pitch -> APitch -> Pitch
-toPitch (Scale is _) = go $ cycle is
-  where
-    go _ (Pitch (c, a, o)) (AP r 0 da) = Pitch (c, a + da, o + r)
-    go (x : xs) (Pitch (c, a, o)) (AP r dn da) = do
-      let c' = succPitch c
-      go
-        xs
-        (Pitch (c', a + x - nextPitchSize c, bool 0 1 (c' < c) + o))
-        (AP r (dn - 1) da)
-    go _ _ _ = error "impossible"
 

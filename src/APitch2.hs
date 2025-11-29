@@ -1,23 +1,33 @@
-{-# LANGUAGE DataKinds          #-}
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE LambdaCase         #-}
-{-# LANGUAGE OverloadedStrings  #-}
-{-# LANGUAGE PatternSynonyms    #-}
-{-# LANGUAGE TemplateHaskell    #-}
-{-# LANGUAGE TypeFamilies       #-}
+{-# LANGUAGE DataKinds            #-}
+{-# LANGUAGE DerivingStrategies   #-}
+{-# LANGUAGE LambdaCase           #-}
+{-# LANGUAGE OverloadedStrings    #-}
+{-# LANGUAGE PatternSynonyms      #-}
+{-# LANGUAGE TemplateHaskell      #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE ViewPatterns         #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module APitch2 where
+module APitch2
+  ( eval
+  , fromSemis
+  , APitch(.., Sharp, Flat)
+  , Interval(..)
+  , ScaleForm(..)
+  ) where
 
+import APitch (ScaleForm(..), nextPitchSize)
+import Control.Monad
 import Data.Bool
-import Control.Applicative
-import Text.PrettyPrint.HughesPJClass hiding (Mode, (<>), first)
 import Data.Functor.Foldable
 import Data.Functor.Foldable.TH
 import Data.Music.Lilypond.Pitch
-import Control.Monad
-import APitch hiding (APitch(..))
-import APitch qualified as AP
-import Data.Kind
+import Text.PrettyPrint.HughesPJClass hiding (Mode, (<>), first)
+
+
+data Scale a = Scale ScaleForm (APitch a)
+  deriving stock (Eq, Ord, Show, Functor, Foldable, Traversable)
+
 
 data Interval where
   Invert :: Interval -> Interval
@@ -36,6 +46,13 @@ data Interval where
   Maj7 :: Interval
   deriving stock (Eq, Ord, Show)
 
+fromSemis :: Int -> Interval
+fromSemis 0 = P1
+fromSemis 1 = Min2
+fromSemis 2 = Maj2
+fromSemis 3 = Min3
+fromSemis 4 = Maj3
+
 instance Pretty Interval where
   pPrint = \case
     P1 -> "P1"
@@ -53,12 +70,11 @@ instance Pretty Interval where
     Dim x -> "d" <> pPrint x
     Invert x -> "-" <> pPrint x
 
-type APitch :: Type -> Type
 data APitch a where
   Absolute :: a -> APitch a
   Color :: Int -> APitch a -> APitch a
   IntervalOn :: Interval -> APitch a -> APitch a
-  Degree :: APitch a -> Scale -> Int -> APitch a
+  Degree :: Scale a -> Int -> APitch a
   Alta :: Int -> APitch a -> APitch a
   deriving stock (Eq, Ord, Show, Functor, Foldable, Traversable)
 
@@ -71,7 +87,7 @@ instance Monad APitch where
   Absolute a >>= f = f a
   Color i p >>= f = Color i (p >>= f)
   IntervalOn i p >>= f = IntervalOn i (p >>= f)
-  Degree p s i >>= f = Degree (p >>= f) s i
+  Degree (Scale sf p) i >>= f = Degree (Scale sf $ p >>= f) i
   Alta i p >>= f = Alta i (p >>= f)
 
 pattern Flat :: APitch a -> APitch a
@@ -109,7 +125,7 @@ instance Pretty a => Pretty (APitch a) where
           EQ -> ""
           GT -> replicate i 'ᵃ'
       ]
-    Degree a s i -> maybeParens (p >= 3) $ mconcat
+    Degree (Scale s a) i -> maybeParens (p >= 3) $ mconcat
       [ brackets $ mconcat
           [ pPrint a
           , ":"
@@ -122,7 +138,22 @@ eval :: APitch Pitch -> Pitch
 eval = cata $ \case
   AbsoluteF p -> p
   ColorF i (Pitch (a, b, c)) -> Pitch (a, b + i, c)
-  DegreeF p s i -> toPitch s p $ AP.AP 0 i 0
+  DegreeF (Scale (ScaleForm s _) (eval -> Pitch (pc, a, o))) i ->
+    let (pc', da, dx) =
+          diatonic pc i $
+            case i < 0 of
+              True -> 12 - sum (take (abs i) $ cycle $ reverse s)
+              False -> sum $ take i $ cycle s
+     in Pitch
+          ( pc'
+          , a + da
+          , sum
+              [ o
+              , dx
+              , div i (length s)
+              , bool 0 1 (i < 0)
+              ]
+          )
   AltaF i (Pitch (a, b, c)) -> Pitch (a, b, c + i)
   IntervalOnF i (Pitch (pc, a, o)) ->
     let (pc', da, dx) = interval pc i
@@ -164,9 +195,8 @@ intervalSize = \case
 
 deriving stock instance Bounded PitchName
 
-nonempty :: [a] -> [a] -> [a]
-nonempty [] as = as
-nonempty as _ = as
+sigmod :: Integral a => a -> a -> a
+sigmod x y = signum x * mod (abs x) y
 
 enumFromToCycle :: (Ord a, Enum a, Bounded a) => a -> a -> [a]
 enumFromToCycle from to =
@@ -175,17 +205,44 @@ enumFromToCycle from to =
     EQ -> [from]
     GT -> [from .. maxBound] <> [minBound .. to]
 
-interval :: PitchName -> Interval -> (PitchName, Accidental, Octaves)
-interval pn i =
-  let dia = intervalDiaSize i
-      pn' = toEnum @PitchName $ mod (fromEnum pn + dia) (fromEnum (maxBound @PitchName) + 1)
+diatonic :: PitchName -> Int -> Int -> (PitchName, Accidental, Octaves)
+diatonic pn dia size =
+  let pn' = enumMod dia pn
       pitches = enumFromToCycle pn pn'
       pitchsemis = sum $ init  $ fmap nextPitchSize pitches
    in ( pn'
-      , intervalSize i - pitchsemis
+      , sigmod (size - pitchsemis) 12
       , bool 0 1 (pn' < pn && dia > 0)
       + bool 0 (-1) (pn' > pn && dia < 0)
       )
 
-cool :: Pitch
-cool = eval $ Flat $ Flat $ Degree (pure (Pitch (C, 0, 4)))(mixolydian major) 6
+interval :: PitchName -> Interval -> (PitchName, Accidental, Octaves)
+interval pn i = diatonic pn (intervalDiaSize i) (intervalSize i)
+
+
+data PitchClass = PC | PCs | PD | PDs | PE | PF | PFs | PG | PGs | PA | PAs | PB
+  deriving stock (Eq, Ord, Show, Enum, Bounded)
+
+
+
+comparePitch :: Pitch -> Pitch -> Ordering
+comparePitch (Pitch (pc1, a1, r1)) (Pitch ((pc2, a2, r2))) =
+  mconcat
+    [ compare r1 r2
+    , compare (normalize pc1 a1) (normalize pc2 a2)
+    ]
+
+enumMod :: forall a. (Enum a, Bounded a) => Int -> a -> a
+enumMod a pn = toEnum $ mod (fromEnum pn + a) (fromEnum (maxBound @a) + 1)
+
+normalize :: PitchName -> Int -> PitchClass
+normalize pn a = enumMod a $ toPc pn
+
+toPc :: PitchName -> PitchClass
+toPc C = PC
+toPc D = PD
+toPc E = PE
+toPc F = PF
+toPc G = PG
+toPc A = PA
+toPc B = PB
