@@ -44,8 +44,10 @@ dependencies:
 - process
 - MemoTrie
 - async
+- comonad
 
-default-extensions: []
+default-extensions:
+- GHC2021
 
 ghc-options:
 - -Wall

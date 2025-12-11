@@ -1,19 +1,18 @@
-{-# LANGUAGE DerivingStrategies     #-}
-{-# OPTIONS_GHC -fno-warn-x-partial #-}
+{-# LANGUAGE DerivingStrategies                   #-}
+{-# OPTIONS_GHC -fno-warn-incomplete-uni-patterns #-}
+{-# OPTIONS_GHC -fno-warn-x-partial               #-}
 
 -- | As per https://www.madmusicalscience.com/
 module MadMusic where
 
+import Data.Semigroup
 import Notation
-import Data.Monoid
 import Data.List (inits)
 import Score
-import Debug.Trace
 import Data.Foldable
 import Euterpea (PitchClass(..))
 import qualified Data.Set as S
 import Data.Set (Set)
-
 
 data T = T
   { extrinsic :: Int
@@ -61,14 +60,11 @@ invert :: Ord a => Int -> Chord (Reg a) -> Chord (Reg a)
 invert i c = S.map (extrMove (S.map unReg c) i) c
 
 
-move :: (Show a, Ord a) => Scale a -> T -> Chord (Reg a) -> Chord (Reg a)
+move :: Ord a => Scale a -> T -> Chord (Reg a) -> Chord (Reg a)
 move sc (T e i) c =
   let c' = S.map (extrMove sc e) c
       sc' = S.map unReg c'
    in S.map (extrMove sc' i) c'
-
-sc = S.fromList [A, B,C, Cs, Ds,E, Fs,G, Gs]
-tri = S.fromList [Reg 3 Cs, Reg 4 E, Reg 4 A]
 
 
 voices :: Chord a -> [a]
@@ -77,9 +73,24 @@ voices c =
     Nothing -> []
     Just (a, c') -> a : voices c'
 
-main :: IO ()
-main = do
-  let moves = take 7 $ cycle
+
+mtimes :: Monoid a => Int -> a -> a
+mtimes n a
+  | n <= 0 = mempty
+  | otherwise = stimes n a
+
+thingy :: Monoid a => [a] -> Rational -> a
+thingy m t =
+  let x = floor t
+      (z, r) = quotRem x 3
+   in mtimes z (fold m) <> mconcat (take r m)
+
+
+oldMain :: IO ()
+oldMain = do
+  let sc = S.fromList [A, B,C, Cs, Ds,E, Fs,G, Gs]
+      tri = S.fromList [Reg 3 Cs, Reg 4 E, Reg 4 A]
+      moves = take 6 $ cycle
         [ T (6) (-2)
         , T (2) (-1)
         , T (-8) (2)
@@ -87,7 +98,7 @@ main = do
 
   let score =
         fmap fromReg $ scale 0.5 $ flip foldMap (inits moves) $ \ms -> do
-          let c = appEndo (flip foldMap ms $ Endo . move sc) $ tri
+          let c = move sc (fold ms) tri
               sc' = S.map unReg c
               (mel : ch@(mid : _)) = reverse $ voices c
           fork (chord $ toList $ invert 0 $ S.fromList ch) $

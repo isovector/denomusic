@@ -112,8 +112,8 @@ co t = delay (- duration t) <> t
 fork :: Score a -> Score a -> Score a
 fork a b = re a <> b
 
-join :: Score a -> Score a -> Score a
-join a b = a <> co b
+rejoin :: Score a -> Score a -> Score a
+rejoin a b = a <> co b
 
 phrase :: Score a -> Score a
 phrase = Score . annot Phrase . unScore
@@ -160,5 +160,11 @@ playScore
   = E.playDev 2
   . toMusic
 
+
+timed :: Score a -> Score (Rational, a)
+timed x =
+  (unflatten $
+    fmap (\(a, e) -> ((e_offset e, a), e)) $
+      flatten x) <> delay (duration x)
 
 

@@ -32,11 +32,13 @@ library
       Glass.Etude16
       Legacy
       Lilypond
+      MadMusic
       Notation
       Notation2
       Pieces.Motive
       Pieces.Pitchy
       Pieces.Seventy
+      Pieces.SeventyTwo
       Pieces.Test
       Pieces.Tune
       Pitch
@@ -48,6 +50,8 @@ library
       Paths_denomusic
   hs-source-dirs:
       src
+  default-extensions:
+      GHC2021
   ghc-options: -Wall -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints
   build-depends:
       Euterpea
@@ -56,6 +60,7 @@ library
     , async
     , base >=4.7 && <5
     , checkers
+    , comonad
     , containers
     , deepseq
     , dual-tree
