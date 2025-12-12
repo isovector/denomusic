@@ -128,9 +128,8 @@ instance Monoid (Simul a) where
   mempty = Simul mempty
 
 
-simul :: [Score a] -> Score a
-simul [] = mempty
-simul as = foldr1 fork as
+simul :: Foldable t => t (Score a) -> Score a
+simul as = foldMap (co . re) as <> delay (maximum $ 0 : (fmap duration $ toList as))
 
 flatten :: Score a -> [(a, Envelope Rational)]
 flatten = sortOn (e_offset . snd) . D.flatten . unScore

@@ -59,6 +59,8 @@ extrMove sc n r
 invert :: Ord a => Int -> Chord (Reg a) -> Chord (Reg a)
 invert i c = S.map (extrMove (S.map unReg c) i) c
 
+move1 :: Ord a => Scale a -> Chord (Reg a) -> T -> Reg a -> Reg a
+move1 sc ch (T e i) a = extrMove (S.map unReg $ S.map (extrMove sc e) ch) i $ extrMove sc e a
 
 move :: Ord a => Scale a -> T -> Chord (Reg a) -> Chord (Reg a)
 move sc (T e i) c =
@@ -80,9 +82,9 @@ mtimes n a
   | otherwise = stimes n a
 
 thingy :: Monoid a => [a] -> Rational -> a
-thingy m t =
+thingy m = \t ->
   let x = floor t
-      (z, r) = quotRem x 3
+      (z, r) = quotRem x $ length m
    in mtimes z (fold m) <> mconcat (take r m)
 
 
