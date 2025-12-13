@@ -1,3 +1,4 @@
+{-# LANGUAGE BlockArguments     #-}
 {-# LANGUAGE DerivingStrategies #-}
 
 module Pieces.SeventyTwo where
@@ -56,32 +57,33 @@ peek :: Music gbl lcl w lcl
 peek = seek 0
 
 sc :: Scale PitchClass
-sc = S.fromList [A, As, B, C, Cs, D, Ds, E, F, Fs, G, Gs]
+sc = S.fromList [A, B, Cs, D, E, Fs, G]
+
+melVoice :: Int
+melVoice = 4
 
 globalChanges :: Rational -> Chord (Reg PitchClass)
 globalChanges =
   let
-    tri = S.fromList [Reg 3 Cs, Reg 4 E, Reg 4 A]
+    tri = S.fromList [Reg 2 B, Reg 3 Fs, Reg 3 B, Reg 4 D, Reg 5 D]
    in
     thingy
-      [ T (4) (-2)
-      , T (2) (-1)
-      , T (-6) (2)
+      [ T (-1) 0
+      , T (-1) 0
+      , T (-1) 0
+      , T (-7) 3
+      , T 1 0
+      , T 1 0
       ] <&> \t -> move sc t tri
 
-globalChanges2 :: Chord (Reg PitchClass) -> Rational -> Chord (Reg PitchClass)
-globalChanges2 tri =
-  thingy
-    [ T (-3) (2)
-    , T (1) (-1)
-    , T (2) (-1)
-    ] <&> \t -> move sc t tri
-
-localRWS :: (r -> r') -> RWS r' w s a -> RWS r w s a
-localRWS f = withRWS $ \z s -> (f z, s)
+localRWS :: (s -> r -> r') -> RWS r' w s a -> RWS r w s a
+localRWS f = withRWS $ \z s -> (f s z, s)
 
 voice :: Int -> Music gbl r w a -> Music gbl (Chord r) w a
-voice v (Music m) = Music $ localRWS (\(gbl, lcl) -> (gbl, (!! v) . toList . lcl)) m
+voice v  = locally $ const $ (!! v) . toList
+
+locally :: (gbl -> r -> r') -> Music gbl r' w a -> Music gbl r w a
+locally f (Music m) = Music $ localRWS (\t (gbl, lcl) -> (gbl, f (gbl t) . lcl)) m
 
 hold :: Music gbl lcl w a -> Music gbl lcl w a
 hold m = Music $ do
@@ -104,34 +106,65 @@ leading offset r t = do
 emit :: Rational -> T -> Voice (Reg PitchClass) (Reg PitchClass) ()
 emit = leading 0
 
+wait :: Rational -> Music gbl lbl a ()
+wait = tell . delay
 
-bass2Bars :: Voice (Reg PitchClass) (Reg PitchClass) ()
-bass2Bars = do
-  emit 0.25 $ T 0 0
-  emit 0.25 $ T 0 1
-  emit 0.25 $ T 0 2
-  leading 0.25 0.25 $ T (-1) 3
-  emit 0.25 $ T 0 3
-  emit 0.25 $ T 0 2
-  emit 0.25 $ T 0 1
-  leading 0.25 0.25 $ T (1) 0
+motif1 :: Voice (Reg PitchClass) (Reg PitchClass) ()
+motif1 = do
+  emit (3/4) mempty
+  emit (1/8) $ T (-1) 0
+  emit (1/8) $ T (-2) 0
 
-musicly = do
-  replicateM 2 $ voice 0 bass2Bars
+arpeggiate :: Rational -> Rational -> [Int] -> Voice (Reg PitchClass) (Reg PitchClass) ()
+arpeggiate _ _ [] = pure ()
+arpeggiate _ tf [i] = emit tf $ T 0 i
+arpeggiate t tf (i : is) = emit t (T 0 i) >> arpeggiate t tf is
+
+-- arpeggiate t = traverse_ $ emit t . T 0
+-- arpeggiate t = traverse_ $ emit t . T 0
+
+arpegiated :: Voice (Reg PitchClass) (Reg PitchClass) ()
+arpegiated = do
+  emit 1 mempty
+  wait (-1)
+  arpeggiate (1/8) 0.5 [0..3]
+
+doubleArp :: Voice (Reg PitchClass) (Reg PitchClass) ()
+doubleArp = do
+  emit 1 mempty
+  wait (-1)
+
+  arpeggiate (1/8) (1/8) [0..3]
+  arpeggiate (1/8) (1/8) [3,2..0]
+
+bar :: Voice (Reg PitchClass) (Reg PitchClass) ()
+    -> Voice (Reg PitchClass) (Reg PitchClass) ()
+    -> Music (Chord (Reg PitchClass)) (Chord (Reg PitchClass)) (Reg PitchClass) ()
+bar m1 m2 = do
+  hold $ voice 0 m1
+  voice melVoice m2
+
+
+octaveArp :: Voice (Reg PitchClass) (Reg PitchClass) ()
+octaveArp = do
+  arpeggiate (1/8) (1/4) [0, 1, 2]
+  locally (\c -> move1 sc c (T (-1) 0)) $ arpeggiate (1/8) (1/4) [0, 1, 2]
+
+
 
 score :: Score (Reg PitchClass)
-score =
-  let m1 = mr_score $ runMusic globalChanges musicly
-      m2 = mr_score $ runMusic globalChanges $ replicateM 2 $ do
-             tell $ delay 0.5
-             voice 1 $ bass2Bars
-      m3 = mr_score $ runMusic globalChanges $ do
-             tell $ delay 1
-             voice 2 $ bass2Bars
-   in re m1 <> re m2 <> re m3
+score = simul
+  [ mr_score $ runMusic globalChanges $ do
+      replicateM 3 $ bar arpegiated motif1
+      bar doubleArp (emit 1 $ T 0 0)
+      replicateM 3 $ bar arpegiated motif1
+      bar octaveArp (emit 1 $ T 0 0)
+      bar octaveArp (wait 1)
+      bar motif1 $ arpegiated
+  ]
 
 main :: IO ()
 main = do
   let s = fmap fromReg score
   toPdf s
-  playScore s
+  playScore $ scale 1 s
