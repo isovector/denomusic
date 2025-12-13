@@ -47,7 +47,12 @@ dependencies:
 - comonad
 
 default-extensions:
-- GHC2021
+- DerivingStrategies
+- DerivingVia
+- TypeFamilies
+- LambdaCase
+- ViewPatterns
+- PatternSynonyms
 
 ghc-options:
 - -Wall

@@ -33,6 +33,7 @@ library
       Legacy
       Lilypond
       MadMusic
+      Music
       Notation
       Notation2
       Pieces.Motive
@@ -51,7 +52,12 @@ library
   hs-source-dirs:
       src
   default-extensions:
-      GHC2021
+      DerivingStrategies
+      DerivingVia
+      TypeFamilies
+      LambdaCase
+      ViewPatterns
+      PatternSynonyms
   ghc-options: -Wall -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints
   build-depends:
       Euterpea

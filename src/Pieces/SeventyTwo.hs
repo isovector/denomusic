@@ -3,168 +3,105 @@
 
 module Pieces.SeventyTwo where
 
-import Data.Functor.Identity
-import Debug.Trace
+import Data.List (inits)
+import Data.Set (Set)
+import Music
 import Data.Semigroup
 import Data.Foldable
-import Control.Monad
-import Notation
 import qualified Data.Set as S
 import Data.Functor
-import Score hiding (Voice)
 import MadMusic
 import Euterpea (PitchClass(..))
-import Control.Monad.RWS
 
-newtype Music gbl lcl w a = Music
-  { unMusic :: RWS (Rational -> gbl, gbl -> lcl) (Score w) Rational a
-  } deriving newtype (Functor, Applicative, Monad)
+sc :: Set PitchClass
+sc = S.fromList [A, B, C, D, E, F, G]
 
-type Voice lcl = Music (Chord lcl) lcl
-
-
-data MusicResult r w a = MusicResult
-  { mr_result :: a
-  , mr_score :: Score w
-  , mr_final :: r
-  }
-
-runMusic :: (Rational -> gbl) -> Music gbl gbl w a -> MusicResult gbl w a
-runMusic f (Music m) =
-  let (a, t, w) = runRWS m (f, id) 0
-   in MusicResult a w (f t)
-
-instance MonadWriter (Score w) (Music gbl lcl w) where
-  tell s = Music $ do
-    tell s
-    modify' (+ duration s)
-  listen (Music ma) = Music $ listen ma
-  pass (Music ma) = Music $ pass ma
-
-seekG :: Rational -> Music gbl lcl w gbl
-seekG t = Music $ ($) <$> fmap fst ask <*> fmap (+ t) get
-
-seek :: Rational -> Music gbl lcl w lcl
-seek t' = Music $ do
-  (gbl, lcl) <- ask
-  t <- get
-  pure $ lcl $ gbl $ t + t'
-
-peekG :: Music gbl lcl w gbl
-peekG = seekG 0
-
-peek :: Music gbl lcl w lcl
-peek = seek 0
-
-sc :: Scale PitchClass
-sc = S.fromList [A, B, Cs, D, E, Fs, G]
-
-melVoice :: Int
-melVoice = 4
-
-globalChanges :: Rational -> Chord (Reg PitchClass)
-globalChanges =
-  let
-    tri = S.fromList [Reg 2 B, Reg 3 Fs, Reg 3 B, Reg 4 D, Reg 5 D]
-   in
-    thingy
-      [ T (-1) 0
-      , T (-1) 0
-      , T (-1) 0
-      , T (-7) 3
-      , T 1 0
-      , T 1 0
-      ] <&> \t -> move sc t tri
-
-localRWS :: (s -> r -> r') -> RWS r' w s a -> RWS r w s a
-localRWS f = withRWS $ \z s -> (f s z, s)
-
-voice :: Int -> Music gbl r w a -> Music gbl (Chord r) w a
-voice v  = locally $ const $ (!! v) . toList
-
-locally :: (gbl -> r -> r') -> Music gbl r' w a -> Music gbl r w a
-locally f (Music m) = Music $ localRWS (\t (gbl, lcl) -> (gbl, f (gbl t) . lcl)) m
-
-hold :: Music gbl lcl w a -> Music gbl lcl w a
-hold m = Music $ do
-  t <- get
-  a <- unMusic m
-  t' <- get
-  put t
-  tell $ delay (t - t')
-  pure a
-
-withReg :: (Int -> Int) -> Reg a -> Reg a
-withReg f (Reg r a) = Reg (f r) a
-
-leading :: Rational -> Rational -> T -> Voice (Reg PitchClass) (Reg PitchClass) ()
-leading offset r t = do
-  ch <- seekG offset
-  c <- seek offset
-  tell $ tile r $ move1 sc ch t c
-
-emit :: Rational -> T -> Voice (Reg PitchClass) (Reg PitchClass) ()
-emit = leading 0
-
-wait :: Rational -> Music gbl lbl a ()
-wait = tell . delay
-
-motif1 :: Voice (Reg PitchClass) (Reg PitchClass) ()
-motif1 = do
-  emit (3/4) mempty
-  emit (1/8) $ T (-1) 0
-  emit (1/8) $ T (-2) 0
-
-arpeggiate :: Rational -> Rational -> [Int] -> Voice (Reg PitchClass) (Reg PitchClass) ()
-arpeggiate _ _ [] = pure ()
-arpeggiate _ tf [i] = emit tf $ T 0 i
-arpeggiate t tf (i : is) = emit t (T 0 i) >> arpeggiate t tf is
-
--- arpeggiate t = traverse_ $ emit t . T 0
--- arpeggiate t = traverse_ $ emit t . T 0
-
-arpegiated :: Voice (Reg PitchClass) (Reg PitchClass) ()
-arpegiated = do
-  emit 1 mempty
-  wait (-1)
-  arpeggiate (1/8) 0.5 [0..3]
-
-doubleArp :: Voice (Reg PitchClass) (Reg PitchClass) ()
-doubleArp = do
-  emit 1 mempty
-  wait (-1)
-
-  arpeggiate (1/8) (1/8) [0..3]
-  arpeggiate (1/8) (1/8) [3,2..0]
-
-bar :: Voice (Reg PitchClass) (Reg PitchClass) ()
-    -> Voice (Reg PitchClass) (Reg PitchClass) ()
-    -> Music (Chord (Reg PitchClass)) (Chord (Reg PitchClass)) (Reg PitchClass) ()
-bar m1 m2 = do
-  hold $ voice 0 m1
-  voice melVoice m2
-
-
-octaveArp :: Voice (Reg PitchClass) (Reg PitchClass) ()
-octaveArp = do
-  arpeggiate (1/8) (1/4) [0, 1, 2]
-  locally (\c -> move1 sc c (T (-1) 0)) $ arpeggiate (1/8) (1/4) [0, 1, 2]
-
-
-
-score :: Score (Reg PitchClass)
-score = simul
-  [ mr_score $ runMusic globalChanges $ do
-      replicateM 3 $ bar arpegiated motif1
-      bar doubleArp (emit 1 $ T 0 0)
-      replicateM 3 $ bar arpegiated motif1
-      bar octaveArp (emit 1 $ T 0 0)
-      bar octaveArp (wait 1)
-      bar motif1 $ arpegiated
+motif1 :: Music
+motif1 = mconcat
+  [ note (3/4) $ T 0 0
+  , note (1/8) $ T (-1) 0
+  , note (1/8) $ T (-2) 0
   ]
 
+arpeggiate :: Rational -> Rational -> [T] -> Music
+arpeggiate _ _ [] = mempty
+arpeggiate _ d2 [t] = note d2 t
+arpeggiate d1 d2 (t : ts) = note d1 t <> arpeggiate d1 d2 ts
+
+arp1 :: Music
+arp1 = reharmonize (inversion (-3)) $ arpeggiate (1/8) (5/8) [T 0 0, T 0 1, T 0 2, T 0 3]
+
+arp2 :: Music
+arp2 = mconcat
+  [ rest (1/8)
+  , note (1/8) (T 0 0)
+  , note (1/4) (T 0 (-1))
+  , note (1/8) (T 1 (-1))
+  , note (1/4) (T 0 (-1))
+  , note (1/8) (T (-1)  (-1))
+  ]
+
+backing :: Music
+backing = re octave <> re (voice 1 $ note 1 mempty)
+
+waldstein :: Music
+waldstein = foldMap (note (1/8))
+  [ chordTone 0
+  , chordTone 1
+  , chordTone 2
+  , chordTone 3
+  , chordTone 3 <> scaleTone (-1)
+  , chordTone 3
+  , chordTone 1
+  , chordTone 2
+  ]
+
+octave :: Music
+octave = chord 1 [chordTone 0, chordTone (-3)]
+
+cadences :: Music
+cadences = do
+  let c = chord 0.25 [chordTone 0, chordTone 1, chordTone 2]
+  foldMap ($ c)
+    [ id
+    , reharmonize (scaleTone 3 <> inversion (-1))
+    , reharmonize (scaleTone 4 <> inversion (-2))
+    , id
+    ]
+
+score :: Music
+score = withScale (S.fromList [Af, Bf, C, Df, Ef, F, G]) $ mconcat
+  [ modulate
+      [ scaleTone 3
+      , scaleTone 3 <> inversion (-2)
+      , scaleTone 3 <> inversion (-1)
+      , scaleTone 3 <> inversion (-1)
+      , scaleTone 3 <> inversion (-1)
+      ] $ cycle [ (re arp1 <> voice 2 motif1), backing <> voice 2 waldstein]
+  ]
+  -- [ modulate
+  --     [ scaleTone 3
+  --     , scaleTone 3 <> inversion (-2)
+  --     ] $ cycle [ re (voice 2 arp1) <> waldstein ]
+  -- ]
+
+--   [ waldstein
+--   , reharmonize (scaleTone 3) waldstein
+--   , reharmonize (scaleTone 6 <> inversion (-2)) waldstein
+--   , reharmonize (scaleTone 9 <> inversion (-3)) waldstein
+--   , reharmonize (scaleTone 12 <> inversion (-4)) waldstein
+--   , reharmonize (scaleTone 15 <> inversion (-5)) waldstein
+--   , reharmonize (scaleTone 18 <> inversion (-6)) waldstein
+--   , reharmonize (scaleTone 21 <> inversion (-7)) waldstein
+--   ]
+  -- withScale (S.fromList [D, E, Fs, G, A, B, Cs]) $
+  --   withRoot (Reg 4 D) $
+  --     withChord (S.fromList [(-7), (-5), (-2), 0, 7]) $
+  --       mconcat
+  --         [ modulate [T (-1) 0, T 0 1] $
+  --             re (voice 4 motif1) <> arp1
+  --         , re (voice 4 $ note 1 mempty) <> offset (-1/8) arp2
+  --         ]
+
 main :: IO ()
-main = do
-  let s = fmap fromReg score
-  toPdf s
-  playScore $ scale 1 s
+main = play $ score
