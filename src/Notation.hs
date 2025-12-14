@@ -139,7 +139,7 @@ grouping :: Eq a => [(a, b)] -> [(a, [b])]
 grouping = fmap (fst . head &&& fmap snd) . groupBy (on (==) fst)
 
 imsToLilypond :: [IntervalMap Rational ([PostEvent], E.Pitch)] -> Music
-imsToLilypond = makeTuplets . Simultaneous True .  fmap (flip evalState 0 . imToLilypond . grouping. traversalOrder)
+imsToLilypond = removeParallelRests . tieLengths . makeTuplets . Simultaneous True .  fmap (flip evalState 0 . imToLilypond . grouping. traversalOrder)
 
 iDur :: Interval Rational -> Rational
 iDur (Interval lo hi) = hi - lo
@@ -189,15 +189,19 @@ inject (treble, bass) =
     ]
 
 
-
-toLilypond :: Score E.Pitch -> String
-toLilypond
+finalizeLily :: [IntervalMap Rational ([PostEvent], E.Pitch)] -> String
+finalizeLily
   = show
   . pPrint
   . inject
   . (bimap imsToLilypond imsToLilypond)
   . partition ((>= E.absPitch (E.C, 4))
-  . averagePitch (E.absPitch . snd)) . toVoices;
+  . averagePitch (E.absPitch . snd))
+
+toLilypond :: Score E.Pitch -> String
+toLilypond
+  = finalizeLily
+  . toVoices
 
 header :: String
 header = unlines

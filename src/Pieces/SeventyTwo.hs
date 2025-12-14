@@ -5,6 +5,7 @@ module Pieces.SeventyTwo where
 
 import Data.List (inits)
 import Data.Set (Set)
+import Notation2
 import Music
 import Data.Semigroup
 import Data.Foldable
@@ -104,4 +105,6 @@ score = withScale (S.fromList [Af, Bf, C, Df, Ef, F, G]) $ reharmonize (register
   --         ]
 
 main :: IO ()
-main = play $ score
+main = do
+  toPdf score
+  play $ score

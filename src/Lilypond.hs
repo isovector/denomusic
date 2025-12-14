@@ -1,3 +1,4 @@
+{-# LANGUAGE BlockArguments             #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -126,7 +127,7 @@ data Articulation
     | VarCoda
     deriving stock (Eq, Show)
 
-newtype Duration  = Duration Rational
+newtype Duration  = Duration { unDuration :: Rational }
   deriving newtype (Eq, Ord, Num, Enum, Fractional, Real, RealFrac, Show)
 
 data Direction
@@ -560,4 +561,38 @@ tupletize rs = do
       power = 2 ^ (floor @Double @Int (logBase 2 (fromIntegral $ denominator smallest) ))
       multiplier = smallest * power
    in (multiplier, fmap (first (/ multiplier)) rs)
+
+unsequence :: Music -> Music
+unsequence = cata $ \case
+  SequentialF [a] -> a
+  x -> embed x
+
+
+tieLengths :: Music -> Music
+tieLengths = unsequence . cata \case
+  RestF r es ->
+    Sequential $ fmap (\(d, es') -> Rest d (es' <> es)) $ divideDuration $ Duration r
+  NoteF n r es ->
+    Sequential $ fmap (\(d, es') -> Note n d (es' <> es)) $ divideDuration $ Duration r
+  ChordF n r es ->
+    Sequential $ fmap (\(d, es') -> Chord n d (es' <> es)) $ divideDuration $ Duration r
+
+  x -> embed x
+
+divideDuration :: Duration -> [(Rational, [PostEvent])]
+divideDuration d@(Duration r) =
+  case separateDots d of
+    Just _ -> pure (r, [])
+    Nothing ->
+      let piece = 2 ^^ (floor $ logBaseR 2 r)
+       in (r - piece, [Tie]) : divideDuration (Duration piece)
+
+
+removeParallelRests :: Music -> Music
+removeParallelRests = cata $ \case
+  SimultaneousF a b -> Simultaneous a $ filter (\case { Rest{} -> False; _ -> True }) b
+  x -> embed x
+
+
+
 

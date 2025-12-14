@@ -1,4 +1,9 @@
-module Music where
+module Music
+  ( module Music
+  , T(..)
+  , Reg(..)
+  , PitchClass(..)
+  ) where
 
 import Data.List (inits)
 import qualified Data.Set as S
