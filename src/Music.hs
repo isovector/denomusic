@@ -146,13 +146,19 @@ chord :: Foldable t => Rational -> t T -> Music
 chord d ts = simul $ fmap (note d) $ toList ts
 
 chordTone :: Int -> T
-chordTone = T 0
+chordTone t = T 0 t 0 0
 
 inversion :: Int -> T
 inversion = chordTone
 
 scaleTone :: Int -> T
-scaleTone = flip T 0
+scaleTone t = T t 0 0 0
+
+register :: Int -> T
+register t = T 0 0 t 0
+
+semiTone :: Int -> T
+semiTone t = T 0 0 0 t
 
 
 modulate :: [T] -> [Music] -> Music
