@@ -80,6 +80,7 @@ data Music
     | Tempo (Maybe String) (Maybe (Duration,Integer)) -- ^ Tempo mark.
     | New String (Maybe String) Music               -- ^ New expression.
     | Context String (Maybe String) Music           -- ^ Context expression.
+    | Command String -- ^ Arbitrary lilypond command
     | Revert String
     deriving stock (Eq, Show)
 
@@ -259,6 +260,9 @@ instance Pretty Music where
 
     pPrint (Context typ name x) =
         "\\context" <+> text typ <+> pPrint name <+> pPrint x
+
+    pPrint (Command val) =
+        ("\\" <> text val)
 
     pPrint (Revert name) =
         "\\revert" <+> text name

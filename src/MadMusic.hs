@@ -6,13 +6,56 @@
 module MadMusic where
 
 import Data.Semigroup
-import Notation
-import Data.List (inits)
-import Score
-import Data.Foldable
-import Euterpea (PitchClass(..))
 import qualified Data.Set as S
 import Data.Set (Set)
+import Euterpea qualified as E
+
+data PitchClass
+  = Cff | Cf | C | Cs | Css
+  | Dff | Df | D | Ds | Dss
+  | Eff | Ef | E | Es | Ess
+  | Fff | Ff | F | Fs | Fss
+  | Gff | Gf | G | Gs | Gss
+  | Aff | Af | A | As | Ass
+  | Bff | Bf | B | Bs | Bss
+  deriving (Show, Eq, Ord, Read, Enum, Bounded)
+
+toStupidEuterpeaPitchClass :: PitchClass -> E.PitchClass
+toStupidEuterpeaPitchClass Aff = E.Aff
+toStupidEuterpeaPitchClass Af = E.Af
+toStupidEuterpeaPitchClass A = E.A
+toStupidEuterpeaPitchClass As = E.As
+toStupidEuterpeaPitchClass Ass = E.Ass
+toStupidEuterpeaPitchClass Bff = E.Bff
+toStupidEuterpeaPitchClass Bf = E.Bf
+toStupidEuterpeaPitchClass B = E.B
+toStupidEuterpeaPitchClass Bs = E.Bs
+toStupidEuterpeaPitchClass Bss = E.Bss
+toStupidEuterpeaPitchClass Cff = E.Cff
+toStupidEuterpeaPitchClass Cf = E.Cf
+toStupidEuterpeaPitchClass C = E.C
+toStupidEuterpeaPitchClass Cs = E.Cs
+toStupidEuterpeaPitchClass Css = E.Css
+toStupidEuterpeaPitchClass Dff = E.Dff
+toStupidEuterpeaPitchClass Df = E.Df
+toStupidEuterpeaPitchClass D = E.D
+toStupidEuterpeaPitchClass Ds = E.Ds
+toStupidEuterpeaPitchClass Dss = E.Dss
+toStupidEuterpeaPitchClass Eff = E.Eff
+toStupidEuterpeaPitchClass Ef = E.Ef
+toStupidEuterpeaPitchClass E = E.E
+toStupidEuterpeaPitchClass Es = E.Es
+toStupidEuterpeaPitchClass Ess = E.Ess
+toStupidEuterpeaPitchClass Fff = E.Fff
+toStupidEuterpeaPitchClass Ff = E.Ff
+toStupidEuterpeaPitchClass F = E.F
+toStupidEuterpeaPitchClass Fs = E.Fs
+toStupidEuterpeaPitchClass Fss = E.Fss
+toStupidEuterpeaPitchClass Gff = E.Gff
+toStupidEuterpeaPitchClass Gf = E.Gf
+toStupidEuterpeaPitchClass G = E.G
+toStupidEuterpeaPitchClass Gs = E.Gs
+toStupidEuterpeaPitchClass Gss = E.Gss
 
 data T = T
   { t_extrinsic :: Int
@@ -85,55 +128,3 @@ move sc (T e i r s) c =
    in S.map (fmap (nTimes s pred succ) . withReg (+ r)) $ S.map (extrMove sc' i) c'
 
 
-voices :: Chord a -> [a]
-voices c =
-  case S.minView c of
-    Nothing -> []
-    Just (a, c') -> a : voices c'
-
-
-mtimes :: Monoid a => Int -> a -> a
-mtimes n a
-  | n <= 0 = mempty
-  | otherwise = stimes n a
-
-thingy :: Monoid a => [a] -> Rational -> a
-thingy m = \t ->
-  let x = floor t
-      (z, r) = quotRem x $ length m
-   in mtimes z (fold m) <> mconcat (take r m)
-
-
-oldMain :: IO ()
-oldMain = do
-  let sc = S.fromList [A, B,C, Cs, Ds,E, Fs,G, Gs]
-      tri = S.fromList [Reg 3 Cs, Reg 4 E, Reg 4 A]
-      moves = take 6 $ cycle
-        [ T (6) (-2) 0 0
-        , T (2) (-1) 0 0
-        , T (-8) (2) 0 0
-        ]
-
-  let score =
-        fmap fromReg $ scale 0.5 $ flip foldMap (inits moves) $ \ms -> do
-          let c = move sc (fold ms) tri
-              sc' = S.map unReg c
-              (mel : ch@(mid : _)) = reverse $ voices c
-          fork (chord $ toList $ invert 0 $ S.fromList ch) $
-            fork
-              ( mconcat
-                  [ delay 0.25
-                  , tile 0.25 $ extrMove sc' 1 mid
-                  , delay 0.25
-                  , tile 0.25 $ extrMove sc' (-1) mid
-                  ]
-              ) $
-              mconcat
-              [ tile 0.25 $ extrMove sc' 0 mel
-              , tile 0.25 $ extrMove sc (5) mel
-              , tile 0.125 $ extrMove sc (4) mel
-              , tile 0.125 $ extrMove sc (5) mel
-              , tile 0.25 $ extrMove sc' 1 mel
-              ]
-  toPdf score
-  playScore score

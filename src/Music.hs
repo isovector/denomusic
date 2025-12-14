@@ -5,6 +5,7 @@ module Music
   , PitchClass(..)
   ) where
 
+import Control.Arrow
 import Data.List (inits)
 import qualified Data.Set as S
 import Data.Set (Set)
@@ -16,9 +17,8 @@ import Data.Monoid.Action
 import Data.Tree.DUAL hiding (flatten)
 import Data.Tree.DUAL qualified as D
 import Data.Void
-import Euterpea (PitchClass(..))
 import Euterpea qualified as E
-import MadMusic (T(..), Reg(..), move1)
+import MadMusic (T(..), Reg(..), PitchClass(..), move1)
 import MadMusic qualified as MM
 
 data Envelope = Envelope
@@ -173,4 +173,5 @@ modulate ts = mconcat . zipWith reharmonize (fmap fold $ inits ts)
 play :: Music -> IO ()
 play
   = E.playDev 2
+  . fmap (first MM.toStupidEuterpeaPitchClass)
   . toEuterpea

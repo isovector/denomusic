@@ -8,7 +8,7 @@ import Data.IntervalMap.FingerTree qualified as IM
 import Data.List (sortOn, groupBy)
 import Data.Tree.DUAL
 import Lilypond qualified as L
-import MadMusic (fromReg)
+import MadMusic (fromReg, toStupidEuterpeaPitchClass)
 import Music
 import Notation (finalizeLily, header)
 import System.Cmd (rawSystem)
@@ -35,7 +35,7 @@ toIM = foldMap $ \(e, a) ->
 
 
 toLilypond :: Music -> String
-toLilypond = finalizeLily . fmap (fmap (fmap fromReg)) . toVoices
+toLilypond = finalizeLily . fmap (fmap (fmap $ fromReg . fmap toStupidEuterpeaPitchClass)) . toVoices
 
 
 toPdf :: Music -> IO ()

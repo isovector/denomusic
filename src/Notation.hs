@@ -184,8 +184,8 @@ toVoices = sortVoices (E.absPitch . snd) . dp (E.absPitch . snd) . traversalOrde
 inject :: (Music, Music) -> Music
 inject (treble, bass) =
   New "GrandStaff" Nothing $ Simultaneous False
-    [ New "Staff" Nothing $ sequential (Clef Treble) treble
-    , New "Staff" Nothing $ sequential (Clef Bass) bass
+    [ New "Staff" Nothing $ Sequential [ Clef Treble, Command "accidentalStyle piano-cautionary", treble ]
+    , New "Staff" Nothing $ Sequential [ Clef Bass, Command "accidentalStyle piano-cautionary", bass ]
     ]
 
 
