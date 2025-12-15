@@ -6,12 +6,12 @@ cabal-version: 2.2
 
 name:           denomusic
 version:        0.1.0.0
-description:    Please see the README on GitHub at <https://github.com/githubuser/denomusic#readme>
-homepage:       https://github.com/githubuser/denomusic#readme
-bug-reports:    https://github.com/githubuser/denomusic/issues
-author:         Author name here
-maintainer:     example@example.com
-copyright:      2025 Author name here
+description:    Please see the README on GitHub at <https://github.com/isovector/denomusic#readme>
+homepage:       https://github.com/isovector/denomusic#readme
+bug-reports:    https://github.com/isovector/denomusic/issues
+author:         Sandy Maguire
+maintainer:     music@sandymaguire.me
+copyright:      2025 Sandy Maguire
 license:        BSD-3-Clause
 license-file:   LICENSE
 build-type:     Simple
@@ -21,7 +21,7 @@ extra-source-files:
 
 source-repository head
   type: git
-  location: https://github.com/githubuser/denomusic
+  location: https://github.com/isovector/denomusic
 
 library
   exposed-modules:
@@ -51,12 +51,9 @@ library
   ghc-options: -Wall -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints
   build-depends:
       Euterpea
-    , MemoTrie
     , QuickCheck
-    , async
     , base >=4.7 && <5
     , checkers
-    , comonad
     , containers
     , deepseq
     , dual-tree
@@ -64,14 +61,10 @@ library
     , hspec
     , lens
     , lilypond
-    , linear
     , monoid-extras
     , mtl
     , pretty
     , process
-    , random
     , recursion-schemes
-    , split
-    , step-function
     , transformers
   default-language: GHC2021

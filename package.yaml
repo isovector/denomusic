@@ -1,10 +1,10 @@
 name:                denomusic
 version:             0.1.0.0
-github:              "githubuser/denomusic"
+github:              "isovector/denomusic"
 license:             BSD-3-Clause
-author:              "Author name here"
-maintainer:          "example@example.com"
-copyright:           "2025 Author name here"
+author:              "Sandy Maguire"
+maintainer:          "music@sandymaguire.me"
+copyright:           "2025 Sandy Maguire"
 language:            GHC2021
 
 extra-source-files:
@@ -18,33 +18,26 @@ extra-source-files:
 # To avoid duplicated efforts in documentation and dealing with the
 # complications of embedding Haddock markup inside cabal files, it is
 # common to point users to the README.md file.
-description:         Please see the README on GitHub at <https://github.com/githubuser/denomusic#readme>
+description:         Please see the README on GitHub at <https://github.com/isovector/denomusic#readme>
 
 dependencies:
 - base >= 4.7 && < 5
 - Euterpea
 - checkers
 - QuickCheck
-- split
 - containers
-- step-function
 - hspec
 - mtl
 - transformers
-- random
 - lens
 - fingertree
 - dual-tree
 - monoid-extras
-- linear
 - recursion-schemes
 - deepseq
 - lilypond
 - pretty
 - process
-- MemoTrie
-- async
-- comonad
 
 default-extensions:
 - DerivingStrategies
