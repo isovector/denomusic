@@ -17,7 +17,19 @@ rest d = Music $ leafU $ Sum d
 stretch :: Rational -> Music -> Music
 stretch d = addEnv $ mempty { e_duration = d }
 
+timeSignature :: Integer -> Integer -> Music -> Music
+timeSignature num den = addAnn $ TimeSignature num den
 
+tempo :: Rational -> Integer -> Music -> Music
+tempo ndur bpm = addAnn $ Tempo ndur bpm
+
+phrase :: Music -> Music
+phrase = addAnn Phrase
+
+-- Note to self: also add this as an annotation, so that we can correctly
+-- generate a key signature.
+--
+-- https://lilypond.org/doc/v2.24/Documentation/notation/displaying-pitches#key-signature
 withScale :: Set PitchClass -> Music -> Music
 withScale sc = addEnv $ mempty { e_scale = pure sc }
 

@@ -3,10 +3,10 @@ module Music.Play
   ) where
 
 import Control.Arrow
-import Data.Functor
 import Data.Tree.DUAL
 import Euterpea qualified as E
 import Music.Types
+import Data.Maybe
 
 
 play :: Music -> IO ()
@@ -19,11 +19,37 @@ play
 toEuterpea
   :: Music
   -> E.Music (PitchClass, Int)
-toEuterpea s = do
-  foldr (E.:=:) (E.rest 0) $
-    (flatten $ unMusic s) <&> \(n, e) ->
+toEuterpea (Music tree) = fromMaybe (E.rest 0) $
+  foldDUAL
+    (\e t ->
       E.rest (e_offset e) E.:+: E.note (e_duration e)
-        (fromReg $ export e n)
+        (fromReg $ export e t)
+    )
+    (E.rest 0)
+    (foldr1 (E.:=:))
+    (const id)
+    (\case
+      TimeSignature{} -> id
+      Tempo note beats ->
+        -- Euterpea's default tempo is 120 quarter notes per minute, and
+        -- 'E.tempo' performs a scaling. So we need to rescale it to 1 whole
+        -- note per second, and then change the tempo to our needs.
+        E.tempo $ do
+          let metro setting dur = 60 / (fromIntegral @Integer setting * dur)
+          metro beats
+            ( -- The tempo sets the duration of a quarter note! So we must
+              -- divide our unit down by a quarter note too! Guess how long
+              -- this took me to sort out.
+              note / (1/4)
+            ) / metro 120 (1/4)
+
+      Phrase ->
+        E.phrase $ pure $ E.Art $
+          -- This mysterious parameter sets a scaling factor on the duration of
+          -- non-terminal notes in a phrase. Chosen "by ear."
+          E.Slurred 1.7
+    )
+    tree
 
 
 toStupidEuterpeaPitchClass :: PitchClass -> E.PitchClass

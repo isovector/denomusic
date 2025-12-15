@@ -12,7 +12,6 @@ import Data.Monoid
 import Data.Monoid.Action
 import Data.Set (Set)
 import Data.Tree.DUAL
-import Data.Void
 import Music.Harmony
 
 data PitchClass
@@ -46,9 +45,26 @@ instance Monoid Envelope where
 instance Action Envelope (Sum Rational) where
   act e (Sum s) = Sum $ e_duration e * s
 
+data Annotation
+  = -- | Change the time signature. This is expressed as two integers, rather
+    -- than a rational, because time signatures do not normalize! For example,
+    -- @3/4 /= 6/8@.
+    TimeSignature
+      -- | Numerator
+      Integer
+      -- | Denominator
+      Integer
+  | -- | Change the tempo.
+    Tempo
+      -- | Default note duration
+      Rational
+      -- | This many times per minute
+      Integer
+  | Phrase
+
 
 newtype Music = Music
-  { unMusic :: DUALTree Envelope (Sum Rational) Void T
+  { unMusic :: DUALTree Envelope (Sum Rational) Annotation T
   }
 
 
@@ -62,6 +78,9 @@ instance Monoid Music where
 
 addEnv :: Envelope -> Music -> Music
 addEnv e = Music . applyD e . unMusic
+
+addAnn :: Annotation -> Music -> Music
+addAnn a = Music . annot a . unMusic
 
 export
   :: Envelope
