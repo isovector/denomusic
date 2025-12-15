@@ -34,6 +34,8 @@ library
       Music.Primitives
       Music.Rhythm
       Music.Types
+      Music.Utils
+      Pieces.Seventy
       Pieces.SeventyTwo
   other-modules:
       Paths_denomusic

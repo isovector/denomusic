@@ -4,12 +4,14 @@ module Music
   , module Music.Rhythm
   , module Music.Play
   , module Music.Notation
+  , module Music.Utils
   , module Music
   , scaleTone
   , chordTone
   , semiTone
   , register
   , inversion
+  , Group (..)
   ) where
 
 import Data.Group
@@ -20,11 +22,8 @@ import Music.Notation
 import Music.Play
 import Music.Primitives
 import Music.Rhythm
+import Music.Utils
 import Music.Types
-
-
-reharmonize :: T -> Music -> Music
-reharmonize t m = move t <> m <> move (invert t)
 
 
 chord :: Foldable t => Rational -> t T -> Music

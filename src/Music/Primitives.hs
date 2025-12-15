@@ -1,5 +1,6 @@
 module Music.Primitives where
 
+import Data.Group
 import Data.Ratio
 import Data.Set (Set)
 import Data.Tree.DUAL
@@ -38,6 +39,10 @@ withScale sc = addEnv $ mempty { e_scale = pure sc }
 
 voice :: Int -> Music -> Music
 voice t = addEnv $ mempty { e_voice = pure t }
+
+
+reharmonize :: T -> Music -> Music
+reharmonize t m = move t <> m <> move (invert t)
 
 
 withChord
