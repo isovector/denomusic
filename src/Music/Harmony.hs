@@ -3,59 +3,12 @@
 {-# OPTIONS_GHC -fno-warn-x-partial               #-}
 
 -- | As per https://www.madmusicalscience.com/
-module MadMusic where
+module Music.Harmony where
 
 import Data.Semigroup
-import qualified Data.Set as S
 import Data.Set (Set)
-import Euterpea qualified as E
+import Data.Set qualified as S
 
-data PitchClass
-  = Cff | Cf | C | Cs | Css
-  | Dff | Df | D | Ds | Dss
-  | Eff | Ef | E | Es | Ess
-  | Fff | Ff | F | Fs | Fss
-  | Gff | Gf | G | Gs | Gss
-  | Aff | Af | A | As | Ass
-  | Bff | Bf | B | Bs | Bss
-  deriving (Show, Eq, Ord, Read, Enum, Bounded)
-
-toStupidEuterpeaPitchClass :: PitchClass -> E.PitchClass
-toStupidEuterpeaPitchClass Aff = E.Aff
-toStupidEuterpeaPitchClass Af = E.Af
-toStupidEuterpeaPitchClass A = E.A
-toStupidEuterpeaPitchClass As = E.As
-toStupidEuterpeaPitchClass Ass = E.Ass
-toStupidEuterpeaPitchClass Bff = E.Bff
-toStupidEuterpeaPitchClass Bf = E.Bf
-toStupidEuterpeaPitchClass B = E.B
-toStupidEuterpeaPitchClass Bs = E.Bs
-toStupidEuterpeaPitchClass Bss = E.Bss
-toStupidEuterpeaPitchClass Cff = E.Cff
-toStupidEuterpeaPitchClass Cf = E.Cf
-toStupidEuterpeaPitchClass C = E.C
-toStupidEuterpeaPitchClass Cs = E.Cs
-toStupidEuterpeaPitchClass Css = E.Css
-toStupidEuterpeaPitchClass Dff = E.Dff
-toStupidEuterpeaPitchClass Df = E.Df
-toStupidEuterpeaPitchClass D = E.D
-toStupidEuterpeaPitchClass Ds = E.Ds
-toStupidEuterpeaPitchClass Dss = E.Dss
-toStupidEuterpeaPitchClass Eff = E.Eff
-toStupidEuterpeaPitchClass Ef = E.Ef
-toStupidEuterpeaPitchClass E = E.E
-toStupidEuterpeaPitchClass Es = E.Es
-toStupidEuterpeaPitchClass Ess = E.Ess
-toStupidEuterpeaPitchClass Fff = E.Fff
-toStupidEuterpeaPitchClass Ff = E.Ff
-toStupidEuterpeaPitchClass F = E.F
-toStupidEuterpeaPitchClass Fs = E.Fs
-toStupidEuterpeaPitchClass Fss = E.Fss
-toStupidEuterpeaPitchClass Gff = E.Gff
-toStupidEuterpeaPitchClass Gf = E.Gf
-toStupidEuterpeaPitchClass G = E.G
-toStupidEuterpeaPitchClass Gs = E.Gs
-toStupidEuterpeaPitchClass Gss = E.Gss
 
 data T = T
   { t_extrinsic :: Int
@@ -71,9 +24,6 @@ instance Semigroup T where
 instance Monoid T where
   mempty = T 0 0 0 0
 
-type Scale = Set
-type Chord = Set
-
 data Reg a = Reg
   { getReg :: Int
   , unReg :: a
@@ -85,6 +35,9 @@ fromReg (Reg i a) = (a, i)
 
 withReg :: (Int -> Int) -> Reg a -> Reg a
 withReg f (Reg r a) = Reg (f r) a
+
+type Scale = Set
+type Chord = Set
 
 extrPred :: Ord a => Scale a -> Reg a -> Reg a
 extrPred sc (Reg r a)
@@ -127,4 +80,19 @@ move sc (T e i r s) c =
       sc' = S.map unReg c'
    in S.map (fmap (nTimes s pred succ) . withReg (+ r)) $ S.map (extrMove sc' i) c'
 
+
+chordTone :: Int -> T
+chordTone t = T 0 t 0 0
+
+inversion :: Int -> T
+inversion = chordTone
+
+scaleTone :: Int -> T
+scaleTone t = T t 0 0 0
+
+register :: Int -> T
+register t = T 0 0 t 0
+
+semiTone :: Int -> T
+semiTone t = T 0 0 0 t
 

@@ -1,14 +1,8 @@
 {-# LANGUAGE BlockArguments             #-}
-{-# LANGUAGE DerivingStrategies         #-}
-{-# LANGUAGE ExistentialQuantification  #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TemplateHaskell            #-}
-{-# LANGUAGE TypeFamilies               #-}
 {-# OPTIONS_GHC -fno-warn-orphans       #-}
+{-# OPTIONS_GHC -fno-warn-type-defaults #-}
 
 -------------------------------------------------------------------------------------
 -- |
@@ -21,7 +15,7 @@
 -- Portability : GHC
 --
 -------------------------------------------------------------------------------------
-module Lilypond where
+module Data.Lilypond where
 
 import Debug.Trace (trace)
 import Control.Lens (Traversal', (%~), unsafePartsOf)
@@ -63,23 +57,23 @@ instance Pretty Dynamics where
 --
 --   Use the 'Pretty' instance to convert into Lilypond syntax.
 --
-data Music
+data Score
     = Rest Rational [PostEvent]             -- ^ Single rest.
     | Note Note Rational [PostEvent]        -- ^ Single note.
     | Chord [(Note, [PostEvent])] Rational [PostEvent]     -- ^ Single chord.
-    | Sequential   [Music]                          -- ^ Sequential composition.
-    | Simultaneous Bool [Music]                     -- ^ Parallel composition (split voices?).
-    | Repeat Bool Int Music (Maybe (Music, Music))  -- ^ Repetition (unfold?, times, music, alternative).
-    | Tremolo Int Music                             -- ^ Tremolo (multiplier).
-    | Tuplet Rational (Maybe Int) Music                          -- ^ Stretch music (multiplier).
-    | Transpose Pitch Pitch Music                   -- ^ Transpose music (from to).
-    | Relative Pitch Music                          -- ^ Use relative octave (octave).
+    | Sequential   [Score]                          -- ^ Sequential composition.
+    | Simultaneous Bool [Score]                     -- ^ Parallel composition (split voices?).
+    | Repeat Bool Int Score (Maybe (Score, Score))  -- ^ Repetition (unfold?, times, music, alternative).
+    | Tremolo Int Score                             -- ^ Tremolo (multiplier).
+    | Tuplet Rational (Maybe Int) Score                          -- ^ Stretch music (multiplier).
+    | Transpose Pitch Pitch Score                   -- ^ Transpose music (from to).
+    | Relative Pitch Score                          -- ^ Use relative octave (octave).
     | Clef Clef                                     -- ^ Clef.
     | Key Pitch Mode                                -- ^ Key signature.
     | Time Integer Integer                          -- ^ Time signature.
     | Tempo (Maybe String) (Maybe (Duration,Integer)) -- ^ Tempo mark.
-    | New String (Maybe String) Music               -- ^ New expression.
-    | Context String (Maybe String) Music           -- ^ Context expression.
+    | New String (Maybe String) Score               -- ^ New expression.
+    | Context String (Maybe String) Score           -- ^ Context expression.
     | Command String -- ^ Arbitrary lilypond command
     | Revert String
     deriving stock (Eq, Show)
@@ -207,7 +201,7 @@ data PostEvent
     deriving stock (Eq, Show)
 
 
-instance Pretty Music where
+instance Pretty Score where
     pPrint (Rest d p)       = "r" <> pPrint (Duration d) <> pPrintList prettyNormal p
 
     pPrint (Note n d p)     = pPrint n <> pPrint (Duration d) <> pPrintList prettyNormal p
@@ -401,13 +395,13 @@ instance Pretty Duration where
             pds n = concat $ replicate n "."
 
 
-sequential :: Music -> Music -> Music
+sequential :: Score -> Score -> Score
 Sequential as `sequential` Sequential bs = Sequential (as <> bs)
 Sequential as `sequential` b             = Sequential (as <> [b])
 a `sequential` Sequential bs             = Sequential ([a] <> bs)
 a `sequential` b                         = Sequential ([a,b])
 
-simultaneous :: Music -> Music -> Music
+simultaneous :: Score -> Score -> Score
 Simultaneous _ as `simultaneous` Simultaneous _ bs = Simultaneous True (as <> bs)
 Simultaneous s as `simultaneous` b                 = Simultaneous s (as <> [b])
 a `simultaneous` Simultaneous t bs                 = Simultaneous t ([a] <> bs)
@@ -445,11 +439,11 @@ isDivisibleBy n = (== 0.0) . snd . properFraction @Double @Integer . logBaseR (t
 
 
 
-$(makeBaseFunctor [''Music])
+$(makeBaseFunctor [''Score])
 
 
 
-removeSingleChords :: Music -> Music
+removeSingleChords :: Score -> Score
 removeSingleChords = cata $ \case
   ChordF [(n,_)] d p -> Note n d p
   x -> embed x
@@ -474,7 +468,7 @@ instance Monoid (TupletTree a) where
 
 -- | Fold over a piece of music, turning series of non-standard-duration notes
 -- into tuplets.
-makeTuplets :: Music -> Music
+makeTuplets :: Score -> Score
 makeTuplets = cata $ \case
   SequentialF xs
     | any (not . isDivisibleBy @Double 2 . fromMaybe 2 . getDuration) xs
@@ -483,7 +477,7 @@ makeTuplets = cata $ \case
 
 
 -- | For pieces of music that are tupletizable, get their durations.
-getDuration :: Music -> Maybe Rational
+getDuration :: Score -> Maybe Rational
 getDuration = \case
     Note _ b _ -> Just b
     Rest b _ -> Just b
@@ -492,7 +486,7 @@ getDuration = \case
 
 
 -- | doesn't target the post events inside of chords
-groupedPostEvents :: Traversal' Music [PostEvent]
+groupedPostEvents :: Traversal' Score [PostEvent]
 groupedPostEvents f =
   \case
     RestF a b -> Rest a <$> f b
@@ -505,7 +499,7 @@ groupedPostEvents f =
 -- | Fold a tuplet tree back into pieces of sequential music. This essentially
 -- compiles it back down to combinations of notes, chords, sequentials and
 -- tuplets.
-foldTupletTree :: TupletTree Music -> [Music]
+foldTupletTree :: TupletTree Score -> [Score]
 foldTupletTree (One d (Chord a _ c)) = pure $ Chord a d c
 foldTupletTree (One d (Note a _ c)) = pure $ Note a d c
 foldTupletTree (One d (Rest _ c)) = pure $ Rest d c
@@ -513,13 +507,13 @@ foldTupletTree One{} = error "foldTupletTree: impossible"
 foldTupletTree (Many as) = foldTupletTree =<< as
 foldTupletTree (TupletTree d as) = pure $ Tuplet (1 / d) Nothing $ Sequential $ foldTupletTree as
 
-addPhrase :: Music -> Music
+addPhrase :: Score -> Score
 addPhrase = unsafePartsOf groupedPostEvents %~ wrapping BeginPhraseSlur EndPhraseSlur
 
-addSlur :: Music -> Music
+addSlur :: Score -> Score
 addSlur = unsafePartsOf groupedPostEvents %~ wrapping BeginSlur EndSlur
 
-addArticulation :: Articulation -> Music -> Music
+addArticulation :: Articulation -> Score -> Score
 addArticulation a = groupedPostEvents %~ (Articulation Default a :)
 
 wrapping :: a -> a -> [[a]] -> [[a]]
@@ -566,13 +560,13 @@ tupletize rs = do
       multiplier = smallest * power
    in (multiplier, fmap (first (/ multiplier)) rs)
 
-unsequence :: Music -> Music
+unsequence :: Score -> Score
 unsequence = cata $ \case
   SequentialF [a] -> a
   x -> embed x
 
 
-tieLengths :: Music -> Music
+tieLengths :: Score -> Score
 tieLengths = unsequence . cata \case
   RestF r es ->
     Sequential $ fmap (\(d, es') -> Rest d (es' <> es)) $ divideDuration $ Duration r
@@ -592,7 +586,7 @@ divideDuration d@(Duration r) =
        in (r - piece, [Tie]) : divideDuration (Duration piece)
 
 
-removeParallelRests :: Music -> Music
+removeParallelRests :: Score -> Score
 removeParallelRests = cata $ \case
   SimultaneousF a b -> Simultaneous a $ filter (\case { Rest{} -> False; _ -> True }) b
   x -> embed x

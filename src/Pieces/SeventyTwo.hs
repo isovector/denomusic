@@ -3,18 +3,9 @@
 
 module Pieces.SeventyTwo where
 
-import Data.List (inits)
-import Data.Set (Set)
-import Notation2
-import Music
-import Data.Semigroup
 import Data.Foldable
+import Music
 import qualified Data.Set as S
-import Data.Functor
-import MadMusic
-
-sc :: Set PitchClass
-sc = S.fromList [A, B, C, D, E, F, G]
 
 motif1 :: Music
 motif1 = mconcat
@@ -92,7 +83,7 @@ score = withScale (S.fromList [Af, Bf, C, Df, Ef, F, G]) $
                   [ chordTone (-3), chordTone 0, chordTone 2
                   ]
           mconcat
-            [ stretch (5/8) $ ch
+            [ stretch (5/8) ch
             , stretch (1/8) $ reharmonize (semiTone (-1)) ch
             , stretch (2/8) $ reharmonize (semiTone (-1)) ch
             ]

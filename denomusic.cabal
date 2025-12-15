@@ -25,26 +25,16 @@ source-repository head
 
 library
   exposed-modules:
-      APitch
-      APitch2
-      Combinators
       Data.IntervalMap
-      Glass.Etude16
-      Legacy
-      Lilypond
-      MadMusic
+      Data.Lilypond
       Music
-      Notation
-      Notation2
-      Pieces.Motive
-      Pieces.Pitchy
-      Pieces.Seventy
+      Music.Harmony
+      Music.Notation
+      Music.Play
+      Music.Primitives
+      Music.Rhythm
+      Music.Types
       Pieces.SeventyTwo
-      Pieces.Test
-      Pieces.Tune
-      Pitch
-      Score
-      Theory.Chords
   other-modules:
       Paths_denomusic
   autogen-modules:
