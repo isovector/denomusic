@@ -160,6 +160,14 @@ header = unlines
   ]
 
 
+footer :: String
+footer = unlines
+  [ "\\paper {"
+  , "ragged-last = ##t"
+  , "}"
+  ]
+
+
 data Terminal a = Start a | Stop a
   deriving stock (Eq, Ord, Show, Functor, Foldable, Traversable)
 
@@ -193,6 +201,6 @@ toLilypond = finalizeLily . toVoices
 toPdf :: Music -> IO ()
 toPdf m = do
   let lp = read @String $ show $ pPrint $ toLilypond m
-  writeFile "/tmp/out.lily" $ header <> lp
+  writeFile "/tmp/out.lily" $ header <> lp <> footer
   _ <- rawSystem "lilypond" ["-o", "/tmp/song", "/tmp/out.lily"]
   pure ()
