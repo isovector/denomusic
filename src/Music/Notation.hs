@@ -4,6 +4,7 @@
 
 module Music.Notation (toLilypond, toPdf) where
 
+import Data.Ratio (denominator)
 import Control.Arrow ((&&&))
 import Control.Monad.State
 import Data.Bifunctor
@@ -12,7 +13,7 @@ import Data.Foldable
 import Data.Function
 import Data.IntervalMap.FingerTree (Interval(..), low, high)
 import Data.Lilypond
-import Data.List (sortOn, groupBy, partition)
+import Data.List (sortOn, groupBy, partition, sort)
 import Data.Music.Lilypond.Pitch hiding (PitchName(..))
 import Data.Music.Lilypond.Pitch qualified as L
 import Data.Sequence (Seq(..))
@@ -89,8 +90,8 @@ grouping = fmap (fst . head &&& fmap snd) . groupBy (on (==) fst)
 
 imsToLilypond :: [[(Interval Rational, ([PostEvent], Reg PitchClass))]] -> Score
 imsToLilypond
-  = removeParallelRests
-  . tieLengths
+  = tieLengths
+  . splitLengths
   . makeTuplets
   . Simultaneous True
   . fmap (flip evalState 0 . imToLilypond . grouping)
@@ -100,10 +101,10 @@ iDur (Interval lo hi) = hi - lo
 
 mkNotes :: Interval Rational -> [([PostEvent], Reg PitchClass)] -> Score
 mkNotes i [] = Rest (iDur i) []
-mkNotes i [(ps, e)] = Note (NotePitch $ toPitch e) (iDur i) ps
+mkNotes i [(ps, e)] = Note (iDur i) (NotePitch $ toPitch e)  ps
 mkNotes i notes =
   Chord
-    (fmap ((, []) . NotePitch . toPitch . snd) notes)
+    (fmap (NotePitch . toPitch . snd) notes)
     (high i - low i)
     $ nubOrd $ foldMap fst notes
 
@@ -112,16 +113,25 @@ imToLilypond [] = error "impossible"
 imToLilypond [(i, es)] = do
   prev <- get
   put $ high i
-  pure $ delayed (low i - prev) $ mkNotes i es
+  pure $ Sequential $ barCheck prev <> [delayed (low i - prev) $ mkNotes i es]
 imToLilypond ((i, es) : is) = do
   prev <- get
   put $ high i
   remaining <- imToLilypond is
-  pure $ delayed (low i - prev) $ sequential (mkNotes i es) remaining
+  pure $ Sequential $ barCheck prev <>
+      [delayed (low i - prev) $ sequential (mkNotes i es) remaining]
+
+
+barCheck :: Rational -> [Score]
+barCheck r =
+  case r /= 0 && denominator r == 1 of
+    True -> [BarCheck]
+    False -> mempty
+
 
 delayed :: Rational -> Score -> Score
 delayed 0 m = m
-delayed d m = sequential (Rest d []) m
+delayed d m = Sequential [Rest d [],  m]
 
 average :: [Int] -> Float
 average i = fromIntegral (sum i) / fromIntegral (length i)
@@ -154,7 +164,8 @@ header = unlines
 
 footer :: String
 footer = unlines
-  [ "\\paper {"
+  [ ""
+  , "\\paper {"
   , "ragged-last = ##t"
   , "}"
   ]
@@ -180,3 +191,4 @@ toPdf m = do
   writeFile "/tmp/out.lily" $ header <> lp <> footer
   _ <- rawSystem "lilypond" ["-o", "/tmp/song", "/tmp/out.lily"]
   pure ()
+

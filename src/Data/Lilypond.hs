@@ -17,10 +17,11 @@
 -------------------------------------------------------------------------------------
 module Data.Lilypond where
 
+import Data.Bool
 import Debug.Trace (trace)
 import Control.Lens (Traversal', (%~), unsafePartsOf)
 import Data.Maybe
-import Control.Arrow ((<<<), (***), first)
+import Control.Arrow (first)
 import Data.Char
 import Data.Functor.Foldable (cata, embed, project)
 import Data.Functor.Foldable.TH
@@ -33,34 +34,30 @@ import Data.List (minimumBy, unsnoc)
 import Data.Ord (comparing)
 
 instance Pretty Pitch where
-    pPrint (Pitch (c,a,o)) = text $ pc c ++ acc a ++ oct (o-4)
-        where
-            pc C = "c" ; pc D = "d" ; pc E = "e" ; pc F = "f"
-            pc G = "g" ; pc A = "a" ; pc B = "b"
-            acc n | n <  0  =  concat $ replicate (negate n) "es"
-                  | n == 0  =  ""
-                  | n >  0  =  concat $ replicate (n) "is"
-                  | otherwise = error "impossible"
-            oct n | n <  0  =  concat $ replicate (negate n) ","
-                  | n == 0  =  ""
-                  | n >  0  =  concat $ replicate n "'"
-                  | otherwise = error "impossible"
+  pPrint (Pitch (c,a,o)) = text $ fmap toLower (show c) <> acc a <> oct (o-4)
+    where
+      acc n | n <  0  =  concat $ replicate (negate n) "es"
+            | n == 0  =  ""
+            | n >  0  =  concat $ replicate (n) "is"
+            | otherwise = error "impossible"
+      oct n | n <  0  =  concat $ replicate (negate n) ","
+            | n == 0  =  ""
+            | n >  0  =  concat $ replicate n "'"
+            | otherwise = error "impossible"
 
 instance Pretty Mode where
-    pPrint Major = "\\major"
-    pPrint Minor = "\\minor"
+  pPrint Major = "\\major"
+  pPrint Minor = "\\minor"
 
 instance Pretty Dynamics where
-    pPrint = text . ("\\" ++) . fmap toLower . show
+  pPrint = text . ("\\" ++) . fmap toLower . show
 
 -- | A Lilypond music expression.
 --
 --   Use the 'Pretty' instance to convert into Lilypond syntax.
 --
 data Score
-    = Rest Rational [PostEvent]             -- ^ Single rest.
-    | Note Note Rational [PostEvent]        -- ^ Single note.
-    | Chord [(Note, [PostEvent])] Rational [PostEvent]     -- ^ Single chord.
+    = Chord [Note] Rational [PostEvent]
     | Sequential   [Score]                          -- ^ Sequential composition.
     | Simultaneous Bool [Score]                     -- ^ Parallel composition (split voices?).
     | Repeat Bool Int Score (Maybe (Score, Score))  -- ^ Repetition (unfold?, times, music, alternative).
@@ -76,8 +73,14 @@ data Score
     | Context String (Maybe String) Score           -- ^ Context expression.
     | Command String -- ^ Arbitrary lilypond command
     | Revert String
+    | BarCheck
     deriving stock (Eq, Show)
 
+pattern Rest :: Rational -> [PostEvent] -> Score
+pattern Rest r pe = Chord [] r pe
+
+pattern Note :: Rational -> Note -> [PostEvent] -> Score
+pattern Note r n pe = Chord [n] r pe
 
 -- | Articulations. These include ornaments.
 data Articulation
@@ -158,7 +161,6 @@ data Markup
 
 data Note
     = NotePitch Pitch
-    | DrumNotePitch (Maybe Duration)
     deriving stock (Eq, Show)
 
 
@@ -176,10 +178,6 @@ data Clef
     | Percussion
     | Tab
     deriving stock (Eq, Show)
-
-data ChordPostEvent
-  = Harmonic
-  deriving stock (Eq, Show)
 
 data PostEvent
     = Articulation Direction Articulation
@@ -202,17 +200,18 @@ data PostEvent
 
 
 instance Pretty Score where
+    pPrint BarCheck       = "|"
     pPrint (Rest d p)       = "r" <> pPrint (Duration d) <> pPrintList prettyNormal p
 
-    pPrint (Note n d p)     = pPrint n <> pPrint (Duration d) <> pPrintList prettyNormal p
+    pPrint (Note d n p)     = pPrint n <> pPrint (Duration d) <> pPrintList prettyNormal p
 
-    pPrint (Chord ns d p)   = "<" <> nest 4 (sepByS "" $ fmap (uncurry (<>) <<< pPrint *** pPrint) ns) <> char '>'
+    pPrint (Chord ns d p)   = "<" <> nest 2 (sepByS "" $ fmap pPrint ns) <> char '>'
                                   <> pPrint (Duration d) <> pPrintList prettyNormal p
 
-    pPrint (Sequential xs)  = "{" <+> nest 4 ((hsep . fmap pPrint) xs) <+> "}"
+    pPrint (Sequential xs)  = "{" <+> nest 2 ((sep . fmap pPrint) xs) <+> "}"
 
-    pPrint (Simultaneous False xs) = "<<" $$ nest 4 ((vcat . fmap pPrint) xs)           $$ ">>"
-    pPrint (Simultaneous True xs)  = "<<" $$ nest 4 ((sepByS " \\\\" . fmap pPrint) xs) $$ ">>"
+    pPrint (Simultaneous False xs) = "<<" $$ nest 2 ((vcat . fmap pPrint) xs)           $$ ">>"
+    pPrint (Simultaneous True xs)  = "<<" $$ nest 2 ((sepByS " \\\\" . fmap pPrint) xs) $$ ">>"
 
     pPrint (Repeat unfold times x alts) =
         "\\repeat" <+> unf unfold <+> int times <+> pPrint x <+> alt alts
@@ -247,10 +246,9 @@ instance Pretty Score where
     pPrint (Tempo (Just t) (Just (d,bpm)))   = "\\time" <+> pPrint t <+> pPrint d <+> "=" <+> pPrint bpm
 
     -- TODO metronome
-    -- TODO tempo
 
     pPrint (New typ name x) =
-        "\\new" <+> text typ <+> maybe "" pPrint name <+> pPrint x
+        "\\new" <+> text typ <+> maybe "" pPrint name $$ pPrint x
 
     pPrint (Context typ name x) =
         "\\context" <+> text typ <+> pPrint name <+> pPrint x
@@ -261,30 +259,14 @@ instance Pretty Score where
     pPrint (Revert name) =
         "\\revert" <+> text name
 
-    pPrintList _                    = hsep . fmap pPrint
 
 
 instance Pretty Note where
     pPrint (NotePitch p)         = pPrint p
-    pPrint (DrumNotePitch _)       = error "Non-standard pitch"
     pPrintList _                   = hsep . fmap pPrint
 
 instance Pretty Clef where
-    pPrint Treble       = "treble"
-    pPrint Alto         = "alto"
-    pPrint Tenor        = "tenor"
-    pPrint Bass         = "bass"
-    pPrint French       = "french"
-    pPrint Soprano      = "soprano"
-    pPrint MezzoSoprano = "mezzosoprano"
-    pPrint Baritone     = "baritone"
-    pPrint VarBaritone  = "varbaritone"
-    pPrint SubBass      = "subbass"
-    pPrint Percussion   = "percussion"
-    pPrint Tab          = "tab"
-
-instance Pretty ChordPostEvent where
-    pPrint Harmonic = "\\harmonic"
+  pPrint = text . fmap toLower . show
 
 instance Pretty PostEvent where
     pPrint (Articulation d a)   = pPrint d <> pPrint a
@@ -442,13 +424,6 @@ isDivisibleBy n = (== 0.0) . snd . properFraction @Double @Integer . logBaseR (t
 $(makeBaseFunctor [''Score])
 
 
-
-removeSingleChords :: Score -> Score
-removeSingleChords = cata $ \case
-  ChordF [(n,_)] d p -> Note n d p
-  x -> embed x
-
-
 -- | A tree for parsing tuplets into.
 data TupletTree a
   = One Rational a
@@ -469,19 +444,18 @@ instance Monoid (TupletTree a) where
 -- | Fold over a piece of music, turning series of non-standard-duration notes
 -- into tuplets.
 makeTuplets :: Score -> Score
-makeTuplets = cata $ \case
+makeTuplets = (cata $ \case
   SequentialF xs
     | any (not . isDivisibleBy @Double 2 . fromMaybe 2 . getDuration) xs
     -> Sequential $ foldTupletTree $ parseTupletTree $ mapMaybe (\x -> fmap (, x) $ getDuration x) xs
-  x -> embed x
+  x -> embed x) . flattenSequence
 
 
 -- | For pieces of music that are tupletizable, get their durations.
 getDuration :: Score -> Maybe Rational
 getDuration = \case
-    Note _ b _ -> Just b
-    Rest b _ -> Just b
     Chord _ b _ -> Just b
+    BarCheck -> Just 0
     _ -> Nothing
 
 
@@ -489,8 +463,6 @@ getDuration = \case
 groupedPostEvents :: Traversal' Score [PostEvent]
 groupedPostEvents f =
   \case
-    RestF a b -> Rest a <$> f b
-    NoteF a b c -> Note a b <$> f c
     ChordF a b c -> Chord a b <$> f c
     z -> fmap embed $ traverse (groupedPostEvents f) z
   . project
@@ -501,8 +473,9 @@ groupedPostEvents f =
 -- tuplets.
 foldTupletTree :: TupletTree Score -> [Score]
 foldTupletTree (One d (Chord a _ c)) = pure $ Chord a d c
-foldTupletTree (One d (Note a _ c)) = pure $ Note a d c
+foldTupletTree (One d (Note _ a c)) = pure $ Note d a c
 foldTupletTree (One d (Rest _ c)) = pure $ Rest d c
+foldTupletTree (One _ BarCheck) = pure BarCheck
 foldTupletTree One{} = error "foldTupletTree: impossible"
 foldTupletTree (Many as) = foldTupletTree =<< as
 foldTupletTree (TupletTree d as) = pure $ Tuplet (1 / d) Nothing $ Sequential $ foldTupletTree as
@@ -568,14 +541,20 @@ unsequence = cata $ \case
 
 tieLengths :: Score -> Score
 tieLengths = unsequence . cata \case
-  RestF r es ->
-    Sequential $ fmap (\(d, es') -> Rest d (es' <> es)) $ divideDuration $ Duration r
-  NoteF n r es ->
-    Sequential $ fmap (\(d, es') -> Note n d (es' <> es)) $ divideDuration $ Duration r
   ChordF n r es ->
-    Sequential $ fmap (\(d, es') -> Chord n d (es' <> es)) $ divideDuration $ Duration r
-
+    Sequential $ fmap (\(d, es') -> Chord n d (bool es' mempty (null n) <> es)) $ divideDuration $ Duration r
   x -> embed x
+
+splitLengths :: Score -> Score
+splitLengths = unsequence . cata \case
+  ChordF n r es ->
+    Sequential $ fmap (\(d, es') -> Chord n d (bool es' mempty (null n) <> es)) $ splitDuration r
+  x -> embed x
+
+splitDuration :: Rational -> [(Rational, [PostEvent])]
+splitDuration r
+  | r <= 1 = pure (r, [])
+  | otherwise = (1, [Tie]) : splitDuration (r - 1)
 
 divideDuration :: Duration -> [(Rational, [PostEvent])]
 divideDuration d@(Duration r) =
@@ -585,12 +564,13 @@ divideDuration d@(Duration r) =
       let piece = 2 ^^ (floor $ logBaseR 2 r)
        in (r - piece, [Tie]) : divideDuration (Duration piece)
 
-
-removeParallelRests :: Score -> Score
-removeParallelRests = cata $ \case
-  SimultaneousF a b -> Simultaneous a $ filter (\case { Rest{} -> False; _ -> True }) b
+flattenSequence :: Score -> Score
+flattenSequence = cata $ \case
+  SequentialF as -> Sequential $
+    flip foldMap as $ \case
+      Sequential bs -> bs
+      x -> pure x
   x -> embed x
-
 
 
 
