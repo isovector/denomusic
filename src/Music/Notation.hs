@@ -4,6 +4,7 @@
 
 module Music.Notation (toLilypond, toPdf) where
 
+import Data.Ord
 import           Control.Arrow ((&&&))
 import           Control.Monad.State
 import           Data.Bifunctor
@@ -169,6 +170,7 @@ finalizeLily
   . inject
   . bimap imsToLilypond imsToLilypond
   . partition ((>= 4) . averagePitch (getReg . snd) . mapMaybe (hush . snd))
+  . sortOn (Down . averagePitch (getReg . snd) . mapMaybe (hush . snd))
 
 hush :: Either e a -> Maybe a
 hush = either (const Nothing) Just

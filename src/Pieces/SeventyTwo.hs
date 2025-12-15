@@ -7,6 +7,17 @@ import Data.Foldable
 import Music
 import qualified Data.Set as S
 
+motif2 :: Music
+motif2 = mconcat
+  [ note (1/8) mempty
+  , note (1/4) $ chordTone 1
+  , note (1/8) mempty
+  , note (1/4) $ chordTone (-1)
+  , note (1/8) $ mempty
+  , note (1/8) $ chordTone 1
+  -- , note (1/4) $ chordTone 2
+  ]
+
 motif1 :: Music
 motif1 = mconcat
   [ note (3/4) $ T 0 0 0 0
@@ -14,6 +25,12 @@ motif1 = mconcat
       [ note (1/8) $ T (-1) 0 0 0
       , note (1/8) $ T (-2) 0 0 0
       ]
+  ]
+
+monty :: Music
+monty = simul $
+  [ voice 1 $ note (3/4) (chordTone 0) <> note (1/8) (chordTone 0) <> note (1/8) (scaleTone (-1))
+  , voice 2 $ note (3/4) (chordTone 0) <> note (1/8) (chordTone 0) <> note (1/8) (scaleTone (-1))
   ]
 
 arpeggiate :: Rational -> Rational -> [T] -> Music
@@ -93,5 +110,27 @@ score = withScale (S.fromList [Af, Bf, C, Df, Ef, F, G]) $
 
 main :: IO ()
 main = do
+  let score = withScale (S.fromList [Af, Bf, C, Df, Ef, F, G]) $ mconcat
+        [ move (scaleTone 2)
+        ,
+          modulate [scaleTone 4, scaleTone 2 <> inversion (-2), scaleTone 3 <> inversion (-1)] $
+              zipWith fork (cycle $
+                [ voice 0 $ arp1
+                , voice 0 $ reharmonize (register (-1)) motif2
+                ]) $ cycle
+                  [ voice 2 motif2
+                  , voice 1 motif1
+                  ]
+        ,
+          modulate [scaleTone 4, scaleTone 2 <> inversion (-2), scaleTone 3 <> inversion (-1)] $
+              zipWith fork (cycle $
+                [ voice 0 $ arp1
+                , voice 0 $ reharmonize (register (-1)) motif2
+                ]) $ cycle
+                  [ monty
+                  , monty
+                  ]
+        , reharmonize (register (-1)) $ voice 0 motif1
+        ]
   toPdf score
   play score

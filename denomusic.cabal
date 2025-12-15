@@ -36,6 +36,7 @@ library
       Music.Types
       Music.Utils
       Pieces.Seventy
+      Pieces.SeventyOne
       Pieces.SeventyTwo
   other-modules:
       Paths_denomusic
