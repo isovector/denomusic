@@ -48,6 +48,7 @@ toEuterpea (Music tree) = fromMaybe (E.rest 0) $
           -- This mysterious parameter sets a scaling factor on the duration of
           -- non-terminal notes in a phrase. Chosen "by ear."
           E.Slurred 1.7
+      Articulate _ -> id
     )
     tree
 

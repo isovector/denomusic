@@ -29,6 +29,12 @@ tempo ndur bpm = addAnn $ Tempo ndur bpm
 phrase :: Music -> Music
 phrase = addAnn Phrase
 
+staccato :: Music -> Music
+staccato = addAnn $ Articulate Staccato
+
+accent :: Music -> Music
+accent = addAnn $ Articulate Accent
+
 -- Note to self: also add this as an annotation, so that we can correctly
 -- generate a key signature.
 --

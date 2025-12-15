@@ -4,6 +4,7 @@ module Music.Types
   , fromReg
   , withReg
   , T(..)
+  , Articulation(..)
   ) where
 
 import Data.Group
@@ -14,6 +15,9 @@ import Data.Monoid.Action
 import Data.Set (Set)
 import Data.Tree.DUAL
 import Music.Harmony
+import Data.Lilypond (Articulation(..))
+import Data.Function
+
 
 data PitchClass
   = Cff | Cf | C | Cs | Css
@@ -34,6 +38,7 @@ data Envelope = Envelope
   , e_harmony :: T
   , e_voice :: Last Int
   }
+  deriving stock (Eq, Ord, Show)
 
 instance Semigroup Envelope where
   Envelope a1 b1 c1 d1 e1 f1 <> Envelope a2 b2 c2 d2 e2 f2
@@ -76,11 +81,17 @@ data Annotation
       -- | This many times per minute
       Integer
   | Phrase
+  | Articulate Articulation
+  deriving stock (Eq, Ord, Show)
 
 
 newtype Music = Music
   { unMusic :: DUALTree Envelope UpAnnot Annotation T
   }
+  deriving stock Show
+
+instance Eq Music where
+  (==) = on (==) $ flatten . unMusic
 
 
 instance Semigroup Music where

@@ -29,17 +29,50 @@ n8 = note (1/8) mempty
 n8' :: Music
 n8' = dot $ note (1/8) mempty
 
-e16 :: Music
-e16 = note (1/16) mempty
+n16 :: Music
+n16 = note (1/16) mempty
 
-e16' :: Music
-e16' = dot $ note (1/16) mempty
+n16' :: Music
+n16' = dot $ note (1/16) mempty
 
-e32 :: Music
-e32 = note (1/32) mempty
+n32 :: Music
+n32 = note (1/32) mempty
 
-e32' :: Music
-e32' = dot $ note (1/32) mempty
+n32' :: Music
+n32' = dot $ note (1/32) mempty
+
+r1 :: Music
+r1 = rest (1/1)
+
+r2 :: Music
+r2 = rest (1/2)
+
+r2' :: Music
+r2' = dot $ rest (1/2)
+
+r4 :: Music
+r4 = rest (1/4)
+
+r4' :: Music
+r4' = dot $ rest (1/4)
+
+r8 :: Music
+r8 = rest (1/8)
+
+r8' :: Music
+r8' = dot $ rest (1/8)
+
+r16 :: Music
+r16 = rest (1/16)
+
+r16' :: Music
+r16' = dot $ rest (1/16)
+
+r32 :: Music
+r32 = rest (1/32)
+
+r32' :: Music
+r32' = dot $ rest (1/32)
 
 tuplet :: Foldable t => t Music -> Music
 tuplet ts =

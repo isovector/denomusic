@@ -225,7 +225,8 @@ score
         case a of
           TimeSignature x y -> sameTimeAs m $ L.Time x y
           Phrase -> around BeginPhraseSlur EndPhraseSlur m
-          Tempo z s -> undefined
+          Tempo z s -> m
+          Articulate z -> everywhere (Articulation Default z) m
       )
   . unMusic
 
