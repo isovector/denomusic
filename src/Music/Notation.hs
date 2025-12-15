@@ -10,14 +10,12 @@ import Data.Bifunctor
 import Data.Containers.ListUtils (nubOrd)
 import Data.Foldable
 import Data.Function
-import Data.IntervalMap.FingerTree (IntervalMap, Interval(..))
-import Data.IntervalMap.FingerTree qualified as IM
+import Data.IntervalMap.FingerTree (Interval(..), low, high)
 import Data.Lilypond
 import Data.List (sortOn, groupBy, partition)
 import Data.Music.Lilypond.Pitch hiding (PitchName(..))
 import Data.Music.Lilypond.Pitch qualified as L
 import Data.Sequence (Seq(..))
-import Data.Sequence qualified as Seq
 import Data.Tree.DUAL
 import Music.Types
 import System.Cmd (rawSystem)
@@ -66,12 +64,6 @@ pitchClassToPitchAndAccidental Bf  = (L.B, -1)
 pitchClassToPitchAndAccidental Bs  = (L.B, 1)
 pitchClassToPitchAndAccidental Bss = (L.B, 2)
 
-imToSeq :: Ord v => IntervalMap v a -> Seq (Interval v, a)
-imToSeq im =
-  case IM.bounds im of
-    Just b -> Seq.fromList $ IM.intersections b im
-    Nothing -> Seq.empty
-
 everywhere
   :: PostEvent
   -> Seq (Interval v, ([PostEvent], a))
@@ -95,13 +87,13 @@ deriving stock instance Ord PostEvent
 grouping :: Eq a => [(a, b)] -> [(a, [b])]
 grouping = fmap (fst . head &&& fmap snd) . groupBy (on (==) fst)
 
-imsToLilypond :: [IntervalMap Rational ([PostEvent], Reg PitchClass)] -> Score
+imsToLilypond :: [[(Interval Rational, ([PostEvent], Reg PitchClass))]] -> Score
 imsToLilypond
   = removeParallelRests
   . tieLengths
   . makeTuplets
   . Simultaneous True
-  . fmap (flip evalState 0 . imToLilypond . grouping. traversalOrder)
+  . fmap (flip evalState 0 . imToLilypond . grouping)
 
 iDur :: Interval Rational -> Rational
 iDur (Interval lo hi) = hi - lo
@@ -112,20 +104,20 @@ mkNotes i [(ps, e)] = Note (NotePitch $ toPitch e) (iDur i) ps
 mkNotes i notes =
   Chord
     (fmap ((, []) . NotePitch . toPitch . snd) notes)
-    (IM.high i - IM.low i)
+    (high i - low i)
     $ nubOrd $ foldMap fst notes
 
 imToLilypond :: [(Interval Rational, [([PostEvent], Reg PitchClass)])] -> State Rational Score
 imToLilypond [] = error "impossible"
 imToLilypond [(i, es)] = do
   prev <- get
-  put $ IM.high i
-  pure $ delayed (IM.low i - prev) $ mkNotes i es
+  put $ high i
+  pure $ delayed (low i - prev) $ mkNotes i es
 imToLilypond ((i, es) : is) = do
   prev <- get
-  put $ IM.high i
+  put $ high i
   remaining <- imToLilypond is
-  pure $ delayed (IM.low i - prev) $ sequential (mkNotes i es) remaining
+  pure $ delayed (low i - prev) $ sequential (mkNotes i es) remaining
 
 delayed :: Rational -> Score -> Score
 delayed 0 m = m
@@ -134,7 +126,7 @@ delayed d m = sequential (Rest d []) m
 average :: [Int] -> Float
 average i = fromIntegral (sum i) / fromIntegral (length i)
 
-averagePitch :: (a -> Int) -> IntervalMap Rational a -> Int
+averagePitch :: Foldable t => (a -> Int) -> t a -> Int
 averagePitch f = round . average . fmap f . toList
 
 inject :: (Score, Score) -> Score
@@ -145,13 +137,13 @@ inject (treble, bass) =
     ]
 
 
-finalizeLily :: [IntervalMap Rational ([PostEvent], Reg PitchClass)] -> String
+finalizeLily :: [[(Interval Rational, ([PostEvent], Reg PitchClass))]] -> String
 finalizeLily
   = show
   . pPrint
   . inject
-  . (bimap imsToLilypond imsToLilypond)
-  . partition ((>= 4) . averagePitch (getReg . snd))
+  . bimap imsToLilypond imsToLilypond
+  . partition ((>= 4) . averagePitch (getReg . snd . snd))
 
 header :: String
 header = unlines
@@ -168,30 +160,14 @@ footer = unlines
   ]
 
 
-data Terminal a = Start a | Stop a
-  deriving stock (Eq, Ord, Show, Functor, Foldable, Traversable)
-
-traversalOrder :: Ord v => IntervalMap v a -> [(Interval v, a)]
-traversalOrder = sortOn (\((Interval lo hi), _) -> (lo, hi)) . toList . imToSeq
-
-
-toVoices :: Music -> [IntervalMap Rational ([PostEvent], Reg PitchClass)]
+toVoices :: Music -> [[(Interval Rational, ([PostEvent], Reg PitchClass))]]
 toVoices
-  = fmap toIM
+  = fmap (fmap $ \(e, r) -> (Interval (e_offset e) (e_offset e + e_duration e), ([], r)))
   . groupBy (on (==) $ e_voice . fst)
   . sortOn (e_voice . fst)
   . fmap (\(t, e) -> (e, export e t))
   . flatten
   . unMusic
-
-
-toIM :: [(Envelope, Reg a)] -> IntervalMap Rational ([x], Reg a)
-toIM = foldMap $ \(e, a) ->
-  let o = e_offset e
-      s = e_duration e
-      lo = min o (o + s)
-      hi = max o (o + s)
-    in IM.singleton (Interval lo hi) (mempty, a)
 
 
 toLilypond :: Music -> String
