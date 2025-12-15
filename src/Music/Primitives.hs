@@ -1,5 +1,6 @@
 module Music.Primitives where
 
+import Data.Foldable
 import Data.Group
 import Data.Ratio
 import Data.Set (Set)
@@ -56,4 +57,25 @@ withChord
   -> Music
   -> Music
 withChord t = addEnv $ mempty { e_chord = pure t }
+
+
+invertHarmonyE :: Envelope -> Envelope
+invertHarmonyE e = e { e_harmony = invert $ e_harmony e }
+
+
+-- | Probably has a bug with applyD'd music
+negative :: Music -> Music
+negative m
+  = Music
+  . foldMap (<> leafU mempty {ua_width = duration m})
+  . foldDUAL
+      (\e t -> applyD (invertHarmonyE e) $ leaf mempty $ invert t
+      )
+      (mempty)
+      (fold)
+      (\e ->
+        (applyUpre $ mempty { ua_motion = invert $ e_harmony e <> e_harmony e })
+      )
+      annot
+  $ unMusic m
 
