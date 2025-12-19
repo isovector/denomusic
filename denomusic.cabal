@@ -58,6 +58,7 @@ library
     , deepseq
     , dual-tree
     , fingertree
+    , groups
     , hspec
     , lens
     , lilypond

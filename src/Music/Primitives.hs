@@ -1,18 +1,19 @@
 module Music.Primitives where
 
 import Data.Ratio
-import Data.Monoid
 import Data.Set (Set)
 import Data.Tree.DUAL
 import Music.Types
 
 
 note :: Rational -> T -> Music
-note d = stretch d . Music . leaf (Sum 1)
+note d = stretch d . Music . leaf mempty { ua_width = 1 }
 
+move :: T -> Music
+move t = Music $ leafU mempty { ua_motion = t }
 
 rest :: Rational -> Music
-rest d = Music $ leafU $ Sum d
+rest d = Music $ leafU mempty { ua_width = d }
 
 
 stretch :: Rational -> Music -> Music

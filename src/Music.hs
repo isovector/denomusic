@@ -12,9 +12,10 @@ module Music
   , inversion
   ) where
 
+import Data.Group
 import Data.Foldable
 import Data.List (inits)
-import Music.Harmony
+import Music.Harmony hiding (move)
 import Music.Notation
 import Music.Play
 import Music.Primitives
@@ -23,7 +24,7 @@ import Music.Types
 
 
 reharmonize :: T -> Music -> Music
-reharmonize t = addEnv $ mempty { e_harmony = t }
+reharmonize t m = move t <> m <> move (invert t)
 
 
 chord :: Foldable t => Rational -> t T -> Music

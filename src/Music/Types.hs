@@ -6,6 +6,7 @@ module Music.Types
   , T(..)
   ) where
 
+import Data.Group
 import qualified Data.Set as S
 import Data.Maybe
 import Data.Monoid
@@ -42,8 +43,23 @@ instance Semigroup Envelope where
 instance Monoid Envelope where
   mempty = Envelope 1 0 mempty mempty mempty mempty mempty
 
-instance Action Envelope (Sum Rational) where
-  act e (Sum s) = Sum $ e_duration e * s
+data UpAnnot = UpAnnot
+  { ua_width :: Rational
+  , ua_motion :: T
+  }
+  deriving stock (Eq, Ord, Show)
+
+instance Semigroup UpAnnot where
+  UpAnnot a1 b1 <> UpAnnot a2 b2 = UpAnnot (a1 + a2) (b1 <> b2)
+
+instance Monoid UpAnnot where
+  mempty = UpAnnot 0 mempty
+
+instance Group UpAnnot where
+  invert (UpAnnot x y) = UpAnnot (- x) (invert y)
+
+instance Action Envelope UpAnnot where
+  act e (UpAnnot w m) = UpAnnot (e_duration e * w) m
 
 data Annotation
   = -- | Change the time signature. This is expressed as two integers, rather
@@ -64,13 +80,17 @@ data Annotation
 
 
 newtype Music = Music
-  { unMusic :: DUALTree Envelope (Sum Rational) Annotation T
+  { unMusic :: DUALTree Envelope UpAnnot Annotation T
   }
 
 
 instance Semigroup Music where
   sa@(Music a) <> Music b =
-    Music $ a <> applyD (mempty { e_offset = duration sa }) b
+    Music $ a <>
+      applyD mempty
+        { e_offset = duration sa
+        , e_harmony = harmony sa
+        } b
 
 instance Monoid Music where
   mempty = Music mempty
@@ -99,5 +119,9 @@ export e t = do
       $ (S.toList ch !!)
       $ v
 
+
 duration :: Music -> Rational
-duration = getSum . fromMaybe mempty . getU . unMusic
+duration = ua_width . fromMaybe mempty . getU . unMusic
+
+harmony :: Music -> T
+harmony = ua_motion . fromMaybe mempty . getU . unMusic

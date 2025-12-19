@@ -197,10 +197,10 @@ toVoices
 
 splitVoices :: Music -> MonoidalMap Int Music
 splitVoices m
-  = foldMap (fmap $ Music . (<> leafU (Sum $ duration m)))
+  = foldMap (fmap $ Music . (<> leafU mempty {ua_width = duration m}))
   . foldDUAL
       (\e t ->
-        MM.singleton (fromMaybe 0 $ getLast $ e_voice e) $ applyD e $ leaf 0 t
+        MM.singleton (fromMaybe 0 $ getLast $ e_voice e) $ applyD e $ leaf mempty t
       )
       mempty
       fold

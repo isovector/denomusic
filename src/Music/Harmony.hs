@@ -5,6 +5,7 @@
 -- | As per https://www.madmusicalscience.com/
 module Music.Harmony where
 
+import Data.Group
 import Data.Semigroup
 import Data.Set (Set)
 import Data.Set qualified as S
@@ -23,6 +24,9 @@ instance Semigroup T where
 
 instance Monoid T where
   mempty = T 0 0 0 0
+
+instance Group T where
+  invert (T x y z w) = T (- x) (- y) (- z) (- w)
 
 data Reg a = Reg
   { getReg :: Int
@@ -63,9 +67,6 @@ extrMove sc n r
       LT -> head $ drop (abs n) $ iterate (extrPred sc) r
       EQ -> r
       GT -> head $ drop (abs n) $ iterate (extrSucc sc) r
-
-invert :: Ord a => Int -> Chord (Reg a) -> Chord (Reg a)
-invert i c = S.map (extrMove (S.map unReg c) i) c
 
 move1 :: (Enum a, Ord a) => Scale a -> Chord (Reg a) -> T -> Reg a -> Reg a
 move1 sc ch (T e i r s) a

@@ -39,6 +39,7 @@ dependencies:
 - lilypond
 - pretty
 - process
+- groups
 
 default-extensions:
 - DerivingStrategies
