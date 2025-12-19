@@ -4,23 +4,30 @@
 
 module Music.Notation (toLilypond, toPdf) where
 
-import Data.Ratio (denominator)
-import Control.Arrow ((&&&))
-import Control.Monad.State
-import Data.Bifunctor
-import Data.Containers.ListUtils (nubOrd)
-import Data.Foldable
-import Data.Function
-import Data.IntervalMap.FingerTree (Interval(..), low, high)
-import Data.Lilypond
-import Data.List (sortOn, groupBy, partition, sort)
-import Data.Music.Lilypond.Pitch hiding (PitchName(..))
-import Data.Music.Lilypond.Pitch qualified as L
-import Data.Sequence (Seq(..))
-import Data.Tree.DUAL
-import Music.Types
-import System.Cmd (rawSystem)
-import Text.PrettyPrint.HughesPJClass (pPrint)
+import           Control.Arrow ((&&&))
+import           Control.Monad.State
+import           Data.Bifunctor
+import           Data.Containers.ListUtils (nubOrd)
+import           Data.Either
+import           Data.Foldable
+import           Data.Function
+import           Data.IntervalMap.FingerTree (Interval(..), low, high)
+import           Data.Lilypond hiding (Tempo)
+import           Data.Lilypond qualified as L
+import           Data.List (sortOn, groupBy, partition, sort)
+import           Data.Map.Monoidal (MonoidalMap)
+import qualified Data.Map.Monoidal as MM
+import           Data.Maybe
+import           Data.Monoid
+import           Data.Music.Lilypond.Pitch hiding (PitchName(..))
+import           Data.Music.Lilypond.Pitch qualified as L
+import           Data.Ratio (denominator)
+import           Data.Sequence (Seq(..))
+import           Data.Sequence qualified as Seq
+import           Data.Tree.DUAL
+import           Music.Types
+import           System.Cmd (rawSystem)
+import           Text.PrettyPrint.HughesPJClass (pPrint)
 
 
 toPitch :: Reg PitchClass -> Pitch
@@ -67,31 +74,39 @@ pitchClassToPitchAndAccidental Bss = (L.B, 2)
 
 everywhere
   :: PostEvent
-  -> Seq (Interval v, ([PostEvent], a))
-  -> Seq (Interval v, ([PostEvent], a))
-everywhere pe = fmap $ fmap $ first (pe :)
+  -> [(a, Either b ([PostEvent], c))]
+  -> [(a, Either b ([PostEvent], c))]
+everywhere pe = fmap $ fmap $ fmap $ first (pe :)
 
 around
   :: PostEvent
   -> PostEvent
-  -> Seq (Interval v, ([PostEvent], a))
-  -> Seq (Interval v, ([PostEvent], a))
-around _ _ Empty = Empty
-around s e ((i, (pes, a)) :<| Empty) = (i, (s : e : pes, a)) :<| Empty
-around s e ((i1, (pes1, a1)) :<| (xs :|> (i2, (pes2, a2)))) =
-  (i1, (s : pes1, a1)) :<| (xs :|> (i2, (e : pes2, a2)))
+  -> [(a, Either b ([PostEvent], c))]
+  -> [(a, Either b ([PostEvent], c))]
+around s e = toList . around' . Seq.fromList
+  where
+    around' z =
+      let (ctrl, z') = Seq.breakl (isRight . snd) z
+          (ctrr, z'') = Seq.breakr (isRight . snd) z'
+       in (<> ctrr) $ (ctrl <>) $
+        case z'' of
+          Empty -> Empty
+          ((i, Right (pes, a)) :<| Empty) -> (i, Right (s : e : pes, a)) :<| Empty
+          ((i1, Right (pes1, a1))
+            :<| (xs :|> (i2, Right (pes2, a2))))
+                -> (i1, Right (s : pes1, a1)) :<| (xs :|> (i2, Right (e : pes2, a2)))
+          _ -> error "impossible!"
 
-deriving stock instance Ord Markup
-deriving stock instance Ord Articulation
-deriving stock instance Ord PostEvent
 
-grouping :: Eq a => [(a, b)] -> [(a, [b])]
-grouping = fmap (fst . head &&& fmap snd) . groupBy (on (==) fst)
+grouping :: (Eq a) => [(a, Either b c)] -> [(a, ([b], [c]))]
+grouping =
+  fmap (fst . head &&& partitionEithers . fmap snd)
+  . groupBy (on (==) fst)
 
-imsToLilypond :: [[(Interval Rational, ([PostEvent], Reg PitchClass))]] -> Score
+imsToLilypond :: [[(Interval Rational, Either Score ([PostEvent], Reg PitchClass))]] -> Score
 imsToLilypond
   = tieLengths
-  . splitLengths
+  . splitRests
   . makeTuplets
   . Simultaneous True
   . fmap (flip evalState 0 . imToLilypond . grouping)
@@ -108,24 +123,24 @@ mkNotes i notes =
     (high i - low i)
     $ nubOrd $ foldMap fst notes
 
-imToLilypond :: [(Interval Rational, [([PostEvent], Reg PitchClass)])] -> State Rational Score
+imToLilypond :: [(Interval Rational, ([Score], [([PostEvent], Reg PitchClass)]))] -> State Rational Score
 imToLilypond [] = error "impossible"
-imToLilypond [(i, es)] = do
+imToLilypond [(i, (sc, es))] = do
   prev <- get
   put $ high i
-  pure $ Sequential $ barCheck prev <> [delayed (low i - prev) $ mkNotes i es]
-imToLilypond ((i, es) : is) = do
+  pure $ barCheck prev <> delayed (low i - prev) (fold sc <> mkNotes i es)
+imToLilypond ((i, (sc, es)) : is) = do
   prev <- get
   put $ high i
   remaining <- imToLilypond is
-  pure $ Sequential $ barCheck prev <>
-      [delayed (low i - prev) $ sequential (mkNotes i es) remaining]
+  pure $ barCheck prev <>
+      delayed (low i - prev) (mconcat $ sc <> [mkNotes i es, remaining])
 
 
-barCheck :: Rational -> [Score]
+barCheck :: Rational -> Score
 barCheck r =
   case r /= 0 && denominator r == 1 of
-    True -> [BarCheck]
+    True -> BarCheck
     False -> mempty
 
 
@@ -147,13 +162,16 @@ inject (treble, bass) =
     ]
 
 
-finalizeLily :: [[(Interval Rational, ([PostEvent], Reg PitchClass))]] -> String
+finalizeLily :: [[(Interval Rational, Either Score ([PostEvent], Reg PitchClass))]] -> String
 finalizeLily
   = show
   . pPrint
   . inject
   . bimap imsToLilypond imsToLilypond
-  . partition ((>= 4) . averagePitch (getReg . snd . snd))
+  . partition ((>= 4) . averagePitch (getReg . snd) . mapMaybe (hush . snd))
+
+hush :: Either e a -> Maybe a
+hush = either (const Nothing) Just
 
 header :: String
 header = unlines
@@ -171,13 +189,44 @@ footer = unlines
   ]
 
 
-toVoices :: Music -> [[(Interval Rational, ([PostEvent], Reg PitchClass))]]
+toVoices :: Music -> [[(Interval Rational, Either Score ([PostEvent], Reg PitchClass))]]
 toVoices
-  = fmap (fmap $ \(e, r) -> (Interval (e_offset e) (e_offset e + e_duration e), ([], r)))
-  . groupBy (on (==) $ e_voice . fst)
-  . sortOn (e_voice . fst)
-  . fmap (\(t, e) -> (e, export e t))
-  . flatten
+  = foldMap (pure . score)
+  . splitVoices
+
+
+splitVoices :: Music -> MonoidalMap Int Music
+splitVoices m
+  = foldMap (fmap $ Music . (<> leafU (Sum $ duration m)))
+  . foldDUAL
+      (\e t ->
+        MM.singleton (fromMaybe 0 $ getLast $ e_voice e) $ applyD e $ leaf 0 t
+      )
+      mempty
+      fold
+      (const id)
+      (fmap . annot)
+  $ unMusic m
+
+
+sameTimeAs :: [(Interval Rational, Either b c)] -> b -> [(Interval Rational, Either b c)]
+sameTimeAs [] _ = error "no time like the present"
+sameTimeAs ab@((Interval lo hi, _) : _) b = (Interval lo hi, Left b) : ab
+
+score :: Music -> [(Interval Rational, Either Score ([PostEvent], Reg PitchClass))]
+score
+  = fold
+  . foldDUAL
+      (\e r -> pure $ (Interval (e_offset e) (e_offset e + e_duration e), Right ([], export e r)))
+      mempty
+      fold
+      (const id)
+      (\a m ->
+        case a of
+          TimeSignature x y -> sameTimeAs m $ L.Time x y
+          Phrase -> around BeginPhraseSlur EndPhraseSlur m
+          Tempo z s -> undefined
+      )
   . unMusic
 
 

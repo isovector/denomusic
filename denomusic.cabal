@@ -62,6 +62,7 @@ library
     , lens
     , lilypond
     , monoid-extras
+    , monoidal-containers
     , mtl
     , pretty
     , process

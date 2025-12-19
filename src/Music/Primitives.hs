@@ -1,5 +1,6 @@
 module Music.Primitives where
 
+import Data.Ratio
 import Data.Monoid
 import Data.Set (Set)
 import Data.Tree.DUAL
@@ -18,7 +19,7 @@ stretch :: Rational -> Music -> Music
 stretch d = addEnv $ mempty { e_duration = d }
 
 timeSignature :: Integer -> Integer -> Music -> Music
-timeSignature num den = addAnn $ TimeSignature num den
+timeSignature num den = addAnn (TimeSignature num den) . stretch (num % den)
 
 tempo :: Rational -> Integer -> Music -> Music
 tempo ndur bpm = addAnn $ Tempo ndur bpm

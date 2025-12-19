@@ -49,6 +49,8 @@ instance Pretty Mode where
   pPrint Major = "\\major"
   pPrint Minor = "\\minor"
 
+deriving stock instance Ord Mode
+
 instance Pretty Dynamics where
   pPrint = text . ("\\" ++) . fmap toLower . show
 
@@ -74,7 +76,15 @@ data Score
     | Command String -- ^ Arbitrary lilypond command
     | Revert String
     | BarCheck
-    deriving stock (Eq, Show)
+    deriving stock (Eq, Show, Ord)
+
+
+instance Semigroup Score where
+  (<>) = sequential
+
+instance Monoid Score where
+  mempty = Sequential mempty
+
 
 pattern Rest :: Rational -> [PostEvent] -> Score
 pattern Rest r pe = Chord [] r pe
@@ -123,7 +133,7 @@ data Articulation
     | Segno
     | Coda
     | VarCoda
-    deriving stock (Eq, Show)
+    deriving stock (Eq, Show, Ord)
 
 newtype Duration  = Duration { unDuration :: Rational }
   deriving newtype (Eq, Ord, Num, Enum, Fractional, Real, RealFrac, Show)
@@ -157,11 +167,11 @@ data Markup
     | Tiny Markup
     | TypewriterFont Markup
     | Upright Markup
-    deriving stock (Eq, Show)
+    deriving stock (Eq, Show, Ord)
 
 data Note
     = NotePitch Pitch
-    deriving stock (Eq, Show)
+    deriving stock (Eq, Show, Ord)
 
 
 data Clef
@@ -177,7 +187,7 @@ data Clef
     | SubBass
     | Percussion
     | Tab
-    deriving stock (Eq, Show)
+    deriving stock (Eq, Show, Ord)
 
 data PostEvent
     = Articulation Direction Articulation
@@ -196,7 +206,7 @@ data PostEvent
     | Arpeggio
     | Text Direction String
     | Markup Direction Markup
-    deriving stock (Eq, Show)
+    deriving stock (Eq, Show, Ord)
 
 
 instance Pretty Score where
@@ -456,6 +466,7 @@ getDuration :: Score -> Maybe Rational
 getDuration = \case
     Chord _ b _ -> Just b
     BarCheck -> Just 0
+    Time _ _ -> Just 0
     _ -> Nothing
 
 
@@ -475,8 +486,7 @@ foldTupletTree :: TupletTree Score -> [Score]
 foldTupletTree (One d (Chord a _ c)) = pure $ Chord a d c
 foldTupletTree (One d (Note _ a c)) = pure $ Note d a c
 foldTupletTree (One d (Rest _ c)) = pure $ Rest d c
-foldTupletTree (One _ BarCheck) = pure BarCheck
-foldTupletTree One{} = error "foldTupletTree: impossible"
+foldTupletTree (One _ x) = pure x
 foldTupletTree (Many as) = foldTupletTree =<< as
 foldTupletTree (TupletTree d as) = pure $ Tuplet (1 / d) Nothing $ Sequential $ foldTupletTree as
 
@@ -542,11 +552,34 @@ unsequence = cata $ \case
 tieLengths :: Score -> Score
 tieLengths = unsequence . cata \case
   ChordF n r es ->
-    Sequential $ fmap (\(d, es') -> Chord n d (bool es' mempty (null n) <> es)) $ divideDuration $ Duration r
+    Sequential $ do
+      let ds = divideDuration $ Duration r
+      case unsnoc ds of
+        Nothing -> error "impossible"
+        Just ([], (d', es'')) ->
+          pure $ Chord n d' $ bool es'' mempty (null n) <> es
+        Just (start, (d', es'')) ->
+          mconcat
+            [ fmap (\(d, es') -> Chord n d (filter (not . isStart) $ bool es' mempty (null n) <> es)) start
+            , pure $ Chord n d' $ filter (not . isEnd) $ bool es'' mempty (null n) <> es
+            ]
   x -> embed x
 
-splitLengths :: Score -> Score
-splitLengths = unsequence . cata \case
+isEnd :: PostEvent -> Bool
+isEnd EndSlur = True
+isEnd EndPhraseSlur = True
+isEnd EndCrescDim = True
+isEnd _ = False
+
+isStart :: PostEvent -> Bool
+isStart BeginSlur = True
+isStart BeginPhraseSlur = True
+isStart BeginCresc = True
+isStart BeginDim = True
+isStart _ = False
+
+splitRests :: Score -> Score
+splitRests = unsequence . cata \case
   ChordF n r es ->
     Sequential $ fmap (\(d, es') -> Chord n d (bool es' mempty (null n) <> es)) $ splitDuration r
   x -> embed x

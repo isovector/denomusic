@@ -26,6 +26,7 @@ dependencies:
 - checkers
 - QuickCheck
 - containers
+- monoidal-containers
 - hspec
 - mtl
 - transformers
