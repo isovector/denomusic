@@ -36,17 +36,12 @@ withScale :: Set PitchClass -> Music -> Music
 withScale sc = addEnv $ mempty { e_scale = pure sc }
 
 
-withRoot :: Reg PitchClass -> Music -> Music
-withRoot t = addEnv $ mempty { e_root = pure t }
-
-
 voice :: Int -> Music -> Music
 voice t = addEnv $ mempty { e_voice = pure t }
 
 
 withChord
-  :: Set Int
-  -- ^ scale degrees off of the current root
+  :: Set (Reg PitchClass)
   -> Music
   -> Music
 withChord t = addEnv $ mempty { e_chord = pure t }

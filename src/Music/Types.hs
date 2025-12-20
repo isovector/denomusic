@@ -30,18 +30,17 @@ data Envelope = Envelope
   { e_duration :: Rational
   , e_offset :: Rational
   , e_scale :: Last (Set PitchClass)
-  , e_root :: Last (Reg PitchClass)
-  , e_chord :: Last (Set Int)
+  , e_chord :: Last (Set (Reg PitchClass))
   , e_harmony :: T
   , e_voice :: Last Int
   }
 
 instance Semigroup Envelope where
-  Envelope a1 b1 c1 d1 e1 f1 g1 <> Envelope a2 b2 c2 d2 e2 f2 g2
-    = Envelope (a1 * a2) (a1 * b2 + b1) (c1 <> c2) (d1 <> d2) (e1 <> e2) (f1 <> f2) (g1 <> g2)
+  Envelope a1 b1 c1 d1 e1 f1 <> Envelope a2 b2 c2 d2 e2 f2
+    = Envelope (a1 * a2) (a1 * b2 + b1) (c1 <> c2) (d1 <> d2) (e1 <> e2) (f1 <> f2)
 
 instance Monoid Envelope where
-  mempty = Envelope 1 0 mempty mempty mempty mempty mempty
+  mempty = Envelope 1 0 mempty mempty mempty mempty
 
 data UpAnnot = UpAnnot
   { ua_width :: Rational
@@ -108,8 +107,7 @@ export
   -> Reg PitchClass
 export e t = do
   let sc = fromMaybe (S.fromList [C, D, E, F, G, A, B]) $ getLast $ e_scale e
-      root = fromMaybe (Reg 4 C) $ getLast $ e_root e
-      ch = S.map (flip (extrMove sc) root) $ fromMaybe (S.fromList [0, 2, 4])
+      ch = fromMaybe (S.fromList [Reg 4 C, Reg 4 E, Reg 4 G])
          $ getLast
          $ e_chord e
       (virtual_v, v)
