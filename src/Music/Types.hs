@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+
 module Music.Types
   ( module Music.Types
   , Reg(..)
@@ -7,6 +9,7 @@ module Music.Types
   , Articulation(..)
   ) where
 
+import Data.Monoid.Deletable
 import Data.Group
 import qualified Data.Set as S
 import Data.Maybe
@@ -49,9 +52,12 @@ instance Monoid Envelope where
 
 data UpAnnot = UpAnnot
   { ua_width :: Rational
-  , ua_motion :: T
+  , ua_motion :: Deletable T
   }
   deriving stock (Eq, Ord, Show)
+
+deriving stock instance Eq a => Eq (Deletable a)
+deriving stock instance Ord a => Ord (Deletable a)
 
 instance Semigroup UpAnnot where
   UpAnnot a1 b1 <> UpAnnot a2 b2 = UpAnnot (a1 + a2) (b1 <> b2)
@@ -60,7 +66,7 @@ instance Monoid UpAnnot where
   mempty = UpAnnot 0 mempty
 
 instance Group UpAnnot where
-  invert (UpAnnot x y) = UpAnnot (- x) (invert y)
+  invert (UpAnnot x y) = UpAnnot (- x) (fmap invert y)
 
 instance Action Envelope UpAnnot where
   act e (UpAnnot w m) = UpAnnot (e_duration e * w) m
@@ -133,4 +139,4 @@ duration :: Music -> Rational
 duration = ua_width . fromMaybe mempty . getU . unMusic
 
 harmony :: Music -> T
-harmony = ua_motion . fromMaybe mempty . getU . unMusic
+harmony = unDelete . ua_motion . fromMaybe mempty . getU . unMusic

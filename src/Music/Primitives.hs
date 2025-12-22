@@ -1,18 +1,22 @@
+{-# OPTIONS_GHC -fno-warn-type-defaults #-}
+
 module Music.Primitives where
 
+import Data.Monoid.Deletable
 import Data.Foldable
 import Data.Group
 import Data.Ratio
 import Data.Set (Set)
 import Data.Tree.DUAL
 import Music.Types
+import Data.Semigroup
 
 
 note :: Rational -> T -> Music
 note d = stretch d . Music . leaf mempty { ua_width = 1 }
 
 move :: T -> Music
-move t = Music $ leafU mempty { ua_motion = t }
+move t = Music $ leafU mempty { ua_motion = toDeletable t }
 
 rest :: Rational -> Music
 rest d = Music $ leafU mempty { ua_width = d }
@@ -45,7 +49,12 @@ withScale sc = addEnv $ mempty { e_scale = pure sc }
 
 
 voice :: Int -> Music -> Music
-voice t = addEnv $ mempty { e_voice = pure t }
+voice t
+  = Music
+  . applyUpost (mempty { ua_motion = deleteR })
+  . applyD (mempty { e_voice = pure t })
+  . applyUpre (mempty { ua_motion = deleteL })
+  . unMusic
 
 
 reharmonize :: T -> Music -> Music
@@ -74,7 +83,7 @@ negative m
       (mempty)
       (fold)
       (\e ->
-        (applyUpre $ mempty { ua_motion = invert $ e_harmony e <> e_harmony e })
+        (applyUpre $ mempty { ua_motion = toDeletable $ invert $ stimes 2 $ e_harmony e })
       )
       annot
   $ unMusic m
