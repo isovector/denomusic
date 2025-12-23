@@ -35,8 +35,11 @@ library
       Music.Rhythm
       Music.Types
       Music.Utils
+      Music2
+      Pieces.Guaraldi
       Pieces.Seventy
       Pieces.SeventyOne
+      Pieces.SeventyThree
       Pieces.SeventyTwo
   other-modules:
       Paths_denomusic
@@ -57,7 +60,7 @@ library
     , QuickCheck
     , base >=4.7 && <5
     , checkers
-    , containers
+    , containers >=0.5.9
     , deepseq
     , dual-tree
     , fingertree
@@ -71,5 +74,7 @@ library
     , pretty
     , process
     , recursion-schemes
+    , semigroupoids
+    , step-function
     , transformers
   default-language: GHC2021

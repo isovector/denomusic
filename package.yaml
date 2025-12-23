@@ -25,7 +25,7 @@ dependencies:
 - Euterpea
 - checkers
 - QuickCheck
-- containers
+- containers >= 0.5.9
 - monoidal-containers
 - hspec
 - mtl
@@ -40,6 +40,8 @@ dependencies:
 - pretty
 - process
 - groups
+- step-function
+- semigroupoids
 
 default-extensions:
 - DerivingStrategies
