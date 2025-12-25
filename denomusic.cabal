@@ -41,6 +41,7 @@ library
       Pieces.SeventyOne
       Pieces.SeventyThree
       Pieces.SeventyTwo
+      Pieces.Two
   other-modules:
       Paths_denomusic
   autogen-modules:
@@ -73,8 +74,8 @@ library
     , mtl
     , pretty
     , process
+    , profunctors
     , recursion-schemes
-    , semigroupoids
     , step-function
     , transformers
   default-language: GHC2021

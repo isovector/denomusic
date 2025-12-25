@@ -2,7 +2,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans       #-}
 {-# OPTIONS_GHC -fno-warn-x-partial     #-}
 
-module Music.Notation (toLilypond, toPdf) where
+module Music.Notation (toLilypond, toPdf, finalizeLily, header, footer) where
 
 import Data.Ord
 import           Control.Arrow ((&&&))
@@ -96,7 +96,7 @@ around s e = toList . around' . Seq.fromList
           ((i1, Right (pes1, a1))
             :<| (xs :|> (i2, Right (pes2, a2))))
                 -> (i1, Right (s : pes1, a1)) :<| (xs :|> (i2, Right (e : pes2, a2)))
-          _ -> error "impossible!"
+          x -> error "impossible!"
 
 
 grouping :: (Eq a) => [(a, Either b c)] -> [(a, ([b], [c]))]
@@ -125,7 +125,7 @@ mkNotes i notes =
     $ nubOrd $ foldMap fst notes
 
 imToLilypond :: [(Interval Rational, ([Score], [([PostEvent], Reg PitchClass)]))] -> State Rational Score
-imToLilypond [] = error "impossible"
+imToLilypond [] = pure mempty
 imToLilypond [(i, (sc, es))] = do
   prev <- get
   put $ high i

@@ -1,4 +1,4 @@
-module SeventyThree where
+module Pieces.SeventyThree where
 
 import Data.Semigroup
 import Data.Foldable

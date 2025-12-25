@@ -41,6 +41,7 @@ dependencies:
 - process
 - groups
 - step-function
+- profunctors
 
 default-extensions:
 - DerivingStrategies
