@@ -10,6 +10,7 @@ module Music2
   , Interval(..)
   ) where
 
+import Data.Functor.Compose
 import Data.Set (Set)
 import Data.Foldable
 import Control.Monad
@@ -28,11 +29,29 @@ newtype Music v a = Music
   { getVoices :: v -> Voice a
   }
   deriving stock (Functor, Generic)
-  deriving (Semigroup, Monoid) via (v -> Voice a)
+  deriving newtype (Semigroup, Monoid)
+  deriving Applicative via (Compose ((->) v) Voice)
 
-instance Applicative (Music v) where
-  pure = Music . pure . pure
-  liftA2 f (Music x) (Music y) = Music $ liftA2 (liftA2 f) x y
+instance (Enum v, Bounded v) => Foldable (Music v) where
+  foldMap f (Music m) =
+    foldMap (\v -> foldMap f $ m v) $ enumFromTo minBound maxBound
+
+toVoices :: (Enum v, Bounded v, Ord v) => Music v a -> M.Map v (Voice a)
+toVoices (Music m) = M.fromList $ do
+  v <- enumFromTo minBound maxBound
+  pure (v, m v)
+
+unsafeFromVoices
+  :: Ord v
+  => M.Map v (Voice a)
+  -> Music v a
+unsafeFromVoices m = Music $ \v -> m M.! v
+
+instance (Enum v, Bounded v, Ord v) => Traversable (Music v) where
+  traverse f m
+    = fmap unsafeFromVoices
+    $ traverse (traverse f)
+    $ toVoices m
 
 instance Profunctor Music where
   lmap f (Music m) = Music $ m . f
@@ -128,11 +147,11 @@ sample _ (Drone a) = a
 
 --------------------------------------------------------------------------------
 
-toVoices
+toNotationVoices
   :: (Enum v, Bounded v, Foldable t)
   => Music v (t c)
   -> [[(Interval Rational, Either a ([b], c))]]
-toVoices (Music m) = do
+toNotationVoices (Music m) = do
   v <- enumFromTo minBound maxBound
   pure $ do
     (int, tc) <- flatten $ m v
@@ -144,7 +163,7 @@ fromVoices f = Music $ \v -> getVoices (f v) ()
 
 
 toLilypond :: (Enum v, Bounded v) => Music v (Set (Reg PitchClass)) -> String
-toLilypond = finalizeLily . toVoices
+toLilypond = finalizeLily . toNotationVoices
 
 
 toPdf :: (Enum v, Bounded v) => Music v (Set (Reg PitchClass)) -> IO ()
@@ -154,7 +173,11 @@ toPdf m = do
   _ <- rawSystem "lilypond" ["-o", "/tmp/song", "/tmp/out.lily"]
   pure ()
 
-mapWithVoice :: (v -> a -> b) -> Music v a -> Music v b
-mapWithVoice f (Music m) = Music $ \v -> fmap (f v) $ m v
-
+withVoice
+  :: Monoid a
+  => (v -> Music () a -> Music () b)
+  -> Music v a
+  -> Music v b
+withVoice f (Music m) =
+  Music $ \v -> getVoices (f v $ voiceV () $ m v) ()
 

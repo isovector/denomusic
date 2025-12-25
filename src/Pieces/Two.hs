@@ -22,7 +22,7 @@ music = fromVoices . fmap line $ \case
 
 
 main :: IO ()
-main = toPdf @V $ (harmonize <*>) $ mapWithVoice (\v -> S.map (Reg $ vreg v)) $
+main = toPdf @V $ (harmonize <*>) $ withVoice (\v -> fmap $ S.map (Reg $ vreg v)) $
   line $ take 5 $ iterate (lmap permute) music
 
 
