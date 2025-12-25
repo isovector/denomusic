@@ -1,5 +1,7 @@
 module Pieces.Two where
 
+import Data.Semigroup
+import DenoMusic.Harmony
 import Data.Set qualified as S
 import Music2
 
@@ -13,34 +15,53 @@ permute VS = VT
 permute VT = VB
 
 
-music :: Music V (Set PitchClass)
+music :: Music V T
 music = fromVoices . fmap line $ \case
-  VS -> replicate 4 $ note 0.25 $ S.singleton C
-  VA -> replicate 2 $ note 0.5 $ S.singleton E
-  VT -> replicate 3 $ note (1/3) $ S.singleton G
-  VB -> replicate 1 $ note 1 $ S.singleton C
+  VS -> replicate 4 $ note 0.25 mempty
+  VA -> replicate 2 $ note 0.5 mempty
+  VT -> replicate 3 $ note (1/3) mempty
+  VB -> replicate 1 $ note 1 mempty
 
 
 main :: IO ()
-main = toPdf @V $ (harmonize <*>) $ withVoice (\v -> fmap $ S.map (Reg $ vreg v)) $
-  line $ take 5 $ iterate (lmap permute) music
+main = do
+  toPdf score
+  play score
+
+score =
+  harmonize
+  $ line
+  $ take 5
+  $ iterate (lmap permute) music
 
 
-harmonize :: Music V (Set (Reg PitchClass) -> Set (Reg PitchClass))
-harmonize = everyone $ line
-  [ note 1 id
-  , note 1 $ S.map $ fmap succ
-  , note 0.5 id
-  , note 0.5 $ S.map $ fmap succ
-  , note (1/3) $ S.map $ fmap pred
-  , note (2/3) $ S.map $ fmap succ
-  , note 1 $ S.map $ fmap $ pred . pred
-  , note 1 id
-  ]
+harmonize :: Music V T -> Music V (Set (Reg PitchClass))
+harmonize =
+  quadruple
+    (S.fromList [A, Af, B, Bf, C, D, Df, E, Ef, F, G, Gf])
+    (\case
+      VB -> Reg 3 C
+      VT -> Reg 4 C
+      VA -> Reg 4 E
+      VS -> Reg 4 G
+    )
+    ( line
+      [ note 2 mempty
+      , note 1 $ T (-9) 2 0 0
+      , note (1/3) $ stimes 2 $ T (-9) 2 0 0
+      , note (1/3) $ stimes 3 $ T (-9) 2 0 0
+      , note (1/3) $ stimes 4 $ T (-9) 2 0 0
+      , note 1 $ stimes 4 $ T (-9) 2 0 0
+      ]
+    )
+    (pure $ S.fromList [C, D, E, F, G, A, B]
+    )
+    ( line
+      [ note 1 mempty
+      , note 1 $ T 5 (-2) 0 0
+      , note 1 $ stimes 2 $ T 5 (-2) 0 0
+      , note 1 $ stimes 2 $ T 5 (-2) 0 0
+      , note 1 $ stimes 3 $ T 5 (-2) 0 0
+      ]
+    )
 
-
-vreg :: V -> Int
-vreg VS = 5
-vreg VA = 4
-vreg VT = 3
-vreg VB = 2

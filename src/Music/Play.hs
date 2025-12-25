@@ -1,5 +1,6 @@
 module Music.Play
   ( play
+  , toStupidEuterpeaPitchClass
   ) where
 
 import Control.Arrow

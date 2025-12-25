@@ -174,10 +174,9 @@ toPdf m = do
   pure ()
 
 withVoice
-  :: Monoid a
-  => (v -> Music () a -> Music () b)
+  :: (v -> Music () a -> Music () b)
   -> Music v a
   -> Music v b
 withVoice f (Music m) =
-  Music $ \v -> getVoices (f v $ voiceV () $ m v) ()
+  Music $ \v -> getVoices (f v $ Music $ const $ m v) ()
 
