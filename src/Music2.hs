@@ -30,6 +30,10 @@ newtype Music v a = Music
   deriving stock (Functor, Generic)
   deriving (Semigroup, Monoid) via (v -> Voice a)
 
+instance Applicative (Music v) where
+  pure = Music . pure . pure
+  liftA2 f (Music x) (Music y) = Music $ liftA2 (liftA2 f) x y
+
 instance Profunctor Music where
   lmap f (Music m) = Music $ m . f
   rmap = fmap
@@ -46,8 +50,8 @@ voiceV v va = Music $
     ((== v) -> True) -> va
     _ -> mempty
 
-everyone :: Voice a -> Music v a
-everyone = Music . pure
+everyone :: Music () a -> Music v a
+everyone (Music m) = Music $ const $ m ()
 
 
 data Voice a
@@ -81,12 +85,8 @@ infixr 6 ##
 (##.) (Drone a) = fmap (a <>)
 infixr 6 ##.
 
-
-lineV :: (Foldable t, Monoid a) => t (Voice a) -> Voice a
-lineV = foldr (##.) $ restV 0
-
 line :: (Foldable t, Monoid a) => t (Music v a) -> Music v a
-line = foldr (##) $ everyone $ restV 0
+line = foldr (##) $ everyone $ rest 0
 
 
 region
