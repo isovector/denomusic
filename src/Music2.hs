@@ -10,16 +10,17 @@ module Music2
   , Interval(..)
   ) where
 
-import Data.Maybe
-import Data.Functor.Compose
-import Data.Set (Set)
-import Data.Foldable
+import Control.Applicative
 import Control.Monad
+import Data.Foldable
 import Data.Function.Step.Discrete.Open
+import Data.Functor.Compose
 import Data.IntervalMap.FingerTree (Interval(..))
 import Data.Map qualified as M
+import Data.Maybe
 import Data.Monoid
 import Data.Profunctor
+import Data.Set (Set)
 import GHC.Generics
 import Music.Notation (finalizeLily, header, footer)
 import Music.Types (PitchClass(..), Reg(..), T(..))
@@ -32,6 +33,10 @@ newtype Music v a = Music
   deriving stock (Functor, Generic)
   deriving newtype (Semigroup, Monoid)
   deriving Applicative via (Compose ((->) v) Voice)
+
+instance Alternative (Music v) where
+  empty = Music $ const empty
+  Music m1 <|> Music m2 = Music $ \v -> m1 v <|> m2 v
 
 instance (Enum v, Bounded v) => Foldable (Music v) where
   foldMap f (Music m) =
@@ -97,6 +102,13 @@ instance Applicative Voice where
   liftA2 f (Voice d1 a) (Voice d2 b) =
     Voice (d1 <> d2) $ liftA2 (liftA2 f) a b
 
+instance Alternative Voice where
+  empty = Empty
+  Empty <|> v = v
+  v <|> Empty = v
+  Drone a <|> _ = Drone a
+  Voice d s <|> Drone a = Voice d $ fmap (<|> Just a) s
+  Voice d1 s1 <|> Voice d2 s2 = Voice (d1 <> d2) $ liftA2 (<|>) s1 s2
 
 delay :: Rational -> Voice a -> Voice a
 delay o (Voice d (SF m e)) = Voice d $ SF (M.mapKeys (+ o) m) e
