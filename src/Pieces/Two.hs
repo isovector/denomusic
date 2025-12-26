@@ -17,10 +17,23 @@ permute VT = VB
 
 music :: Music V T
 music = fromVoices . fmap line $ \case
-  VS -> replicate 4 $ note 0.25 mempty
-  VA -> replicate 2 $ note 0.5 mempty
-  VT -> replicate 3 $ note (1/3) mempty
-  VB -> replicate 1 $ note 1 mempty
+  VS ->
+    [ note 0.25 $ T 0 0 0 0
+    , rest 0.50
+    , note 0.25 $ T 0 0 0 0
+    ]
+  VA ->
+    [ rest 0.25
+    , note 0.25 $ T 0 0 0 0
+    , note 0.25 $ T 1 0 0 0
+    , note 0.25 $ T 0 0 0 0
+    ]
+  VT ->
+    [ note (1/3) $ T 0 2 0 0
+    , note (1/3) $ T 0 1 0 0
+    , note (1/3) $ T 0 0 0 0
+    ]
+  VB -> [ note 1 $ mempty ]
 
 
 main :: IO ()
@@ -31,11 +44,13 @@ main = do
 score =
   harmonize
   $ line
-  $ take 5
-  $ iterate (lmap permute) music
+  $ take 6
+  $ iterate (lmap permute)
+  $ fmap S.singleton
+  $ music
 
 
-harmonize :: Music V T -> Music V (Set (Reg PitchClass))
+harmonize :: Music V (Set T) -> Music V (Set (Reg PitchClass))
 harmonize =
   quadruple
     (S.fromList [A, Af, B, Bf, C, D, Df, E, Ef, F, G, Gf])
@@ -45,23 +60,8 @@ harmonize =
       VA -> Reg 4 E
       VS -> Reg 4 G
     )
-    ( line
-      [ note 2 mempty
-      , note 1 $ T (-9) 2 0 0
-      , note (1/3) $ stimes 2 $ T (-9) 2 0 0
-      , note (1/3) $ stimes 3 $ T (-9) 2 0 0
-      , note (1/3) $ stimes 4 $ T (-9) 2 0 0
-      , note 1 $ stimes 4 $ T (-9) 2 0 0
-      ]
-    )
+    (pure mempty)
     (pure $ S.fromList [C, D, E, F, G, A, B]
     )
-    ( line
-      [ note 1 mempty
-      , note 1 $ T 5 (-2) 0 0
-      , note 1 $ stimes 2 $ T 5 (-2) 0 0
-      , note 1 $ stimes 2 $ T 5 (-2) 0 0
-      , note 1 $ stimes 3 $ T 5 (-2) 0 0
-      ]
-    )
+    (pure mempty)
 

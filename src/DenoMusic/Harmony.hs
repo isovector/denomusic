@@ -19,7 +19,7 @@ quadruple
   -- ^ Global scale progression
   -> Music () T
   -- ^ Global modulation within the scale
-  -> Music v T
+  -> Music v (Set T)
   -- ^ Voices moving in their chord
   -> Music v (Set (Reg PitchClass))
 quadruple chroma voiceMap chromProg scaleProg modu m = do
@@ -27,8 +27,12 @@ quadruple chroma voiceMap chromProg scaleProg modu m = do
             $ fmap (voiceMap $)
             $ enumFromTo minBound maxBound
   (\c sc mo (v, vt) ->
-    S.map (move1 chroma (move sc (mo <> vt) chord) c . move1 sc chord (mo <> vt))
-      $ S.singleton $ voiceMap v
+    S.map
+      ( move1 chroma (move sc (mo) chord) c
+      . move1 sc chord (mo)
+      )
+      $ S.map (flip (move1 sc chord) $ voiceMap v)
+      $ vt
     )
     <$> everyone chromProg
     <*> everyone scaleProg
@@ -42,15 +46,11 @@ play :: (Enum v, Bounded v) => Music v (Set (Reg PitchClass)) -> IO ()
 play (Music m)
   = E.playDev 2
   . fmap (first toStupidEuterpeaPitchClass)
-  $ foldr1 (E.:=:)
+  $ foldr (E.:=:) (E.rest 0)
   $ do
     v <- enumFromTo minBound maxBound
     (Interval lo hi, as) <- flatten $ m v
-    pure $ foldr1 (E.:=:) $ do
+    pure $ foldr (E.:=:) (E.rest 0) $ do
       a <- S.toList as
       pure $ E.rest lo E.:+: E.note (hi - lo) (fromReg a)
-
-    -- pure $
-    --   E.rest (e_offset e) E.:+: E.note (e_duration e)
-    --     (fromReg $ export e t)
 

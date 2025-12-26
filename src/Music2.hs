@@ -10,6 +10,7 @@ module Music2
   , Interval(..)
   ) where
 
+import Data.Maybe
 import Data.Functor.Compose
 import Data.Set (Set)
 import Data.Foldable
@@ -57,40 +58,50 @@ instance Profunctor Music where
   lmap f (Music m) = Music $ m . f
   rmap = fmap
 
-voice :: (Eq v, Monoid a) => v -> Music () a -> Music v a
+voice :: Eq v => v -> Music () a -> Music v a
 voice v (Music m) = Music $
   \case
     ((== v) -> True) -> m ()
-    _ -> mempty
+    _ -> Empty
 
-voiceV :: (Eq v, Monoid a) => v -> Voice a -> Music v a
-voiceV v va = Music $
-  \case
-    ((== v) -> True) -> va
-    _ -> mempty
+voiceV :: Eq v => v -> Voice a -> Music v a
+voiceV v = voice v . Music . const
 
 everyone :: Music () a -> Music v a
 everyone (Music m) = Music $ const $ m ()
 
 
 data Voice a
-  = Voice (Sum Rational) (SF Rational a)
+  = Voice (Sum Rational) (SF Rational (Maybe a))
   | Drone a
+  | Empty
   deriving stock (Eq, Ord, Show, Functor, Foldable, Traversable, Generic)
-  deriving (Semigroup, Monoid) via Ap Voice a
+
+instance Semigroup a => Semigroup (Voice a) where
+  Empty <> v = v
+  v <> Empty = v
+  Drone a <> v = fmap (a <>) v
+  v <> Drone a = fmap (a <>) v
+  Voice d1 s1 <> Voice d2 s2 = Voice (d1 <> d2) (s1 <> s2)
+
+instance Semigroup a => Monoid (Voice a) where
+  mempty = Empty
 
 instance Applicative Voice where
   pure = Drone
+  liftA2 _ Empty _ = Empty
+  liftA2 _ _ Empty = Empty
   liftA2 f (Drone a) (Drone b) = Drone $ f a b
-  liftA2 f (Voice d1 a) (Drone b) = Voice d1 $ fmap (flip f b) a
-  liftA2 f (Drone a) (Voice d2 b) = Voice d2 $ fmap (f a) b
+  liftA2 f (Voice d1 a) (Drone b) = Voice d1 $ fmap (fmap $ flip f b) a
+  liftA2 f (Drone a) (Voice d2 b) = Voice d2 $ fmap (fmap $ f a) b
   liftA2 f (Voice d1 a) (Voice d2 b) =
-    Voice (d1 <> d2) $ liftA2 f a b
+    Voice (d1 <> d2) $ liftA2 (liftA2 f) a b
 
 
 delay :: Rational -> Voice a -> Voice a
 delay o (Voice d (SF m e)) = Voice d $ SF (M.mapKeys (+ o) m) e
 delay _ (Drone a) = Drone a
+delay _ Empty = Empty
 
 
 -- | Tile product (eg "play this before that")
@@ -100,36 +111,36 @@ infixr 6 ##
 
 -- | Tile product (eg "play this before that")
 (##.) :: Semigroup a => Voice a -> Voice a -> Voice a
-(##.) v1@(Voice d _) = liftA2 (<>) v1 . delay (getSum d)
+(##.) v1@(Voice d _) = (<>) v1 . delay (getSum d)
 (##.) (Drone a) = fmap (a <>)
+(##.) Empty = id
 infixr 6 ##.
 
-line :: (Foldable t, Monoid a) => t (Music v a) -> Music v a
+line :: (Foldable t, Semigroup a) => t (Music v a) -> Music v a
 line = foldr (##) $ everyone $ rest 0
 
 
 region
-  :: Monoid a
-  => Rational
+  :: Rational
   -- ^ Start time
   -> Rational
   -- ^ Stop time
   -> a
   -> Voice a
-region lo hi a = Voice (pure $ hi - lo) $ SF (M.fromList [(lo, mempty), (hi, a)]) mempty
+region lo hi a = Voice (pure $ hi - lo) $ SF (M.fromList [(lo, Nothing), (hi, Just a)]) Nothing
 
 
-noteV :: Monoid a => Rational -> a -> Voice a
+noteV :: Rational -> a -> Voice a
 noteV = region 0
 
-note :: Monoid a => Rational -> a -> Music () a
+note :: Rational -> a -> Music () a
 note d = voiceV () . noteV d
 
 
-restV :: Monoid a => Rational -> Voice a
-restV d = Voice (pure d) mempty
+restV :: Rational -> Voice a
+restV d = Voice (pure d) $ pure Nothing
 
-rest :: Monoid a => Rational -> Music () a
+rest :: Rational -> Music () a
 rest = voiceV () . restV
 
 flatten :: Voice a -> [(Interval Rational, a)]
@@ -137,13 +148,16 @@ flatten (Voice _ (SF m _)) = do
   let m' = filter ((>= 0) . fst) $ M.toList m
   ((lo, _), (hi, ma)) <- zip ((0, error "bad") : m') m'
   guard $ lo /= hi
-  pure (Interval lo hi, ma)
+  a <- maybeToList ma
+  pure (Interval lo hi, a)
 flatten Drone {} = mempty
+flatten Empty = mempty
 
 
-sample :: Rational -> Voice a -> a
+sample :: Rational -> Voice a -> Maybe a
 sample t (Voice _ sf) = sf ! t
-sample _ (Drone a) = a
+sample _ (Drone a) = Just a
+sample _ Empty = Nothing
 
 --------------------------------------------------------------------------------
 
