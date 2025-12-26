@@ -108,6 +108,16 @@ instance (Arbitrary a, Semigroup a) => Arbitrary (Voice a) where
           , restV <$> arbitrary
           , pure <$> arbitrary
           ]
+  shrink (Drone a) = mconcat
+    [ Drone <$> shrink a
+    , pure Empty
+    ]
+  shrink Empty = []
+  shrink (Voice d a) = mconcat
+    [ Voice <$> shrink d <*> pure a
+    , Voice <$> pure d <*> shrink a
+    , pure Empty
+    ]
 
 instance (Ord v, Arbitrary v, Arbitrary a, Semigroup a) => Arbitrary (Music v a) where
   arbitrary =
@@ -128,8 +138,9 @@ instance (Ord v, Arbitrary v, Arbitrary a, Semigroup a) => Arbitrary (Music v a)
 instance Semigroup a => Semigroup (Voice a) where
   Empty <> v = v
   v <> Empty = v
-  Drone a <> v = fmap (a <>) v
-  v <> Drone a = fmap (a <>) v
+  Drone a <> Drone b = Drone (a <> b)
+  Drone a <> Voice d s = Voice d (fmap (Just a <>) s)
+  Voice d s <> Drone b = Voice d (fmap (<> Just b) s)
   Voice d1 s1 <> Voice d2 s2 = Voice (d1 <> d2) (s1 <> s2)
 
 instance Semigroup a => Monoid (Voice a) where
