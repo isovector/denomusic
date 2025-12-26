@@ -27,6 +27,8 @@ library
   exposed-modules:
       Data.IntervalMap
       Data.Lilypond
+      DenoMusic.Harmony
+      DenoMusic.Test
       Music
       Music.Harmony
       Music.Notation

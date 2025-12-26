@@ -26,6 +26,8 @@ import Music.Notation (finalizeLily, header, footer)
 import Music.Types (PitchClass(..), Reg(..), T(..))
 import System.Cmd (rawSystem)
 import Text.PrettyPrint.HughesPJClass (pPrint)
+import Test.QuickCheck (Arbitrary(..), oneof, resize, sized)
+import Test.QuickCheck.Checkers (EqProp(..))
 
 newtype Music v a = Music
   { getVoices :: v -> Voice a
@@ -33,6 +35,9 @@ newtype Music v a = Music
   deriving stock (Functor, Generic)
   deriving newtype (Semigroup, Monoid)
   deriving Applicative via (Compose ((->) v) Voice)
+
+instance (Enum v, Bounded v, Ord v, Show v, Show a) => Show (Music v a) where
+  show = show . toVoices
 
 instance Alternative (Music v) where
   empty = Music $ const empty
@@ -82,6 +87,44 @@ data Voice a
   | Empty
   deriving stock (Eq, Ord, Show, Functor, Foldable, Traversable, Generic)
 
+instance EqProp a => EqProp (Voice a) where
+  v1 =-= v2 = sample v1 =-= sample v2
+
+instance (Show v, Arbitrary v, EqProp a) => EqProp (Music v a) where
+  Music m1 =-= Music m2 = m1 =-= m2
+
+instance (Arbitrary a, Semigroup a) => Arbitrary (Voice a) where
+  arbitrary =
+    sized $ \n -> oneof $
+      case n <= 0 of
+        True -> small
+        False ->
+          [ (##.) <$> resize (div n 2) arbitrary <*> resize (div n 2) arbitrary
+          , delayV <$> arbitrary <*> resize (n - 1) arbitrary
+          ] <> small
+      where
+        small =
+          [ noteV <$> arbitrary <*> arbitrary
+          , restV <$> arbitrary
+          , pure <$> arbitrary
+          ]
+
+instance (Ord v, Arbitrary v, Arbitrary a, Semigroup a) => Arbitrary (Music v a) where
+  arbitrary =
+    sized $ \n -> oneof $
+      case n <= 0 of
+        True -> small
+        False ->
+          [ (##) <$> resize (div n 2) arbitrary <*> resize (div n 2) arbitrary
+          , (<>) <$> resize (div n 2) arbitrary <*> resize (div n 2) arbitrary
+          ] <> small
+      where
+        small =
+          [ voiceV <$> arbitrary <*> arbitrary
+          , pure <$> arbitrary
+          , pure empty
+          ]
+
 instance Semigroup a => Semigroup (Voice a) where
   Empty <> v = v
   v <> Empty = v
@@ -110,10 +153,10 @@ instance Alternative Voice where
   Voice d s <|> Drone a = Voice d $ fmap (<|> Just a) s
   Voice d1 s1 <|> Voice d2 s2 = Voice (d1 <> d2) $ liftA2 (<|>) s1 s2
 
-delay :: Rational -> Voice a -> Voice a
-delay o (Voice d (SF m e)) = Voice d $ SF (M.mapKeys (+ o) m) e
-delay _ (Drone a) = Drone a
-delay _ Empty = Empty
+delayV :: Rational -> Voice a -> Voice a
+delayV o (Voice d (SF m e)) = Voice d $ SF (M.mapKeys (+ o) m) e
+delayV _ (Drone a) = Drone a
+delayV _ Empty = Empty
 
 
 -- | Tile product (eg "play this before that")
@@ -123,7 +166,7 @@ infixr 6 ##
 
 -- | Tile product (eg "play this before that")
 (##.) :: Semigroup a => Voice a -> Voice a -> Voice a
-(##.) v1@(Voice d _) = (<>) v1 . delay (getSum d)
+(##.) v1@(Voice d _) = (<>) v1 . delayV (getSum d)
 (##.) (Drone a) = fmap (a <>)
 (##.) Empty = id
 infixr 6 ##.
@@ -166,10 +209,10 @@ flatten Drone {} = mempty
 flatten Empty = mempty
 
 
-sample :: Rational -> Voice a -> Maybe a
-sample t (Voice _ sf) = sf ! t
-sample _ (Drone a) = Just a
-sample _ Empty = Nothing
+sample :: Voice a -> Rational -> Maybe a
+sample (Voice _ sf) t = sf ! t
+sample (Drone a) _ = Just a
+sample Empty _ = Nothing
 
 --------------------------------------------------------------------------------
 
