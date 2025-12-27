@@ -5,7 +5,7 @@ module DenoMusic.Generators where
 import Control.Applicative
 import DenoMusic.Types
 import DenoMusic.Utils
-import Test.QuickCheck (Arbitrary(..), oneof, resize, sized)
+import Test.QuickCheck (Arbitrary(..), oneof, resize, sized, Positive(..))
 import Test.QuickCheck.Checkers (EqProp(..))
 
 instance EqProp a => EqProp (Voice a) where
@@ -25,7 +25,7 @@ instance (Arbitrary a, Semigroup a) => Arbitrary (Voice a) where
           ] <> small
       where
         small =
-          [ noteV <$> arbitrary <*> arbitrary
+          [ noteV <$> fmap getPositive arbitrary <*> arbitrary
           , restV <$> arbitrary
           , pure <$> arbitrary
           ]

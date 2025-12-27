@@ -11,6 +11,7 @@ import Data.Set qualified as S
 import Data.Word
 import DenoMusic
 import DenoMusic.Types
+import DenoMusic.Utils
 import Test.Hspec
 import Test.Hspec.QuickCheck
 import Test.QuickCheck
@@ -18,14 +19,28 @@ import Test.QuickCheck.Checkers
 import Test.QuickCheck.Classes
 
 
-instance EqProp a => EqProp (Set a) where
-  s1 =-= s2 = S.toList s1 =-= S.toList s2
+instance (Eq a, Show a) => EqProp (Set a) where
+  s1 =-= s2 = S.toList s1 === S.toList s2
 
 instance EqProp Word8 where
   (=-=) = (===)
 
-type V = Word8
-type S = Set Word8
+data SATB = VS | VA | VT | VB
+  deriving stock (Eq, Ord, Show, Enum, Bounded)
+
+instance Arbitrary SATB where
+  arbitrary = elements $ enumFromTo minBound maxBound
+
+type S = Set PitchClass
+
+instance Arbitrary PitchClass where
+  arbitrary = elements $ enumFromTo minBound maxBound
+
+instance EqProp PitchClass where
+  (=-=) = (===)
+
+instance CoArbitrary PitchClass where
+  coarbitrary x = coarbitrary (fromEnum x)
 
 classBatch
   :: forall p
@@ -48,6 +63,10 @@ classBatch = do
 
 main :: IO ()
 main = hspec $ do
-  describe "Voice" $ classBatch @Voice
-  describe "Music" $ classBatch @(Music V)
-
+  describe "Voice" $ do
+    classBatch @Voice
+    prop "uncurry (##) . separate = id" $ \(m :: Voice S) t -> do
+      let (l, r) = separateV t m
+      l ##. r =-= m
+  describe "Music" $ do
+    classBatch @(Music SATB)

@@ -8,6 +8,8 @@ module DenoMusic
   , play
   , toPdf
   , duration
+  , separate
+  , split
 
   -- * Musical Primitives
   , note

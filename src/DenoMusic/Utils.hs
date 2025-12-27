@@ -122,3 +122,35 @@ withVoice f (Music m) =
 -- | Build a 'Music' from a function of voice labels to anonymous voice.
 fromVoices :: (v -> Music () a) -> Music v a
 fromVoices f = Music $ \v -> getVoices (f v) ()
+
+-- | Split a voice at a given time
+separateV :: Rational -> Voice a -> (Voice a, Voice a)
+separateV _ Empty = (Empty, Empty)
+separateV _ (Drone a) = (Drone a, Drone a)
+separateV t (Voice d (SF sf e)) =
+  let (l, r) = M.split t sf
+   in ( Voice (Sum t)
+          $ SF (maybe id (const id) (M.lookupMin r) l) Nothing
+      , Voice (fmap (subtract t) d)
+          $ SF
+            (M.insert 0 Nothing
+              $ M.mapKeys (subtract t)
+              $ M.filterWithKey (\z _ -> z > 0) r
+            ) e
+      )
+
+-- | Split a piece of a music at a given time.
+separate :: Rational -> Music v a -> (Music v a, Music v a)
+separate t (Music m) = do
+  let vs = fmap (separateV t) m
+  (Music $ fst . vs, Music $ snd . vs)
+
+
+-- | Split a piece of music into @t@-sized chunks.
+split :: (Bounded v, Enum v) => Rational -> Music v a -> [Music v a]
+split t m =
+  case t < duration m of
+    True ->
+      let (l, r) = separate t m
+       in l : split t r
+    False -> pure m
