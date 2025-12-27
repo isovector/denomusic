@@ -15,6 +15,7 @@ module DenoMusic
   -- * Combining Music
   , (##)
   , line
+  , stretch
 
   -- * Composing Voices
   , voice

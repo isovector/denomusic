@@ -1,5 +1,6 @@
 module DenoMusic.Utils where
 
+import Data.Functor ((<&>))
 import Data.Function.Step.Discrete.Open
 import Data.Map qualified as M
 import Data.Monoid
@@ -12,6 +13,19 @@ voice v (Music m) = Music $
   \case
     ((== v) -> True) -> m ()
     _ -> Empty
+
+
+-- | Stretch a piece of music along the time axis. Eg, @'stretch' 2 m@ will
+-- make @m@ take twice as long.
+stretch
+  :: Rational
+  -- ^ Stretch time by multiplying it against this.
+  -> Music v a
+  -> Music v a
+stretch r (Music m) = Music $ m <&> \case
+  Voice d (SF sf e) -> Voice (fmap (* r) d) $ SF (M.mapKeys (* r) sf) e
+  Drone a -> Drone a
+  Empty -> Empty
 
 
 -- | Build a 'Music' by attaching a label to an anonymous voice.
