@@ -2,7 +2,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans       #-}
 {-# OPTIONS_GHC -fno-warn-x-partial     #-}
 
-module Music.Notation (finalizeLily, header, footer) where
+module DenoMusic.NotationBackend (finalizeLily, header, footer) where
 
 import Control.Arrow ((&&&))
 import Control.Monad.State

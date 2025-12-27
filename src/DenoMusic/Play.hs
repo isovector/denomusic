@@ -1,11 +1,10 @@
 module DenoMusic.Play where
 
-import Data.Set qualified as S
+import Control.Arrow (first)
 import Data.Set (Set)
-import Control.Arrow
-import Euterpea qualified as E
+import Data.Set qualified as S
 import DenoMusic.Types
-import Music.Harmony
+import Euterpea qualified as E
 
 
 toStupidEuterpeaPitchClass :: PitchClass -> E.PitchClass

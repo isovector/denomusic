@@ -8,9 +8,8 @@ module DenoMusic.Notation
 import Data.Foldable
 import Data.Set (Set)
 import DenoMusic.Types
-import Music.Notation (finalizeLily, header, footer)
+import DenoMusic.NotationBackend (finalizeLily, header, footer)
 import System.Cmd (rawSystem)
-import Text.PrettyPrint.HughesPJClass (pPrint)
 
 
 toNotationVoices
@@ -35,7 +34,7 @@ toLilypond = finalizeLily . toNotationVoices
 -- @/tmp/song.pdf@.
 toPdf :: (Enum v, Bounded v) => Music v (Set (Reg PitchClass)) -> IO ()
 toPdf m = do
-  let lp = read @String $ show $ pPrint $ toLilypond m
+  let lp = toLilypond m
   writeFile "/tmp/out.lily" $ header <> lp <> footer
   _ <- rawSystem "lilypond" ["-o", "/tmp/song", "/tmp/out.lily"]
   pure ()

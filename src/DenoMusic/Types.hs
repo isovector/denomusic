@@ -1,7 +1,6 @@
 module DenoMusic.Types
   ( module DenoMusic.Types
   , Interval (..)
-  , Reg (..)
   ) where
 
 import Control.Applicative
@@ -11,10 +10,32 @@ import Data.Functor.Compose
 import Data.IntervalMap.FingerTree (Interval(..))
 import Data.Map qualified as M
 import Data.Maybe
-import Music.Harmony
 import Data.Monoid
 import Data.Profunctor
 import GHC.Generics
+
+
+-- | Attach a register to some value.
+data Reg a = Reg
+  { getReg :: Int
+  , unReg :: a
+  }
+  deriving stock (Eq, Ord, Show, Functor)
+
+instance Applicative Reg where
+  pure = Reg 0
+  (<*>) = ap
+
+instance Monad Reg where
+  Reg r a >>= f = withReg (+ r) $ f a
+
+
+fromReg :: Reg a -> (a, Int)
+fromReg (Reg i a) = (a, i)
+
+
+withReg :: (Int -> Int) -> Reg a -> Reg a
+withReg f (Reg r a) = Reg (f r) a
 
 
 data PitchClass

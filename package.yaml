@@ -32,8 +32,6 @@ dependencies:
 - transformers
 - lens
 - fingertree
-- dual-tree
-- monoid-extras
 - recursion-schemes
 - deepseq
 - lilypond

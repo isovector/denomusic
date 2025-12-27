@@ -24,10 +24,9 @@ import Data.Group
 import Data.Kind
 import Data.Set (Set)
 import Data.Set qualified as S
+import DenoMusic.Types (PitchClass (..), Reg (..))
 import GHC.Exts
 import GHC.TypeLits
-import Music.Harmony (Reg(..), extrMove)
-import DenoMusic.Types (PitchClass (..))
 
 -- | A coordinate inside of a 'MetaScales'. 'T's are little-endian cons lists.
 -- For example, given the 'standard' 'MetaScale', @1 :> (-2) :> 3 :> Nil@ means
@@ -122,9 +121,9 @@ triad = UnsafeMetaScale $ S.fromList [0, 2, 4]
 -- elim ms (t1 <> t2) = elim ms t2 . elim ms t1
 -- @
 elim :: Ord a => MetaScales ns a -> T ns -> Reg a -> Reg a
-elim (Base sc) (i :> Nil) r = extrMove sc i r
+elim (Base sc) (i :> Nil) r = metaMove sc i r
 elim (MSCons ms scs) (i :> j :> js) r = do
-  dj <- extrMove (getMetaScale ms) i (Reg 0 0)
+  dj <- metaMove (getMetaScale ms) i (Reg 0 0)
   elim scs ((dj + j) :> js) r
 
 
@@ -168,3 +167,25 @@ extend Nil = mempty
 sink :: T ns -> T (n ': ns)
 sink t = 0 :> t
 
+
+-- | Like 'pred', but over the metascale distance metric.
+metaPred :: Ord a => Set a -> Reg a -> Reg a
+metaPred sc (Reg r a)
+  | a == S.findMin sc = Reg (r - 1) $ S.findMax sc
+  | otherwise = Reg r $ S.findMax $ snd $ S.partition (>= a) sc
+
+
+-- | Like 'succ', but over the metascale distance metric.
+metaSucc :: Ord a => Set a -> Reg a -> Reg a
+metaSucc sc (Reg r a)
+  | a == S.findMax sc = Reg (r + 1) $ S.findMin sc
+  | otherwise = Reg r $ S.findMin $ snd $ S.partition (<= a) sc
+
+
+-- | Iterated 'pred' or 'succ' over the metascale distance metric.
+metaMove :: Ord a => Set a -> Int -> Reg a -> Reg a
+metaMove sc n r
+  = case compare n 0 of
+      LT -> iterate (metaPred sc) r !! abs n
+      EQ -> r
+      GT -> iterate (metaSucc sc) r !! abs n
