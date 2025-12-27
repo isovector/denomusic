@@ -1,23 +1,58 @@
-{-# LANGUAGE AllowAmbiguousTypes    #-}
-{-# LANGUAGE DataKinds              #-}
-{-# LANGUAGE TypeAbstractions       #-}
-{-# LANGUAGE UndecidableInstances   #-}
+{-# LANGUAGE AllowAmbiguousTypes  #-}
+{-# LANGUAGE DataKinds            #-}
+{-# LANGUAGE UndecidableInstances #-}
 
-module DenoMusic.Harmony2 where
+module DenoMusic.Harmony2
+  ( T (..)
+  , extend
+  , sink
+  , elim
+  , MetaScales (..)
+  , MetaScale (..)
 
-import Music2 hiding (T)
+  -- * Familiar objects
+  , triad
+  , diatonic
+  , spelledFlat
+  , spelledSharp
+  , standard
+  , vl3in7
+  , vl7in12
+  ) where
+
 import Data.Group
-import Data.Set qualified as S
-import Music.Harmony (Reg(..), extrMove)
 import Data.Kind
+import Data.Set (Set)
+import Data.Set qualified as S
+import GHC.Exts
 import GHC.TypeLits
+import Music.Harmony (Reg(..), extrMove)
+import Music.Types (PitchClass (..))
 
+-- | A coordinate inside of a 'MetaScales'. 'T's are little-endian cons lists.
+-- For example, given the 'standard' 'MetaScale', @1 :> (-2) :> 3 :> Nil@ means
+-- to transpose up by one chord tone, down by two scale tones, and up by three
+-- chromatic tones.
 type T :: [Nat] -> Type
-data T ns where
+data T sizes where
   Nil :: T '[]
   (:>) :: Int -> !(T ns) -> T (n ': ns)
+infixr 6 :>
 
-infixr 9 :>
+deriving stock instance Show (T ns)
+
+instance IsList (T '[]) where
+  type Item (T '[]) = Int
+  fromList [] = Nil
+  fromList e = error $ "Extra items remaining in IsList (T '[]): " <> show e
+  toList Nil = []
+
+
+instance (IsList (T ns), Item (T ns) ~ Int) => IsList (T (n ': ns)) where
+  type Item (T (n ': ns)) = Int
+  fromList [] = error "Not enough items in IsList (T (n ': ns)): "
+  fromList (x : xs) = x :> fromList xs
+  toList  (x :> xs) = x : toList xs
 
 instance Semigroup (T '[]) where
   _ <> _ = Nil
@@ -37,48 +72,85 @@ instance Group (T '[]) where
 instance Group (T ns) => Group (T (n ': ns)) where
   invert (i :> is) = negate i :> invert is
 
-deriving stock instance Show (T ns)
-
+-- | 'MetaScales' provide consistent vertical musical constraints (harmony), as
+-- well as give means for efficient voice leading in order to evolve that
+-- harmony over time.
+--
+-- Musically, a 'MetaScales' is a hierarchy of scale-like things which move
+-- relative to one another. Think chord-inside-scale-inside-modulation. The
+-- @sizes@ type index describes how many elements is in each of these
+-- scale-like things, in little-endian.
+--
+-- You can index into a 'MetaScales' by way of a 'T'.
 type MetaScales :: [Nat] -> Type -> Type
-data MetaScales ns a where
+data MetaScales sizes a where
+  -- | The base collection of objects being permuted.
   Base :: Set a -> MetaScales '[n] a
+  -- | Transform a 'MetaScales' by permuting it via a single 'MetaScale'.
   MSCons :: MetaScale n -> !(MetaScales ns a) -> MetaScales (n ': ns) a
 
 deriving stock instance Show a => Show (MetaScales ns a)
 
+-- | A 'MetaScale' is a collection of generalized scale-steps, relative to
+-- a parent 'MetaScale'. It can be used to describe voices-within-chords, or
+-- chords-within-scales, or scales-within-chroma, or other things of this
+-- nature. A 'MetaScale' is mapped to concrete values when embedded within
+-- a 'MetaScales' (notice the plural.)
 type MetaScale :: Nat -> Type
-newtype MetaScale n = UnsafeMetaScale
+newtype MetaScale size = UnsafeMetaScale
   { getMetaScale :: Set Int
   }
   deriving newtype Show
 
-ionian :: MetaScale 7
-ionian = UnsafeMetaScale $ S.fromList [0, 2, 4, 5, 7, 9, 11]
+-- | The diatonic scale. This will take on different modes depending on the
+-- background scalar transposition applied to it.
+diatonic :: MetaScale 7
+diatonic = UnsafeMetaScale $ S.fromList [0, 2, 4, 5, 7, 9, 11]
 
+-- | A metascale corresponding to the 1-3-5 triad. This will take on
+-- major/minor/diminished/augmented characteristics depending on where in the
+-- scale it is transposed to.
 triad :: MetaScale 3
 triad = UnsafeMetaScale $ S.fromList [0, 2, 4]
 
 
+-- | Transform a note along a 'MetaScales' by moving it along each scale
+-- dimension. This function forms monoid actions:
+--
+-- @
+-- elim ms mempty     = id
+-- elim ms (t1 <> t2) = elim ms t2 . elim ms t1
+-- @
 elim :: Ord a => MetaScales ns a -> T ns -> Reg a -> Reg a
 elim (Base sc) (i :> Nil) r = extrMove sc i r
 elim (MSCons ms scs) (i :> j :> js) r = do
   dj <- extrMove (getMetaScale ms) i (Reg 0 0)
   elim scs ((dj + j) :> js) r
 
+
+-- | The standard triad-in-diatonic-in-chromatic 'MetaScales' that makes up
+-- most of Western music.
 standard :: MetaScales '[3, 7, 12] PitchClass
-standard = MSCons triad $ MSCons ionian spelledFlat
+standard = MSCons triad $ MSCons diatonic spelledFlat
 
-testix :: T '[3, 7, 12]
-testix = 2 :> 2 :> 0 :> Nil
 
+-- | A 'MetaScales' that spells its enharmonic black notes as sharps.
+spelledSharp :: MetaScales '[12] PitchClass
+spelledSharp = Base (S.fromList [A, As, B, C, Cs, D, Ds, E, F, Fs, G, Gs])
+
+
+-- | A 'MetaScales' that spells its enharmonic black notes as flats.
 spelledFlat :: MetaScales '[12] PitchClass
 spelledFlat = Base (S.fromList [A, Af, B, Bf, C, D, Df, E, Ef, F, G, Gf])
 
-vl3in7 :: T '[3, 7]
-vl3in7 = 5 :> (-2) :> mempty
 
+-- | A smooth downwards voice-leading of triads-in-diatonic.
+vl3in7 :: T '[3, 7]
+vl3in7 = (-2) :> 5 :> mempty
+
+-- | A smooth downwards voice-leading of diatonics-in-chromatics.
 vl7in12 :: T '[7, 12]
-vl7in12 = 7 :> (-4) :> mempty
+vl7in12 = (-4) :> 7 :> mempty
 
 
 type family (++) xs ys where
@@ -86,29 +158,13 @@ type family (++) xs ys where
   (x ': xs) ++ ys = x ': (xs ++ ys)
 
 
+-- | Extend the end of a 'T' with zeroes.
 extend :: forall ns ms. Monoid (T ns) => T ms -> T (ms ++ ns)
 extend (x :> xs) = x :> extend @ns xs
 extend Nil = mempty
 
-test :: T '[3, 7, 12]
-test = extend vl3in7
 
+-- | Extend the front of a 'T' with a zero.
 sink :: T ns -> T (n ': ns)
 sink t = 0 :> t
-
-quad
-  :: Ord a
-  => MetaScales '[3, 7, 12] a
-  -> Reg a
-  -> Music () (T '[7, 12])
-  -> Music () (T '[3, 7])
-  -> Music v (T '[3])
-  -> Music v (Reg a)
-quad ms root scaleProg chordProg voices =
-  (\sc ch v ->
-    elim ms (extend v <> extend ch <> sink sc) root
-  )
-    <$> everyone scaleProg
-    <*> everyone chordProg
-    <*> voices
 
