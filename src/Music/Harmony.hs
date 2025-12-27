@@ -5,6 +5,7 @@
 -- | As per https://www.madmusicalscience.com/
 module Music.Harmony where
 
+import Control.Monad
 import Data.Group
 import Data.Semigroup
 import Data.Set (Set)
@@ -33,6 +34,13 @@ data Reg a = Reg
   , unReg :: a
   }
   deriving stock (Eq, Ord, Show, Functor)
+
+instance Applicative Reg where
+  pure = Reg 0
+  (<*>) = ap
+
+instance Monad Reg where
+  Reg r a >>= f = withReg (+ r) $ f a
 
 fromReg :: Reg a -> (a, Int)
 fromReg (Reg i a) = (a, i)
