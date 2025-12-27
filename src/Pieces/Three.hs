@@ -2,12 +2,10 @@
 
 module Pieces.Three where
 
+import Data.Set qualified as S
 import Data.Group
 import Data.Semigroup
-import DenoMusic.Harmony (play)
-import DenoMusic.Harmony2
-import Data.Set qualified as S
-import Music2 hiding (T)
+import DenoMusic
 
 data V = VS | VA | VT | VB
   deriving stock (Eq, Ord, Show, Enum, Bounded)
@@ -45,6 +43,7 @@ main = do
   toPdf score
   play score
 
+score :: Music V (Set (Reg PitchClass))
 score
   = fmap (S.singleton)
   $ harmonize
@@ -67,7 +66,7 @@ harmonize =
         , note 2 $ mempty
         ]
     )
-    ( line $ fmap (\(n, d) -> note d $ stimes n (invert vl3in7)) $ zip [1..]
+    ( line $ fmap (\(n, d) -> note d $ stimes @_ @Int n (invert vl3in7)) $ zip [1..]
         [ 1
         , 1
         , 1

@@ -6,15 +6,15 @@
 module DenoMusic.Test where
 
 import Control.Applicative
-import Data.Word
-import Data.Set qualified as S
 import Data.Foldable
-import Test.QuickCheck.Checkers
-import Test.QuickCheck.Classes
-import Test.QuickCheck
-import Music2
+import Data.Set qualified as S
+import Data.Word
+import DenoMusic
 import Test.Hspec
 import Test.Hspec.QuickCheck
+import Test.QuickCheck
+import Test.QuickCheck.Checkers
+import Test.QuickCheck.Classes
 
 
 instance EqProp a => EqProp (Set a) where

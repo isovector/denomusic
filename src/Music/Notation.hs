@@ -2,33 +2,27 @@
 {-# OPTIONS_GHC -fno-warn-orphans       #-}
 {-# OPTIONS_GHC -fno-warn-x-partial     #-}
 
-module Music.Notation (toLilypond, toPdf, finalizeLily, header, footer) where
+module Music.Notation (finalizeLily, header, footer) where
 
+import Control.Arrow ((&&&))
+import Control.Monad.State
+import Data.Bifunctor
+import Data.Containers.ListUtils (nubOrd)
+import Data.Either
+import Data.Foldable
+import Data.Function
+import Data.IntervalMap.FingerTree (low, high)
+import Data.Lilypond hiding (Tempo)
+import Data.List (sortOn, groupBy, partition)
+import Data.Maybe
+import Data.Music.Lilypond.Pitch hiding (PitchName(..))
+import Data.Music.Lilypond.Pitch qualified as L
 import Data.Ord
-import           Control.Arrow ((&&&))
-import           Control.Monad.State
-import           Data.Bifunctor
-import           Data.Containers.ListUtils (nubOrd)
-import           Data.Either
-import           Data.Foldable
-import           Data.Function
-import           Data.IntervalMap.FingerTree (Interval(..), low, high)
-import           Data.Lilypond hiding (Tempo)
-import           Data.Lilypond qualified as L
-import           Data.List (sortOn, groupBy, partition, sort)
-import           Data.Map.Monoidal (MonoidalMap)
-import qualified Data.Map.Monoidal as MM
-import           Data.Maybe
-import           Data.Monoid
-import           Data.Music.Lilypond.Pitch hiding (PitchName(..))
-import           Data.Music.Lilypond.Pitch qualified as L
-import           Data.Ratio (denominator)
-import           Data.Sequence (Seq(..))
-import           Data.Sequence qualified as Seq
-import           Data.Tree.DUAL
-import           Music.Types
-import           System.Cmd (rawSystem)
-import           Text.PrettyPrint.HughesPJClass (pPrint)
+import Data.Ratio (denominator)
+import Data.Sequence (Seq(..))
+import Data.Sequence qualified as Seq
+import DenoMusic.Types hiding (Empty)
+import Text.PrettyPrint.HughesPJClass (pPrint)
 
 
 toPitch :: Reg PitchClass -> Pitch
@@ -38,40 +32,22 @@ toPitch (Reg o pc) =
 
 pitchClassToPitchAndAccidental :: PitchClass -> (L.PitchName, Int)
 pitchClassToPitchAndAccidental C   = (L.C, 0)
-pitchClassToPitchAndAccidental Cff = (L.C, -2)
-pitchClassToPitchAndAccidental Cf  = (L.C, -1)
 pitchClassToPitchAndAccidental Cs  = (L.C, 1)
-pitchClassToPitchAndAccidental Css = (L.C, 2)
 pitchClassToPitchAndAccidental D   = (L.D, 0)
-pitchClassToPitchAndAccidental Dff = (L.D, -2)
 pitchClassToPitchAndAccidental Df  = (L.D, -1)
 pitchClassToPitchAndAccidental Ds  = (L.D, 1)
-pitchClassToPitchAndAccidental Dss = (L.D, 2)
 pitchClassToPitchAndAccidental E   = (L.E, 0)
-pitchClassToPitchAndAccidental Eff = (L.E, -2)
 pitchClassToPitchAndAccidental Ef  = (L.E, -1)
-pitchClassToPitchAndAccidental Es  = (L.E, 1)
-pitchClassToPitchAndAccidental Ess = (L.E, 2)
 pitchClassToPitchAndAccidental F   = (L.F, 0)
-pitchClassToPitchAndAccidental Fff = (L.F, -2)
-pitchClassToPitchAndAccidental Ff  = (L.F, -1)
 pitchClassToPitchAndAccidental Fs  = (L.F, 1)
-pitchClassToPitchAndAccidental Fss = (L.F, 2)
 pitchClassToPitchAndAccidental G   = (L.G, 0)
-pitchClassToPitchAndAccidental Gff = (L.G, -2)
 pitchClassToPitchAndAccidental Gf  = (L.G, -1)
 pitchClassToPitchAndAccidental Gs  = (L.G, 1)
-pitchClassToPitchAndAccidental Gss = (L.G, 2)
 pitchClassToPitchAndAccidental A   = (L.A, 0)
-pitchClassToPitchAndAccidental Aff = (L.A, -2)
 pitchClassToPitchAndAccidental Af  = (L.A, -1)
 pitchClassToPitchAndAccidental As  = (L.A, 1)
-pitchClassToPitchAndAccidental Ass = (L.A, 2)
 pitchClassToPitchAndAccidental B   = (L.B, 0)
-pitchClassToPitchAndAccidental Bff = (L.B, -2)
 pitchClassToPitchAndAccidental Bf  = (L.B, -1)
-pitchClassToPitchAndAccidental Bs  = (L.B, 1)
-pitchClassToPitchAndAccidental Bss = (L.B, 2)
 
 everywhere
   :: PostEvent
@@ -190,57 +166,7 @@ footer = unlines
   , "}"
   ]
 
-
-toVoices :: Music -> [[(Interval Rational, Either Score ([PostEvent], Reg PitchClass))]]
-toVoices
-  = foldMap (pure . score)
-  . splitVoices
-
-
-splitVoices :: Music -> MonoidalMap Int Music
-splitVoices m
-  = foldMap (fmap $ Music . (<> leafU mempty {ua_width = duration m}))
-  . foldDUAL
-      (\e t ->
-        MM.singleton (fromMaybe 0 $ getLast $ e_voice e) $ applyD e $ leaf mempty t
-      )
-      mempty
-      fold
-      (const id)
-      (fmap . annot)
-  $ unMusic m
-
-
 sameTimeAs :: [(Interval Rational, Either b c)] -> b -> [(Interval Rational, Either b c)]
 sameTimeAs [] _ = error "no time like the present"
 sameTimeAs ab@((Interval lo hi, _) : _) b = (Interval lo hi, Left b) : ab
-
-score :: Music -> [(Interval Rational, Either Score ([PostEvent], Reg PitchClass))]
-score
-  = fold
-  . foldDUAL
-      (\e r -> pure $ (Interval (e_offset e) (e_offset e + e_duration e), Right ([], export e r)))
-      mempty
-      fold
-      (const id)
-      (\a m ->
-        case a of
-          TimeSignature x y -> sameTimeAs m $ L.Time x y
-          Phrase -> around BeginPhraseSlur EndPhraseSlur m
-          Tempo z s -> m
-          Articulate z -> everywhere (Articulation Default z) m
-      )
-  . unMusic
-
-
-toLilypond :: Music -> String
-toLilypond = finalizeLily . toVoices
-
-
-toPdf :: Music -> IO ()
-toPdf m = do
-  let lp = read @String $ show $ pPrint $ toLilypond m
-  writeFile "/tmp/out.lily" $ header <> lp <> footer
-  _ <- rawSystem "lilypond" ["-o", "/tmp/song", "/tmp/out.lily"]
-  pure ()
 

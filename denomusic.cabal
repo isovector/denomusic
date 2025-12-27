@@ -27,8 +27,14 @@ library
   exposed-modules:
       Data.IntervalMap
       Data.Lilypond
+      DenoMusic
+      DenoMusic.Generators
       DenoMusic.Harmony
+      DenoMusic.Notation
+      DenoMusic.Play
       DenoMusic.Test
+      DenoMusic.Types
+      DenoMusic.Utils
       Music
       Music.Harmony
       Music.Notation
@@ -37,13 +43,7 @@ library
       Music.Rhythm
       Music.Types
       Music.Utils
-      Music2
-      Pieces.Guaraldi
-      Pieces.Seventy
-      Pieces.SeventyOne
-      Pieces.SeventyThree
-      Pieces.SeventyTwo
-      Pieces.Two
+      Pieces.Three
   other-modules:
       Paths_denomusic
   autogen-modules:

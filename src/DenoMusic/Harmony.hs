@@ -1,56 +1,170 @@
-module DenoMusic.Harmony where
+{-# LANGUAGE AllowAmbiguousTypes  #-}
+{-# LANGUAGE DataKinds            #-}
+{-# LANGUAGE UndecidableInstances #-}
 
-import Music.Play (toStupidEuterpeaPitchClass)
-import Control.Arrow
-import Euterpea qualified as E
+module DenoMusic.Harmony
+  ( T (..)
+  , extend
+  , sink
+  , elim
+  , MetaScales (..)
+  , MetaScale (..)
+
+  -- * Familiar objects
+  , triad
+  , diatonic
+  , spelledFlat
+  , spelledSharp
+  , standard
+  , vl3in7
+  , vl7in12
+  ) where
+
+import Data.Group
+import Data.Kind
+import Data.Set (Set)
 import Data.Set qualified as S
-import Music2
-import Music.Harmony
+import GHC.Exts
+import GHC.TypeLits
+import Music.Harmony (Reg(..), extrMove)
+import DenoMusic.Types (PitchClass (..))
 
-quadruple
-  :: (Enum v, Bounded v)
-  => Scale PitchClass
-  -- ^ Chromatic scale
-  -> (v -> Reg PitchClass)
-  -- ^ Mapping from voices to chord tones
-  -> Music () T
-  -- ^ Global chromatic progression
-  -> Music () (Scale PitchClass)
-  -- ^ Global scale progression
-  -> Music () T
-  -- ^ Global modulation within the scale
-  -> Music v (Set T)
-  -- ^ Voices moving in their chord
-  -> Music v (Set (Reg PitchClass))
-quadruple chroma voiceMap chromProg scaleProg modu m = do
-  let chord = S.fromList
-            $ fmap (voiceMap $)
-            $ enumFromTo minBound maxBound
-  (\c sc mo (v, vt) ->
-    S.map
-      ( move1 chroma (move sc (mo) chord) c
-      . move1 sc chord (mo)
-      )
-      $ S.map (flip (move1 sc chord) $ voiceMap v)
-      $ vt
-    )
-    <$> everyone chromProg
-    <*> everyone scaleProg
-    <*> everyone modu
-    <*> attachVoice m
+-- | A coordinate inside of a 'MetaScales'. 'T's are little-endian cons lists.
+-- For example, given the 'standard' 'MetaScale', @1 :> (-2) :> 3 :> Nil@ means
+-- to transpose up by one chord tone, down by two scale tones, and up by three
+-- chromatic tones.
+type T :: [Nat] -> Type
+data T sizes where
+  Nil :: T '[]
+  (:>) :: Int -> !(T ns) -> T (n ': ns)
+infixr 6 :>
 
-attachVoice :: Music v a -> Music v (v, a)
-attachVoice = withVoice $ \v -> fmap (v,)
+deriving stock instance Show (T ns)
 
-play :: (Enum v, Bounded v) => Music v (Set (Reg PitchClass)) -> IO ()
-play (Music m)
-  = E.playDev 2
-  . fmap (first toStupidEuterpeaPitchClass)
-  $ foldr (E.:=:) (E.rest 0)
-  $ do
-    v <- enumFromTo minBound maxBound
-    (Interval lo hi, as) <- flatten $ m v
-    pure $ foldr (E.:=:) (E.rest 0) $ do
-      a <- S.toList as
-      pure $ E.rest lo E.:+: E.note (hi - lo) (fromReg a)
+instance IsList (T '[]) where
+  type Item (T '[]) = Int
+  fromList [] = Nil
+  fromList e = error $ "Extra items remaining in IsList (T '[]): " <> show e
+  toList Nil = []
+
+
+instance (IsList (T ns), Item (T ns) ~ Int) => IsList (T (n ': ns)) where
+  type Item (T (n ': ns)) = Int
+  fromList [] = error "Not enough items in IsList (T (n ': ns)): "
+  fromList (x : xs) = x :> fromList xs
+  toList  (x :> xs) = x : toList xs
+
+instance Semigroup (T '[]) where
+  _ <> _ = Nil
+
+instance Semigroup (T ns) => Semigroup (T (n ': ns)) where
+  (i :> is) <> (j :> js) = (i + j) :> (is <> js)
+
+instance Monoid (T '[]) where
+  mempty = Nil
+
+instance Monoid (T ns) => Monoid (T (n ': ns)) where
+  mempty = 0 :> mempty
+
+instance Group (T '[]) where
+  invert _ = Nil
+
+instance Group (T ns) => Group (T (n ': ns)) where
+  invert (i :> is) = negate i :> invert is
+
+-- | 'MetaScales' provide consistent vertical musical constraints (harmony), as
+-- well as give means for efficient voice leading in order to evolve that
+-- harmony over time.
+--
+-- Musically, a 'MetaScales' is a hierarchy of scale-like things which move
+-- relative to one another. Think chord-inside-scale-inside-modulation. The
+-- @sizes@ type index describes how many elements is in each of these
+-- scale-like things, in little-endian.
+--
+-- You can index into a 'MetaScales' by way of a 'T'.
+type MetaScales :: [Nat] -> Type -> Type
+data MetaScales sizes a where
+  -- | The base collection of objects being permuted.
+  Base :: Set a -> MetaScales '[n] a
+  -- | Transform a 'MetaScales' by permuting it via a single 'MetaScale'.
+  MSCons :: MetaScale n -> !(MetaScales ns a) -> MetaScales (n ': ns) a
+
+deriving stock instance Show a => Show (MetaScales ns a)
+
+-- | A 'MetaScale' is a collection of generalized scale-steps, relative to
+-- a parent 'MetaScale'. It can be used to describe voices-within-chords, or
+-- chords-within-scales, or scales-within-chroma, or other things of this
+-- nature. A 'MetaScale' is mapped to concrete values when embedded within
+-- a 'MetaScales' (notice the plural.)
+type MetaScale :: Nat -> Type
+newtype MetaScale size = UnsafeMetaScale
+  { getMetaScale :: Set Int
+  }
+  deriving newtype Show
+
+-- | The diatonic scale. This will take on different modes depending on the
+-- background scalar transposition applied to it.
+diatonic :: MetaScale 7
+diatonic = UnsafeMetaScale $ S.fromList [0, 2, 4, 5, 7, 9, 11]
+
+-- | A metascale corresponding to the 1-3-5 triad. This will take on
+-- major/minor/diminished/augmented characteristics depending on where in the
+-- scale it is transposed to.
+triad :: MetaScale 3
+triad = UnsafeMetaScale $ S.fromList [0, 2, 4]
+
+
+-- | Transform a note along a 'MetaScales' by moving it along each scale
+-- dimension. This function forms monoid actions:
+--
+-- @
+-- elim ms mempty     = id
+-- elim ms (t1 <> t2) = elim ms t2 . elim ms t1
+-- @
+elim :: Ord a => MetaScales ns a -> T ns -> Reg a -> Reg a
+elim (Base sc) (i :> Nil) r = extrMove sc i r
+elim (MSCons ms scs) (i :> j :> js) r = do
+  dj <- extrMove (getMetaScale ms) i (Reg 0 0)
+  elim scs ((dj + j) :> js) r
+
+
+-- | The standard triad-in-diatonic-in-chromatic 'MetaScales' that makes up
+-- most of Western music.
+standard :: MetaScales '[3, 7, 12] PitchClass
+standard = MSCons triad $ MSCons diatonic spelledFlat
+
+
+-- | A 'MetaScales' that spells its enharmonic black notes as sharps.
+spelledSharp :: MetaScales '[12] PitchClass
+spelledSharp = Base (S.fromList [A, As, B, C, Cs, D, Ds, E, F, Fs, G, Gs])
+
+
+-- | A 'MetaScales' that spells its enharmonic black notes as flats.
+spelledFlat :: MetaScales '[12] PitchClass
+spelledFlat = Base (S.fromList [A, Af, B, Bf, C, D, Df, E, Ef, F, G, Gf])
+
+
+-- | A smooth downwards voice-leading of triads-in-diatonic.
+vl3in7 :: T '[3, 7]
+vl3in7 = (-2) :> 5 :> mempty
+
+-- | A smooth downwards voice-leading of diatonics-in-chromatics.
+vl7in12 :: T '[7, 12]
+vl7in12 = (-4) :> 7 :> mempty
+
+
+type family (++) xs ys where
+  '[] ++ ys = ys
+  (x ': xs) ++ ys = x ': (xs ++ ys)
+
+
+-- | Extend the end of a 'T' with zeroes.
+extend :: forall ns ms. Monoid (T ns) => T ms -> T (ms ++ ns)
+extend (x :> xs) = x :> extend @ns xs
+extend Nil = mempty
+
+
+-- | Extend the front of a 'T' with a zero.
+sink :: T ns -> T (n ': ns)
+sink t = 0 :> t
 
