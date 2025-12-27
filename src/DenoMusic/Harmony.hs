@@ -143,11 +143,13 @@ spelledFlat :: MetaScales '[12] PitchClass
 spelledFlat = Base (S.fromList [A, Af, B, Bf, C, D, Df, E, Ef, F, G, Gf])
 
 
--- | A smooth downwards voice-leading of triads-in-diatonic.
+-- | A smooth downwards voice-leading of triads-in-diatonic. Use 'invert' to
+-- instead get an upwards voice-leading.
 vl3in7 :: T '[3, 7]
 vl3in7 = (-2) :> 5 :> mempty
 
--- | A smooth downwards voice-leading of diatonics-in-chromatics.
+-- | A smooth downwards voice-leading of diatonics-in-chromatics. Use 'invert'
+-- to instead get an upwards voice-leading.
 vl7in12 :: T '[7, 12]
 vl7in12 = (-4) :> 7 :> mempty
 

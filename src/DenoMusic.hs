@@ -42,8 +42,10 @@ module DenoMusic
   -- * Reexports
   , Set
   , Profunctor(..)
+  , Group (..)
   ) where
 
+import Data.Group
 import DenoMusic.Types
 import DenoMusic.Harmony
 import DenoMusic.Utils

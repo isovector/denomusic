@@ -26,6 +26,8 @@ toStupidEuterpeaPitchClass Gf = E.Gf
 toStupidEuterpeaPitchClass G = E.G
 toStupidEuterpeaPitchClass Gs = E.Gs
 
+
+-- | Play a piece of music by converting it to MIDI.
 play :: (Enum v, Bounded v) => Music v (Set (Reg PitchClass)) -> IO ()
 play (Music m)
   = E.playDev 2
