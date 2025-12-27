@@ -54,6 +54,7 @@ score
   $ music
 
 
+
 harmonize :: Music V (T '[3]) -> Music V (Reg PitchClass)
 harmonize =
   quad

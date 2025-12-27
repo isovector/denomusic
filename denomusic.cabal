@@ -36,6 +36,7 @@ library
       DenoMusic.Types
       DenoMusic.Utils
       Pieces.Three
+      Pieces.Two
   other-modules:
       Paths_denomusic
   autogen-modules:

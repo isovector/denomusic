@@ -56,6 +56,6 @@ import DenoMusic.Harmony
 import DenoMusic.Utils
 import DenoMusic.Play
 import DenoMusic.Notation
-import Data.Set
+import Data.Set (Set)
 import Data.Profunctor
 import DenoMusic.Generators ()
