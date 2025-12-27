@@ -10,6 +10,7 @@ import Data.Foldable
 import Data.Set qualified as S
 import Data.Word
 import DenoMusic
+import DenoMusic.Types
 import Test.Hspec
 import Test.Hspec.QuickCheck
 import Test.QuickCheck

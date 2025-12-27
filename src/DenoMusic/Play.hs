@@ -1,6 +1,6 @@
-module DenoMusic.Play where
+module DenoMusic.Play (play) where
 
-import Control.Arrow (first)
+import Control.Arrow
 import Data.Set (Set)
 import Data.Set qualified as S
 import DenoMusic.Types

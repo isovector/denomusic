@@ -1,14 +1,47 @@
 module DenoMusic
-  ( module DenoMusic.Types
-  , module DenoMusic.Harmony
-  , module DenoMusic.Utils
-  , module DenoMusic.Play
-  , module DenoMusic.Notation
+  ( -- * Core Types
+    Music
+  , Reg (..)
+  , PitchClass (..)
+
+  -- * Using Music
+  , play
+  , toPdf
+
+  -- * Musical Primitives
+  , note
+  , rest
+
+  -- * Combining Music
+  , (##)
+  , line
+
+  -- * Composing Voices
+  , voice
+  , everyone
+  , withVoice
+  , fromVoices
+
+  -- * Western Harmony
+  , vl3in7
+  , vl7in12
+  , standard
+  , triad
+  , diatonic
+  , spelledFlat
+  , spelledSharp
+
+  -- * Harmonic Concerns
+  , T (..)
+  , elim
+  , MetaScales
+  , MetaScale
+  , extend
+  , sink
+
+  -- * Reexports
   , Set
   , Profunctor(..)
-  , Reg(..)
-  , T(..)
-  , Interval(..)
   ) where
 
 import DenoMusic.Types

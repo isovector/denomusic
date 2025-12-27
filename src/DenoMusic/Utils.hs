@@ -77,7 +77,8 @@ restV :: Rational -> Voice a
 restV d = Voice (pure d) $ pure Nothing
 
 
--- | A single rest, for the given duration.
+-- | A single rest, for the given duration. Rests may have negative duration,
+-- which allows for synchronization of musical moments.
 rest :: Rational -> Music () a
 rest = voiceV () . restV
 

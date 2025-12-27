@@ -133,12 +133,12 @@ standard :: MetaScales '[3, 7, 12] PitchClass
 standard = MSCons triad $ MSCons diatonic spelledFlat
 
 
--- | A 'MetaScales' that spells its enharmonic black notes as sharps.
+-- | A chromatic 'MetaScales' that spells its enharmonic black notes as sharps.
 spelledSharp :: MetaScales '[12] PitchClass
 spelledSharp = Base (S.fromList [A, As, B, C, Cs, D, Ds, E, F, Fs, G, Gs])
 
 
--- | A 'MetaScales' that spells its enharmonic black notes as flats.
+-- | A chromatic 'MetaScales' that spells its enharmonic black notes as flats.
 spelledFlat :: MetaScales '[12] PitchClass
 spelledFlat = Base (S.fromList [A, Af, B, Bf, C, D, Df, E, Ef, F, G, Gf])
 

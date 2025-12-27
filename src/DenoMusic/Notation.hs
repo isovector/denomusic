@@ -31,7 +31,7 @@ toLilypond = finalizeLily . toNotationVoices
 
 
 -- | Generate lilypond code for a 'Music', and dump the resulting pdf to
--- @/tmp/song.pdf@.
+-- @\/tmp\/song.pdf@.
 toPdf :: (Enum v, Bounded v) => Music v (Set (Reg PitchClass)) -> IO ()
 toPdf m = do
   let lp = toLilypond m
