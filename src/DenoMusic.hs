@@ -7,10 +7,12 @@ module DenoMusic
   -- * Using Music
   , play
   , toPdf
+  , duration
 
   -- * Musical Primitives
   , note
   , rest
+  , delay
 
   -- * Combining Music
   , (##)

@@ -28,6 +28,15 @@ stretch r (Music m) = Music $ m <&> \case
   Empty -> Empty
 
 
+duration :: (Enum v, Bounded v) => Music v a -> Rational
+duration (Music m) = maximum $ 0 : do
+  v <- enumFromTo minBound maxBound
+  case m v of
+    Voice d _ -> pure $ getSum d
+    Drone {} -> mempty
+    Empty {} -> mempty
+
+
 -- | Build a 'Music' by attaching a label to an anonymous voice.
 voiceV :: Eq v => v -> Voice a -> Music v a
 voiceV v = voice v . Music . const
@@ -36,6 +45,10 @@ voiceV v = voice v . Music . const
 everyone :: Music () a -> Music v a
 everyone (Music m) = Music $ const $ m ()
 
+
+-- | Delay a voice by some offset.
+delay :: Rational -> Music d a -> Music d a
+delay d (Music m) = Music $ fmap (delayV d) m
 
 -- | Delay a voice by some offset.
 delayV :: Rational -> Voice a -> Voice a
