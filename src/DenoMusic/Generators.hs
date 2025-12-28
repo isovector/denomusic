@@ -40,7 +40,7 @@ instance (Arbitrary a, Semigroup a) => Arbitrary (Voice a) where
     , pure Empty
     ]
 
-instance (Ord v, Arbitrary v, Arbitrary a, Semigroup a) => Arbitrary (Music v a) where
+instance (Ord v, Arbitrary v, Arbitrary a, Enum v, Bounded v, Semigroup a) => Arbitrary (Music v a) where
   arbitrary =
     sized $ \n -> oneof $
       case n <= 0 of

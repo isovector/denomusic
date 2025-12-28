@@ -12,7 +12,7 @@ voice :: Eq v => v -> Music () a -> Music v a
 voice v m@(Music sf) = Music $
   \case
     ((== v) -> True) -> sf ()
-    _ -> restV $ duration m
+    _ -> Empty
 
 
 -- | Stretch a piece of music along the time axis. Eg, @'stretch' 2 m@ will
@@ -58,9 +58,14 @@ delayV _ Empty = Empty
 
 
 -- | Tile product (eg "play this before that")
-(##) :: Semigroup a => Music v a -> Music v a -> Music v a
-Music m1 ## Music m2 = Music $ liftA2 (##.) m1 m2
+(##) :: (Enum v, Bounded v, Semigroup a) => Music v a -> Music v a -> Music v a
+d@(Music m1) ## Music m2 = Music $ liftA2 (tile $ duration d) m1 m2
 infixr 6 ##
+
+tile :: Semigroup a => Rational -> Voice a -> Voice a -> Voice a
+tile d Empty v2 = delayV d v2
+tile d (Drone a) v2 = delayV d $ fmap (a <>) v2
+tile _ v1 v2 = v1 ##. v2
 
 
 -- | Tile product (eg "play this before that")
@@ -72,7 +77,7 @@ infixr 6 ##.
 
 
 -- | Play the given 'Music's sequentially.
-line :: (Foldable t, Semigroup a) => t (Music v a) -> Music v a
+line :: (Foldable t, Enum v, Bounded v, Semigroup a) => t (Music v a) -> Music v a
 line = foldr (##) $ everyone $ rest 0
 
 
