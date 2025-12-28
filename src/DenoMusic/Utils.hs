@@ -9,10 +9,10 @@ import DenoMusic.Types
 
 -- | Attach a label to an anonymous voice.
 voice :: Eq v => v -> Music () a -> Music v a
-voice v (Music m) = Music $
+voice v m@(Music sf) = Music $
   \case
-    ((== v) -> True) -> m ()
-    _ -> Empty
+    ((== v) -> True) -> sf ()
+    _ -> restV $ duration m
 
 
 -- | Stretch a piece of music along the time axis. Eg, @'stretch' 2 m@ will
