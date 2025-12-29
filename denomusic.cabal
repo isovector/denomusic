@@ -32,11 +32,17 @@ library
       DenoMusic.Notation
       DenoMusic.NotationBackend
       DenoMusic.Play
+      DenoMusic.Rhythms
       DenoMusic.Test
       DenoMusic.Types
       DenoMusic.Utils
+      Pieces.Musical
+      Pieces.Seventy
+      Pieces.SomethingNew
+      Pieces.Test
       Pieces.Three
       Pieces.Two
+      Pieces.Wave
   other-modules:
       Paths_denomusic
   autogen-modules:

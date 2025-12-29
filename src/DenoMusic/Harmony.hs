@@ -131,8 +131,8 @@ elim (MSCons ms scs) (i :> j :> js) r = do
   elim scs ((dj + j) :> js) r
 
 
-kill :: forall a n m ns. (KnownNat m) => MetaScales (n ': m ': ns) a -> T (n ': m ': ns) -> T (m ': ns)
-kill (MSCons ms _) (i :> j :> js) =
+kill :: forall n m ns. (KnownNat m) => MetaScale n -> T (n ': m ': ns) -> T (m ': ns)
+kill ms (i :> j :> js) =
   let (Reg z dj) = metaMove (getMetaScale ms) i (Reg 0 0)
    in ((dj + j + z * fromIntegral (natVal (Proxy @m))) :> js)
 

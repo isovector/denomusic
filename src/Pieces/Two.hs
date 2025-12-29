@@ -30,7 +30,7 @@ splitVoices m = liftA2 (<>) m $ fromVoices $ pure . extend . \case
   VB -> (-3) :> Nil
 
 motif :: Music () Western
-motif = line @[]
+motif = line
   [ note 0.25 mempty
   , note (3/8) [1, 0, 0]
   , note 0.125 [0, -1, 0]
@@ -39,7 +39,7 @@ motif = line @[]
 
 phrasing :: Music () Western -> Music () Western
 phrasing m
-  = selfSimilar (stimes 2 $ extend $ invert vl3in7) 2 $ line @[]
+  = selfSimilar (stimes 2 $ extend $ invert vl3in7) 2 $ line
       [ selfSimilar [1, 0, 0] 1 m
       , stretch (1/2) $ selfSimilar [1, 0, 0] 3 $ fmap (<> [1, 0, 0]) m
       ]
@@ -48,21 +48,21 @@ phrase1 :: Music () Western
 phrase1 = phrasing motif
 
 phrase2 :: Music () Western
-phrase2 = line @[]
+phrase2 = line
   [ note 0.25 mempty
   , note 0.25 mempty
   , rest 0.5
   ]
 
 interjection :: Music SATB Western
-interjection = everyone $ line @[]
+interjection = everyone $ line
   [ note 0.25 mempty
   , note 0.25 mempty
   , note 0.25 mempty
   ]
 
 keyChanges :: Music SATB Western
-keyChanges = everyone $ line @[]
+keyChanges = everyone $ line
   [ note 2 mempty
   , note 4 $ sink vl7in12
   , note 2 $ stimes 3 $ sink vl7in12
@@ -83,23 +83,23 @@ abstract
   $ intersperse interjection
   $ split 3
   $ fromVoices $ \case
-    VB -> line $ replicate 3 $ phrasing $ line @[]
+    VB -> line $ replicate 3 $ phrasing $ line
       [ note (1/4) mempty
       , note (1/4) [1, 0, 0]
       , note (1/4) [2, 0, 0]
       , note (1/4) [0, 0, 0]
       ]
-    VT -> line @[]
+    VT -> line
         [ phrase1
         , phrasing phrase2
         , phrasing phrase2
         ]
-    VA -> line @[]
+    VA -> line
         [ rest (duration phrase1)
         , phrase1
         , phrasing phrase2
         ]
-    VS -> line @[]
+    VS -> line
         [ rest (2 * duration phrase1)
         , phrase1
         ]

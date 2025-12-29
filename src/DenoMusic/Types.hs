@@ -57,7 +57,7 @@ data Music v a = Music
   deriving stock (Functor, Generic, Foldable, Traversable)
 
 instance (Ord v, Semigroup a) => Semigroup (Music v a) where
-  Music a1 b1 <> Music a2 b2 = Music (a1 + a2) (b1 <> b2)
+  Music a1 b1 <> Music a2 b2 = Music (max a1 a2) (b1 <> b2)
 
 instance (Ord v, Monoid a) => Monoid (Music v a) where
   mempty = Music 0 mempty
@@ -67,7 +67,7 @@ instance (Ord v, Enum v, Bounded v) => Applicative (Music v) where
     v <- enumFromTo minBound maxBound
     pure (v, pure a)
   liftA2 f (Music a1 b1) (Music a2 b2)
-    = Music (max a1 a2)
+    = Music (min a1 a2)
     $ MM.mergeWithKey (\_ x y -> Just $ liftA2 f x y)
         (const MM.empty)
         (const MM.empty)
