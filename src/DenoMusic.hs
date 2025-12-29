@@ -26,6 +26,7 @@ module DenoMusic
   , everyone
   , withVoice
   , fromVoices
+  , mapVoices
 
   -- * Western Harmony
   , vl3in7

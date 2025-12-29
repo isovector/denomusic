@@ -10,9 +10,10 @@ import Data.Functor.Compose
 import Data.IntervalMap.FingerTree (Interval(..))
 import Data.Map qualified as M
 import Data.Maybe hiding (catMaybes)
-import Data.Profunctor
 import GHC.Generics
 import Witherable hiding (filter)
+import Data.Map.Monoidal (MonoidalMap)
+import Data.Map.Monoidal qualified as MM
 
 
 -- | Attach a register to some value.
@@ -51,32 +52,35 @@ data PitchClass
 -- | Music is a mapping of voice labels to 'Voice's.
 data Music v a = Music
   { duration :: Rational
-  , getVoices :: v -> Voice a
+  , getVoices :: MonoidalMap v (Voice a)
   }
-  deriving stock (Functor, Generic)
+  deriving stock (Functor, Generic, Foldable, Traversable)
 
-instance Semigroup a => Semigroup (Music v a) where
+instance (Ord v, Semigroup a) => Semigroup (Music v a) where
   Music a1 b1 <> Music a2 b2 = Music (a1 + a2) (b1 <> b2)
 
-instance Monoid a => Monoid (Music v a) where
+instance (Ord v, Monoid a) => Monoid (Music v a) where
   mempty = Music 0 mempty
 
-instance Applicative (Music v) where
-  pure = Music 0 . pure . pure
-  liftA2 f (Music a1 b1) (Music a2 b2) = Music (max a1 a2) $ liftA2 (liftA2 f) b1 b2
+instance (Ord v, Enum v, Bounded v) => Applicative (Music v) where
+  pure a = Music 0 $ MM.fromList $ do
+    v <- enumFromTo minBound maxBound
+    pure (v, pure a)
+  liftA2 f (Music a1 b1) (Music a2 b2)
+    = Music (max a1 a2)
+    $ MM.mergeWithKey (\_ x y -> Just $ liftA2 f x y)
+        (const MM.empty)
+        (const MM.empty)
+        b1 b2
 
 instance (Enum v, Bounded v, Ord v, Show v, Show a) => Show (Music v a) where
   show = show . toVoices
 
 -- | Replace any 'rest's in the first 'Music' with their counterparts in the
 -- second 'Music'.
-instance Alternative (Music v) where
-  empty = Music 0 $ const empty
-  Music d1 m1 <|> Music d2 m2 = Music (max d1 d2) $ \v -> m1 v <|> m2 v
-
-instance (Enum v, Bounded v) => Foldable (Music v) where
-  foldMap f (Music _ m) =
-    foldMap (\v -> foldMap f $ m v) $ enumFromTo minBound maxBound
+instance (Ord v, Enum v, Bounded v) => Alternative (Music v) where
+  empty = Music 0 MM.empty
+  Music d1 m1 <|> Music d2 m2 = Music (max d1 d2) $ MM.unionWith (<|>) m1 m2
 
 
 -- | When we have a finite number of voices, we can enumerate them into
@@ -84,26 +88,24 @@ instance (Enum v, Bounded v) => Foldable (Music v) where
 toVoices :: (Enum v, Bounded v, Ord v) => Music v a -> M.Map v (Voice a)
 toVoices (Music _ m) = M.fromList $ do
   v <- enumFromTo minBound maxBound
-  pure (v, m v)
+  pure (v, fromMaybe emptyVoice $ MM.lookup v m)
+
+emptyVoice :: Voice a
+emptyVoice = Voice $ SF M.empty Nothing
 
 instance Filterable (Music v) where
   catMaybes (Music d v) = Music d $ fmap catMaybes v
 
 
-instance (Enum v, Bounded v, Ord v) => Witherable (Music v)
+instance Witherable (Music v)
 
+mapVoices :: Ord v' => (v -> v') -> Music v a -> Music v' a
+mapVoices f (Music d m) = Music d $ MM.mapKeys f m
 
-instance (Enum v, Bounded v, Ord v) => Traversable (Music v) where
-  traverse f m
-    = fmap (\m' -> Music (duration m) $ \v -> m' M.! v)
-    $ traverse (traverse f)
-    $ toVoices m
-
--- | 'Music' forms a profunctor on its voice labels; 'lmap' corresponds to
--- trading lines between voices.
-instance Profunctor Music where
-  lmap f (Music d m) = Music d $ m . f
-  rmap = fmap
+-- instance Bifunctor Music where
+--   bimap f g (Music d m) = Music d $ MM.mapWithKey (\a b -> _) m
+--   -- lmap f (Music d m) = Music d $ m . f
+--   -- rmap = fmap
 
 
 -- | A 'Voice' is a discretization of the number line into regions of maybe

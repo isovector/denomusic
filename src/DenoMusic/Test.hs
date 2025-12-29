@@ -12,6 +12,7 @@ import Data.Word
 import DenoMusic
 import DenoMusic.Types
 import DenoMusic.Utils
+import DenoMusic.Harmony
 import Test.Hspec
 import Test.Hspec.QuickCheck
 import Test.QuickCheck
@@ -70,3 +71,5 @@ main = hspec $ do
       l ##. r =-= m
   describe "Music" $ do
     classBatch @(Music SATB)
+  focus $ modifyMaxSuccess (*1000) $ prop "cM -> cm" $ \x y z w q ms mms ->
+    S.fromList (fmap (unReg . elim (MSCons triad $ MSCons diatonic $ MSCons (UnsafeMetaScale $ S.insert 0 ms) $ MSCons (UnsafeMetaScale $ S.insert 0 mms) spelledFlat) (x :> y :> w :> q :> z :> Nil) . Reg 4) $ [C, E, G]) =/= S.fromList [C, Ef, G]

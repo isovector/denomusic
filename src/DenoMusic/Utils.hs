@@ -1,12 +1,13 @@
 module DenoMusic.Utils where
 
-import Data.Profunctor
+import Data.Foldable
 import Data.Map qualified as M
+import Data.Map.Monoidal qualified as MM
 import Data.Map (Map)
 import Data.Group
 import Control.Applicative
-import Data.Maybe (fromJust)
-import Control.Arrow
+import Data.Maybe (fromJust, maybeToList)
+import Data.Bifunctor
 import Data.Functor ((<&>))
 import Data.Function.Step.Discrete.Open
 import DenoMusic.Types
@@ -14,11 +15,8 @@ import Witherable
 
 
 -- | Attach a label to an anonymous voice.
-voice :: Eq v => v -> Music () a -> Music v a
-voice v (Music d sf) = Music d $
-  \case
-    ((== v) -> True) -> sf ()
-    _ -> Voice $ SF mempty Nothing
+voice :: Ord v => v -> Music () a -> Music v a
+voice v = mapVoices $ const v
 
 
 -- | Stretch a piece of music along the time axis. Eg, @'stretch' 2 m@ will
@@ -33,13 +31,15 @@ stretch r (Music d m) = Music (d * r) $ m <&> \case
 
 
 -- | Copy an anonymous voice to all voices.
-everyone :: Music () a -> Music v a
-everyone (Music d m) = Music d $ const $ m ()
+everyone :: (Enum v, Bounded v, Ord v) => Music () a -> Music v a
+everyone (Music d m) = Music d $ MM.fromList $ do
+  v <- enumFromTo minBound maxBound
+  pure (v, m MM.! ())
 
 
 -- | Delay a voice by some offset.
 delay :: Rational -> Music d a -> Music d a
-delay o (Music d m) = Music o $ fmap (delayV d) m
+delay o (Music d m) = Music d $ fmap (delayV o) m
 
 -- | Delay a voice by some offset.
 delayV :: Rational -> Voice a -> Voice a
@@ -47,8 +47,8 @@ delayV o (Voice (SF m e)) = Voice $ SF (M.mapKeys (+ o) m) e
 
 
 -- | Tile product (eg "play this before that")
-(##) :: Semigroup a => Music v a -> Music v a -> Music v a
-Music d1 m1 ## Music d2 m2 = Music (d1 + d2) $ liftA2 (<>) m1 $ fmap (delayV d1) m2
+(##) :: (Ord v, Semigroup a) => Music v a -> Music v a -> Music v a
+Music d1 m1 ## Music d2 m2 = Music (d1 + d2) $ MM.unionWith ((<>)) m1 $ fmap (delayV d1) m2
 infixr 6 ##
 
 tile :: Semigroup a => Rational -> Voice a -> Voice a -> Voice a
@@ -56,13 +56,13 @@ tile d v1 v2 = v1 <> delayV d v2
 
 
 -- | Play the given 'Music's sequentially.
-line :: Semigroup a => [Music v a] -> Music v a
+line :: (Enum v, Bounded v, Ord v, Semigroup a) => [Music v a] -> Music v a
 line = foldr (##) $ everyone $ rest 0
 
 
 -- | A single note, starting at 0, for the given duration.
 note :: Rational -> a -> Music () a
-note d a = Music d $ const $ Voice $ SF (M.fromList
+note d a = Music d $ MM.singleton () $ Voice $ SF (M.fromList
   [ (0, Nothing)
   , (d, Just a)
   ]) Nothing
@@ -71,16 +71,16 @@ note d a = Music d $ const $ Voice $ SF (M.fromList
 -- | A single rest, for the given duration. Rests may have negative duration,
 -- which allows for synchronization of musical moments.
 rest :: Rational -> Music () a
-rest d = Music d $ const $ Voice $ SF mempty Nothing
+rest d = Music d $ MM.singleton () $ Voice $ SF mempty Nothing
 
 
 -- | Map over each voice.
 withVoice
-  :: (Enum v, Bounded v, Ord v)
+  :: (Enum v, Bounded v, Ord v, Semigroup a)
   => (v -> Music () a -> Music () b)
   -> Music v a
   -> Music v b
-withVoice f m = fromVoices $ \v -> f v $ lmap (const v) m
+withVoice f (Music d sf) = fromVoices $ \v -> f v $ Music d $ MM.singleton () $ fold $ MM.lookup v sf
 
 
 enumerate :: (Enum a, Bounded a, Ord a) => (a -> b) -> Map a b
@@ -92,7 +92,10 @@ enumerate f = M.fromList $ do
 fromVoices :: (Enum v, Bounded v, Ord v) => (v -> Music () a) -> Music v a
 fromVoices f =
   let vs = enumerate f
-   in Music (maximum $ fmap duration vs) $ \v -> getVoices (vs M.! v) ()
+   in Music (maximum $ fmap duration vs) $ MM.fromList $ do
+        v <- enumFromTo minBound maxBound
+        z <- maybeToList $ MM.lookup () $ getVoices (vs M.! v)
+        pure (v, z)
 
 -- | Split a voice at a given time
 separateV :: Rational -> Voice a -> (Voice a, Voice a)
@@ -110,7 +113,7 @@ separateV t (Voice (SF sf e)) =
 separate :: Rational -> Music v a -> (Music v a, Music v a)
 separate t (Music d m) = do
   let vs = fmap (separateV t) m
-  (Music t $ fst . vs, Music (d - t) $ snd . vs)
+  (Music t $ fmap fst vs, Music (d - t) $ fmap snd vs)
 
 
 -- | Split a piece of music into @t@-sized chunks.

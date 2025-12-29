@@ -1,5 +1,6 @@
 module DenoMusic.Play (play) where
 
+import Data.Map.Monoidal qualified as MM
 import Control.Arrow
 import Data.Set (Set)
 import Data.Set qualified as S
@@ -34,8 +35,8 @@ play (Music _ m)
   . fmap (first toStupidEuterpeaPitchClass)
   $ foldr (E.:=:) (E.rest 0)
   $ do
-    v <- enumFromTo minBound maxBound
-    (Interval lo hi, as) <- flatten $ m v
+    (v, z) <- MM.toList m
+    (Interval lo hi, as) <- flatten z
     pure $ foldr (E.:=:) (E.rest 0) $ do
       a <- S.toList as
       pure $ E.rest lo E.:+: E.note (hi - lo) (fromReg a)

@@ -7,11 +7,16 @@ import DenoMusic.Types
 import DenoMusic.Utils
 import Test.QuickCheck (Arbitrary(..), oneof, resize, sized, Positive(..), (.&&.))
 import Test.QuickCheck.Checkers (EqProp(..))
+import Data.Map.Monoidal qualified as MM
+
+instance (EqProp k, EqProp a) => EqProp (MM.MonoidalMap k a) where
+  v1 =-= v2 = MM.toList v1 =-= MM.toList v2
+
 
 instance EqProp a => EqProp (Voice a) where
   v1 =-= v2 = sample v1 =-= sample v2
 
-instance (Show v, Arbitrary v, EqProp a) => EqProp (Music v a) where
+instance (Show v, Arbitrary v, EqProp v, EqProp a) => EqProp (Music v a) where
   Music d1 m1 =-= Music d2 m2 = (d1 =-= d2) .&&. (m1 =-= m2)
 
 instance (Arbitrary a, Semigroup a) => Arbitrary (Voice a) where
