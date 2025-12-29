@@ -40,6 +40,7 @@ dependencies:
 - groups
 - step-function
 - profunctors
+- witherable
 
 default-extensions:
 - DerivingStrategies

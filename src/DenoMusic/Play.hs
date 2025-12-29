@@ -29,7 +29,7 @@ toStupidEuterpeaPitchClass Gs = E.Gs
 
 -- | Play a piece of music by converting it to MIDI.
 play :: (Enum v, Bounded v) => Music v (Set (Reg PitchClass)) -> IO ()
-play (Music m)
+play (Music _ m)
   = E.playDev 2
   . fmap (first toStupidEuterpeaPitchClass)
   $ foldr (E.:=:) (E.rest 0)

@@ -71,4 +71,5 @@ library
     , recursion-schemes
     , step-function
     , transformers
+    , witherable
   default-language: GHC2021

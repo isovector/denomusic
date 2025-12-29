@@ -16,7 +16,7 @@ toNotationVoices
   :: (Enum v, Bounded v, Foldable t)
   => Music v (t c)
   -> [[(Interval Rational, Either a ([b], c))]]
-toNotationVoices (Music m) = do
+toNotationVoices (Music _ m) = do
   v <- enumFromTo minBound maxBound
   pure $ do
     (int, tc) <- flatten $ m v
