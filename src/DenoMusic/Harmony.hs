@@ -6,6 +6,7 @@ module DenoMusic.Harmony
   ( T (..)
   , extend
   , sink
+  , kill
   , elim
   , MetaScales (..)
   , MetaScale (..)
@@ -20,6 +21,7 @@ module DenoMusic.Harmony
   , vl7in12
   ) where
 
+import Data.Proxy
 import Data.Group
 import Data.Kind
 import Data.Set (Set)
@@ -38,6 +40,8 @@ data T sizes where
   (:>) :: Int -> !(T ns) -> T (n ': ns)
 infixr 6 :>
 
+deriving stock instance Eq (T ns)
+deriving stock instance Ord (T ns)
 deriving stock instance Show (T ns)
 
 instance IsList (T '[]) where
@@ -125,6 +129,12 @@ elim (Base sc) (i :> Nil) r = metaMove sc i r
 elim (MSCons ms scs) (i :> j :> js) r = do
   dj <- metaMove (getMetaScale ms) i (Reg 0 0)
   elim scs ((dj + j) :> js) r
+
+
+kill :: forall a n m ns. (KnownNat m) => MetaScales (n ': m ': ns) a -> T (n ': m ': ns) -> T (m ': ns)
+kill (MSCons ms _) (i :> j :> js) =
+  let (Reg z dj) = metaMove (getMetaScale ms) i (Reg 0 0)
+   in ((dj + j + z * fromIntegral (natVal (Proxy @m))) :> js)
 
 
 -- | The standard triad-in-diatonic-in-chromatic 'MetaScales' that makes up
