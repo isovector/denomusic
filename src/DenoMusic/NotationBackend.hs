@@ -105,13 +105,13 @@ imToLilypond [] = pure mempty
 imToLilypond [(i, (sc, es))] = do
   prev <- get
   put $ high i
-  pure $ barCheck prev <> delayed (low i - prev) (fold sc <> mkNotes i es)
+  pure $ barCheck prev <> delayed prev (low i - prev) (fold sc <> mkNotes i es)
 imToLilypond ((i, (sc, es)) : is) = do
   prev <- get
   put $ high i
   remaining <- imToLilypond is
   pure $ barCheck prev <>
-      delayed (low i - prev) (mconcat $ sc <> [mkNotes i es, remaining])
+      delayed prev (low i - prev) (mconcat $ sc <> [mkNotes i es, remaining])
 
 
 barCheck :: Rational -> Score
@@ -120,10 +120,17 @@ barCheck r =
     True -> BarCheck
     False -> mempty
 
+barOf :: Rational -> Int
+barOf = floor
 
-delayed :: Rational -> Score -> Score
-delayed 0 m = m
-delayed d m = Sequential [Rest d [],  m]
+delayed :: Rational -> Rational -> Score -> Score
+delayed _ 0 m = m
+delayed t d m
+  | barOf t /= barOf (t + d) && denominator (t + d) /= 1 = do
+    -- A rest here would overflow the bar!
+    let bar = fromIntegral (barOf (t + d))
+    Rest (bar - t) [] <> Rest (t + d - bar) [] <>  m
+  | otherwise = Sequential [Rest d [],  m]
 
 average :: [Int] -> Float
 average i = fromIntegral (sum i) / fromIntegral (length i)
