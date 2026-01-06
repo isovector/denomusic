@@ -9,7 +9,7 @@ import Control.Applicative
 import Data.Maybe (fromJust, maybeToList)
 import Data.Bifunctor
 import Data.Functor ((<&>))
-import Data.Function.Step.Discrete.Open
+import Data.Function.Step.Discrete.Open (SF (..))
 import DenoMusic.Types
 import Witherable
 
@@ -100,12 +100,13 @@ fromVoices f =
 -- | Split a voice at a given time
 separateV :: Rational -> Voice a -> (Voice a, Voice a)
 separateV t (Voice (SF sf e)) =
-  let (l, r) = M.split t sf
-   in ( Voice $ SF (maybe id (const id) (M.lookupMin r) l) Nothing
+  let (l, r) = M.split (t - 0.000001) sf
+   in ( Voice $ SF (maybe id (\(_, a) -> M.insert t a) (M.lookupMin r) l) Nothing
       , Voice $ SF
             (M.insert 0 Nothing
-              $ M.mapKeys (subtract t)
-              $ M.filterWithKey (\z _ -> z > 0) r
+              $ M.filterWithKey (\z _ -> z > 0)
+              $ M.mapKeys (subtract t) r
+
             ) e
       )
 
@@ -146,4 +147,46 @@ contour a f m = do
           (Just lo, Just hi) -> Just $ lo + (hi - lo) / 2
           _ -> mlo <|> mhi
   mapMaybe (fmap (pow a . round @_ @Int) . fmap (f $) . fmap (/ d) . sampleTime) . fmap fst $ intervals m
+
+type Finite a = (Enum a, Bounded a, Ord a)
+
+
+step :: [(Rational, Maybe a)] -> Maybe a -> Music () a
+step ts a
+  = Music (maximum $ 0 : fmap fst ts)
+  $ MM.singleton ()
+  $ Voice
+  $ SF (M.fromList $ (0, Nothing) : ts) a
+
+
+-- | Apply a function to the last @t@ time of a music.
+varyEnd :: Finite v => Rational -> (a -> a) -> Music v a -> Music v a
+varyEnd t f m =
+  everyone (step [(duration m - t, Just id), (duration m, Just f)] Nothing) <*> m
+
+
+-- | Repeat the music for a given amount of time. If the time is
+-- not a multiple of the duration, trim the last time around.
+repeatFor :: (Finite v, Semigroup a) => Rational -> Music v a -> Music v a
+repeatFor d m
+  = fst
+  $ separate d
+  $ line
+  $ replicate (ceiling $ d / duration m) m
+
+-- | Move the first half of the given music to the end.
+rotate :: (Finite v, Semigroup a) => Rational -> Music v a -> Music v a
+rotate t m =
+  let (x, y) = separate t m
+   in y ## x
+
+alternating :: Music () () -> Music () ()
+alternating m = line $
+  [ m
+  , rest $ duration m
+  ]
+
+-- | Stamp a rhythm on top of a piece of music.
+stamp :: Finite v => Music () () -> Music v a -> Music v a
+stamp f m = everyone f *> m
 

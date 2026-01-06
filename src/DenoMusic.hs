@@ -21,6 +21,14 @@ module DenoMusic
   , line
   , stretch
 
+  -- * Combinators
+  , varyEnd
+  , repeatFor
+  , rotate
+  , alternating
+  , stamp
+  , Finite
+
   -- * Composing Voices
   , voice
   , everyone
