@@ -43,7 +43,6 @@ library
       Pieces.Test
       Pieces.Three
       Pieces.Two
-      Pieces.Wave
   other-modules:
       Paths_denomusic
   autogen-modules:

@@ -123,11 +123,11 @@ triad = UnsafeMetaScale $ S.fromList [0, 2, 4]
 -- elim ms mempty     = id
 -- elim ms (t1 <> t2) = elim ms t2 . elim ms t1
 -- @
-elim :: Ord a => MetaScales ns a -> T ns -> Reg a -> Reg a
-elim (Base sc) (i :> Nil) r = metaMove sc i r
-elim (MSCons ms scs) (i :> j :> js) r = do
+elim :: Ord a => MetaScales ns a -> Reg a -> T ns -> Reg a
+elim (Base sc) r (i :> Nil) = metaMove sc i r
+elim (MSCons ms scs) r (i :> j :> js) = do
   dj <- metaMove (getMetaScale ms) i (Reg 0 0)
-  elim scs ((dj + j) :> js) r
+  elim scs r ((dj + j) :> js)
 
 kill :: forall n m ns. KnownNat m => MetaScale n -> T (n ': m ': ns) -> T (m ': ns)
 kill ms (i :> j :> js) =

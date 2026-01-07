@@ -3,7 +3,6 @@
 module Pieces.Test where
 
 import Data.Set qualified as S
-import Data.Set (Set)
 import DenoMusic
 import DenoMusic.Utils
 
@@ -24,9 +23,15 @@ sigmoid = toRational . (\x -> 1 / (1 + exp (-x))) . fromRational . subtract 3 . 
 
 main :: IO ()
 main = do
-  let m = stretch 2 $ fmap (\t -> S.singleton $ elim standard t (Reg 4 C)) $ contour [1, 0, 0] ((* 2) . wave) $ line $ take 6 $ cycle $
-            [ note (1/16) ()
-            -- , note (1/8) ()
-            ]
+  let m =
+        stretch 2 $
+          fmap (\t -> S.singleton $ elim standard (Reg 4 C) t) $
+            contour [1, 0, 0] ((* 2) . wave) $
+              line $
+                take 6 $
+                  cycle $
+                    [ note (1 / 16) ()
+                    -- , note (1/8) ()
+                    ]
   toPdf $ m <> pure (S.singleton $ Reg 2 C)
   play $ m <> pure (S.singleton $ Reg 2 C)
