@@ -12,6 +12,7 @@ import DenoMusic
 import DenoMusic.Types
 import DenoMusic.Harmony
 import DenoMusic.Rhythms
+import DenoMusic.Modes
 
 data Voices
   = Melody
@@ -45,14 +46,8 @@ voices = fromVoices pure
 
 
 
-data Harmonic = H1 | H2
+data Harmonic = H1 | H2 | H3
   deriving stock (Eq, Ord, Show, Enum, Bounded)
-
-mixolydian :: T '[7, 12]
-mixolydian = [4, (-7)]
-
-aeolian :: T '[7, 12]
-aeolian = [5, (-9)]
 
 harmony :: Music () (T '[3, 7, 12])
 harmony =
@@ -81,6 +76,8 @@ motif1 = rest (1/4) ## (note 1 mempty <* waltz)
 
 maskedHarmony = stamp (delay (1/8) $ repeatFor 2 $ alternating quarter) harmony
 
+maskedHarmony2 = stamp (repeatFor 2 $ rest 0.25 ## note (3/8) ()) harmony
+
 motificBass :: Music () (T '[3, 7, 12])
 motificBass = stamp (repeatFor 1 $ alternating quarter) $ line $ concat $ replicate 4
   [ [0, -7, 0] <$ eighth
@@ -98,15 +95,24 @@ music =
     , chordChange 1 [-1, 4, 0]
     , chordChange 1 mempty
       -- Sec B
-    , chordChange 1 [3, -7, 0] <> modeChange 1 (invert aeolian)
+    , chordChange 1 (extend $ countervail triad [3]) <> modeChange 1 (invert $ aeolian diatonic)
     -- , chordChange 1 [3, -7, 0]
     , chordChange 1 [2, -4, 0]
     , chordChange 1 [1, -3, 0]
     , chordChange 1 [2, -7, 0]
 
       -- Sec C
-    , chordChange 4 mempty
-    , chordChange 4 [-2, 0, 0] <> modeChange 4 [0, 5, -1]
+    , chordChange 2 (pow (extend vl3in7) 2)
+    , mconcat
+        [ chordChange 2 (pow (extend vl3in7) 2)
+        , chordChange  2 [0, -1, 0]
+        ]
+    , mconcat
+        [ chordChange 2 (pow (extend vl3in7) 2)
+        , chordChange 2 [0, -1, -1]
+        -- , modeChange 2 (invert $ aeolian diatonic)
+        ]
+    -- , modeChange 1 (invert $ aeolian diatonic) <> modeChange 1 (lydian diatonic)
     ]
   <*>
   line
@@ -124,16 +130,45 @@ music =
 
       -- Sec B
     , fromVoices $ \case
-        Harmony H1 -> maskedHarmony ## maskedHarmony
-        Harmony H2 -> delay (1/8) $ double ([1, 0, 0]) $ maskedHarmony ## maskedHarmony
+        Harmony H1 -> delay (1/8) $ double ([1, 0, 0]) $ maskedHarmony ## maskedHarmony
+        Harmony H3 -> fmap ((<> [2, 0, 0]) . invert) $ maskedHarmony ## maskedHarmony
         Bass -> repeatFor 4 $ note 1 [0, -7, 0]
         _ -> mempty
 
       -- Sec C
     , fromVoices $ \case
-        Harmony H1 -> mempty
-        Harmony H2 -> maskedHarmony ## maskedHarmony
-        Bass -> repeatFor 4 motificBass
+        Harmony H1 -> liftA2 (<>) (repeatFor 6 $ line
+            [ note (3/8) [-1, 0, 0]
+            , note (3/8) [0, 0, 0]
+            ]) $ repeatFor 6 maskedHarmony2
+        Harmony H2 -> repeatFor 6 $ line
+          [ rest (1/8)
+          , [-3, 0, 0] <$ eighth
+          , [-2, 0, 0] <$ eighth
+          , rest (5/8)
+          ]
+        Melody -> line
+          [ [0, 9, 0] <$ quarter
+          , [0, 8, 0] <$ quarter
+          , rest 0.25
+          , [0, 7, 0] <$ quarter
+          , rest 0.5
+          , [0, 9, 0] <$ quarter
+          , [0, 8, 0] <$ quarter
+          , [0, 10, 0] <$ quarter
+          , [0, 9, 0] <$ quarter
+          , rest 0.25
+          , [0, 10, 0] <$ quarter
+          , [0, 9, 0] <$ quarter
+          , [0, 6, 0] <$ quarter
+          , rest 0.5
+          , [0, 9, 0] <$ quarter
+          , [0, 8, 0] <$ quarter
+          , rest 0.25
+          , [0, 7, 0] <$ quarter
+          , rest 0.5
+          ]
+        Bass -> repeatFor 6 $ note 1 [0, -21, 0]
         _ -> mempty
     ]
 
@@ -143,7 +178,7 @@ double a = fmap (<> a)
 
 main :: IO ()
 main = do
-  let s = toMusic (Reg 4 C) aeolian music
+  let s = fst $ separate (duration music - 0) $ toMusic (Reg 4 C) (aeolian diatonic) music
   toPdf s
   play s
 

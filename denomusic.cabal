@@ -29,6 +29,7 @@ library
       DenoMusic
       DenoMusic.Generators
       DenoMusic.Harmony
+      DenoMusic.Modes
       DenoMusic.Notation
       DenoMusic.NotationBackend
       DenoMusic.Play
@@ -56,6 +57,7 @@ library
       LambdaCase
       ViewPatterns
       PatternSynonyms
+      DataKinds
   ghc-options: -Wall -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints
   build-depends:
       Euterpea

@@ -49,6 +49,7 @@ default-extensions:
 - LambdaCase
 - ViewPatterns
 - PatternSynonyms
+- DataKinds
 
 ghc-options:
 - -Wall
