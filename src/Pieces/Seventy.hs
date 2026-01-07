@@ -3,7 +3,6 @@
 
 module Pieces.Seventy where
 
-import Data.Set qualified as S
 import DenoMusic
 import GHC.Generics
 
@@ -53,15 +52,6 @@ harmony =
     , [2, 0, 0] <$ eighth
     , [0, 0, 0] <$ eighth
     ]
-
-toMusic :: Reg PitchClass -> T '[7, 12] -> Music v (T '[3, 7, 12]) -> Music v (Set (Reg PitchClass))
-toMusic root (sd :> cd :> Nil) =
-  fmap $ \t ->
-    S.singleton $
-      elim
-        standard
-        root
-        (t <> [0, sd, cd])
 
 motif1 :: Monoid (T m) => Music () (T m)
 motif1 = rest (1 / 4) ## (note 1 mempty <* waltz)
@@ -178,7 +168,9 @@ double :: Semigroup a => a -> Music () a -> Music () a
 double a = fmap (<> a)
 
 main :: IO ()
-main = do
-  let s = fst $ separate (duration music - 0) $ toMusic (Reg 4 C) (aeolian diatonic) music
-  toPdf s
-  play s
+main =
+  defaultMain (Reg 4 C) $
+    fst $
+      separate (duration music - 0) $
+        fmap (mappend $ sink $ aeolian diatonic) $
+          music

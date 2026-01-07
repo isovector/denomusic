@@ -5,6 +5,7 @@ module DenoMusic (
   PitchClass (..),
 
   -- * Using Music
+  defaultMain,
   play,
   toPdf,
   duration,
@@ -97,6 +98,7 @@ module DenoMusic (
 import Data.Group
 import Data.Profunctor
 import Data.Set (Set)
+import Data.Set qualified as S
 import DenoMusic.Generators ()
 import DenoMusic.Harmony
 import DenoMusic.Modes
@@ -105,3 +107,15 @@ import DenoMusic.Play
 import DenoMusic.Rhythms
 import DenoMusic.Types
 import DenoMusic.Utils
+
+-- | Generate sheet music and play the given 'Music'.
+defaultMain
+  :: Finite v
+  => Reg PitchClass
+  -- ^ "Home" pitch
+  -> Music v (T '[3, 7, 12])
+  -> IO ()
+defaultMain root m = do
+  let score = fmap (S.singleton . elim standard root) m
+  toPdf score
+  play score
