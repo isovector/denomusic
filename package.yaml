@@ -58,6 +58,7 @@ ghc-options:
 - -Wincomplete-uni-patterns
 - -Wpartial-fields
 - -Wredundant-constraints
+- -Wno-type-defaults
 
 library:
   source-dirs: src
