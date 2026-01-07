@@ -1,29 +1,29 @@
-{-# LANGUAGE AllowAmbiguousTypes  #-}
-{-# LANGUAGE DataKinds            #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module DenoMusic.Harmony
-  ( T (..)
-  , extend
-  , sink
-  , kill
-  , elim
-  , MetaScales (..)
-  , MetaScale (..)
+module DenoMusic.Harmony (
+  T (..),
+  extend,
+  sink,
+  kill,
+  elim,
+  MetaScales (..),
+  MetaScale (..),
 
   -- * Familiar objects
-  , triad
-  , diatonic
-  , spelledFlat
-  , spelledSharp
-  , standard
-  , vl3in7
-  , vl7in12
-  ) where
+  triad,
+  diatonic,
+  spelledFlat,
+  spelledSharp,
+  standard,
+  vl3in7,
+  vl7in12,
+) where
 
-import Data.Proxy
 import Data.Group
 import Data.Kind
+import Data.Proxy
 import Data.Set (Set)
 import Data.Set qualified as S
 import DenoMusic.Types (PitchClass (..), Reg (..))
@@ -38,6 +38,7 @@ type T :: [Nat] -> Type
 data T sizes where
   Nil :: T '[]
   (:>) :: Int -> !(T ns) -> T (n ': ns)
+
 infixr 6 :>
 
 deriving stock instance Eq (T ns)
@@ -50,12 +51,11 @@ instance IsList (T '[]) where
   fromList e = error $ "Extra items remaining in IsList (T '[]): " <> show e
   toList Nil = []
 
-
 instance (IsList (T ns), Item (T ns) ~ Int) => IsList (T (n ': ns)) where
   type Item (T (n ': ns)) = Int
   fromList [] = error "Not enough items in IsList (T (n ': ns)): "
   fromList (x : xs) = x :> fromList xs
-  toList  (x :> xs) = x : toList xs
+  toList (x :> xs) = x : toList xs
 
 instance Semigroup (T '[]) where
   _ <> _ = Nil
@@ -103,7 +103,7 @@ type MetaScale :: Nat -> Type
 newtype MetaScale size = UnsafeMetaScale
   { getMetaScale :: Set Int
   }
-  deriving newtype Show
+  deriving newtype (Show)
 
 -- | The diatonic scale. This will take on different modes depending on the
 -- background scalar transposition applied to it.
@@ -115,7 +115,6 @@ diatonic = UnsafeMetaScale $ S.fromList [0, 2, 4, 5, 7, 9, 11]
 -- scale it is transposed to.
 triad :: MetaScale 3
 triad = UnsafeMetaScale $ S.fromList [0, 2, 4]
-
 
 -- | Transform a note along a 'MetaScales' by moving it along each scale
 -- dimension. This function forms monoid actions:
@@ -130,28 +129,23 @@ elim (MSCons ms scs) (i :> j :> js) r = do
   dj <- metaMove (getMetaScale ms) i (Reg 0 0)
   elim scs ((dj + j) :> js) r
 
-
-kill :: forall n m ns. (KnownNat m) => MetaScale n -> T (n ': m ': ns) -> T (m ': ns)
+kill :: forall n m ns. KnownNat m => MetaScale n -> T (n ': m ': ns) -> T (m ': ns)
 kill ms (i :> j :> js) =
   let (Reg z dj) = metaMove (getMetaScale ms) i (Reg 0 0)
    in ((dj + j + z * fromIntegral (natVal (Proxy @m))) :> js)
-
 
 -- | The standard triad-in-diatonic-in-chromatic 'MetaScales' that makes up
 -- most of Western music.
 standard :: MetaScales '[3, 7, 12] PitchClass
 standard = MSCons triad $ MSCons diatonic spelledFlat
 
-
 -- | A chromatic 'MetaScales' that spells its enharmonic black notes as sharps.
 spelledSharp :: MetaScales '[12] PitchClass
 spelledSharp = Base (S.fromList [A, As, B, C, Cs, D, Ds, E, F, Fs, G, Gs])
 
-
 -- | A chromatic 'MetaScales' that spells its enharmonic black notes as flats.
 spelledFlat :: MetaScales '[12] PitchClass
 spelledFlat = Base (S.fromList [A, Af, B, Bf, C, D, Df, E, Ef, F, G, Gf])
-
 
 -- | A smooth downwards voice-leading of triads-in-diatonic. Use 'invert' to
 -- instead get an upwards voice-leading.
@@ -163,22 +157,18 @@ vl3in7 = (-2) :> 5 :> mempty
 vl7in12 :: T '[7, 12]
 vl7in12 = (-4) :> 7 :> mempty
 
-
 type family (++) xs ys where
   '[] ++ ys = ys
   (x ': xs) ++ ys = x ': (xs ++ ys)
-
 
 -- | Extend the end of a 'T' with zeroes.
 extend :: forall ns ms. Monoid (T ns) => T ms -> T (ms ++ ns)
 extend (x :> xs) = x :> extend @ns xs
 extend Nil = mempty
 
-
 -- | Extend the front of a 'T' with a zero.
 sink :: T ns -> T (n ': ns)
 sink t = 0 :> t
-
 
 -- | Like 'pred', but over the metascale distance metric.
 metaPred :: Ord a => Set a -> Reg a -> Reg a
@@ -186,18 +176,16 @@ metaPred sc (Reg r a)
   | a == S.findMin sc = Reg (r - 1) $ S.findMax sc
   | otherwise = Reg r $ S.findMax $ snd $ S.partition (>= a) sc
 
-
 -- | Like 'succ', but over the metascale distance metric.
 metaSucc :: Ord a => Set a -> Reg a -> Reg a
 metaSucc sc (Reg r a)
   | a == S.findMax sc = Reg (r + 1) $ S.findMin sc
   | otherwise = Reg r $ S.findMin $ snd $ S.partition (<= a) sc
 
-
 -- | Iterated 'pred' or 'succ' over the metascale distance metric.
 metaMove :: Ord a => Set a -> Int -> Reg a -> Reg a
-metaMove sc n r
-  = case compare n 0 of
-      LT -> iterate (metaPred sc) r !! abs n
-      EQ -> r
-      GT -> iterate (metaSucc sc) r !! abs n
+metaMove sc n r =
+  case compare n 0 of
+    LT -> iterate (metaPred sc) r !! abs n
+    EQ -> r
+    GT -> iterate (metaSucc sc) r !! abs n
