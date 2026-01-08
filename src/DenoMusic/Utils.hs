@@ -1,18 +1,16 @@
 module DenoMusic.Utils where
 
-import Control.Applicative
 import Data.Bifunctor
 import Data.Foldable
 import Data.Function.Step.Discrete.Open (SF (..))
+import Data.Function.Step.Discrete.Open qualified as SF
 import Data.Functor ((<&>))
-import Data.Group
 import Data.Map (Map)
 import Data.Map qualified as M
 import Data.Map.Monoidal qualified as MM
 import Data.Maybe (fromJust, maybeToList)
 import DenoMusic.Harmony
 import DenoMusic.Types
-import Witherable
 
 -- | Attach a label to an anonymous voice.
 voice :: Ord v => v -> Music () a -> Music v a
@@ -139,15 +137,6 @@ intervalsV (Voice (SF ms e)) = do
 intervals :: Music v a -> Music v (Interval (Maybe Rational), a)
 intervals (Music d v) = Music d $ fmap intervalsV v
 
-contour :: Group a => a -> (Rational -> Rational) -> Music v () -> Music v a
-contour a f m = do
-  let d = duration m
-      sampleTime (Interval mlo mhi) =
-        case (mlo, mhi) of
-          (Just lo, Just hi) -> Just $ lo + (hi - lo) / 2
-          _ -> mlo <|> mhi
-  mapMaybe (fmap (pow a . round @_ @Int) . fmap (f $) . fmap (/ d) . sampleTime) . fmap fst $ intervals m
-
 type Finite a = (Enum a, Bounded a, Ord a)
 
 step :: [(Rational, Maybe a)] -> Maybe a -> Music () a
@@ -177,7 +166,7 @@ rotate t m =
   let (x, y) = separate t m
    in y ## x
 
-alternating :: Music () () -> Music () ()
+alternating :: Semigroup a => Music () a -> Music () a
 alternating m =
   line $
     [ m
@@ -195,6 +184,9 @@ data VoicePurpose
   | RootVoice
   | HarmonicVoice
   deriving stock (Eq, Ord, Show, Enum, Bounded)
+
+instance HasPurpose VoicePurpose where
+  purpose = id
 
 class HasPurpose v where
   purpose :: v -> VoicePurpose
@@ -217,6 +209,18 @@ chordChange d t'@(_ :> zs) = fromVoices $ \v ->
     RootVoice -> (0 :> zs)
     HarmonicVoice -> t'
 
+
+rootMotion
+  :: (Monoid (T ns), HasPurpose v, Enum v, Bounded v, Ord v)
+  => Rational
+  -> T ns
+  -> Music v (T ns)
+rootMotion d t' = fromVoices $ \v ->
+  note d $ case purpose v of
+    RootVoice -> t'
+    MelodicVoice -> mempty
+    HarmonicVoice -> mempty
+
 -- | Push a key change over a set of voices. Unlike 'chordChange', all voices
 -- will respond to the change. However, this combinator *cannot* affect the
 -- chord dimension, which would lead to odd harmonies.
@@ -224,5 +228,45 @@ keyChange :: Finite v => Rational -> T ns -> Music v (T (chord ': ns))
 keyChange d t = everyone $ note d $ sink t
 
 -- | Each voice is full of its label.
+-- TODO(sandy): this should have infinite length!
 voices :: Finite v => Music v v
 voices = fromVoices pure
+
+trimStart :: Rational -> Music v a -> Music v a
+trimStart t m = snd $ separate t m
+
+trimEnd :: Rational -> Music v a -> Music v a
+trimEnd t m = fst $ separate (duration m - t) m
+
+neighbor :: (Finite v, Semigroup a) => Rational -> (a -> a) -> Music v a -> Music v a
+neighbor r f m =
+  let ratio = 1 / (r + 1)
+   in stretch (1 - ratio) m ## stretch ratio (fmap f m) ## m
+
+discrete
+  :: [(Rational, a)]
+  -- ^ Duration
+  -> Music () a
+discrete ns = Music (sum $ fmap fst ns) $ MM.singleton () $ Voice $ SF.fromList ((0, Nothing) : go 0 ns) Nothing
+  where
+    go _ [] = []
+    go t ((d, a) : as) = (t + d, Just a) : go (t + d) as
+
+contour
+  :: (Rational -> Maybe a)
+  -- ^ Function to sample
+  -> Rational
+  -- ^ Duration
+  -> Rational
+  -- ^ Sample offsets
+  -> Music () a
+contour f d o = Music d $ MM.singleton () $ Voice $ flip SF.fromList Nothing $ (d, f d) : do
+  ix <- [0, o .. d]
+  pure (ix, f ix)
+
+mergeDurations
+  :: Eq a
+  => Music v a
+  -> Music v a
+mergeDurations (Music d m) = Music d $ fmap (Voice . SF.normalise . unVoice) m
+

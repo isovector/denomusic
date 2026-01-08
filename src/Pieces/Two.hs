@@ -18,7 +18,7 @@ data SATB = VS | VA | VT | VB
   deriving stock (Eq, Ord, Show, Enum, Bounded)
 
 music :: Music SATB (Set (Reg PitchClass))
-music = fmap S.singleton $ fmap (elim standard (Reg 4 C)) abstract
+music = fmap S.singleton $ fmap (elim standardFlat (Reg 4 C)) abstract
 
 type Western = T '[3, 7, 12]
 

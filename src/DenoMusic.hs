@@ -6,11 +6,14 @@ module DenoMusic (
 
   -- * Using Music
   defaultMain,
+  defaultMainSharp,
   play,
   toPdf,
   duration,
   separate,
   split,
+  trimStart,
+  trimEnd,
 
   -- * Musical Primitives
   note,
@@ -29,6 +32,7 @@ module DenoMusic (
   alternating,
   stamp,
   Finite,
+  neighbor,
 
   -- * Composing Voices
   voice,
@@ -36,6 +40,7 @@ module DenoMusic (
   withVoice,
   fromVoices,
   mapVoices,
+  voices,
 
   -- * Harmony
   VoicePurpose (..),
@@ -50,7 +55,8 @@ module DenoMusic (
   -- * Western Harmony
   vl3in7,
   vl7in12,
-  standard,
+  standardSharp,
+  standardFlat,
 
   -- * Modes
   dorian,
@@ -116,6 +122,18 @@ defaultMain
   -> Music v (T '[3, 7, 12])
   -> IO ()
 defaultMain root m = do
-  let score = fmap (S.singleton . elim standard root) m
+  let score = fmap (S.singleton . elim standardFlat root) m
+  toPdf score
+  play score
+
+-- | Generate sheet music and play the given 'Music'.
+defaultMainSharp
+  :: Finite v
+  => Reg PitchClass
+  -- ^ "Home" pitch
+  -> Music v (T '[3, 7, 12])
+  -> IO ()
+defaultMainSharp root m = do
+  let score = fmap (S.singleton . elim standardSharp root) m
   toPdf score
   play score

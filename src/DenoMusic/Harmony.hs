@@ -1,6 +1,7 @@
-{-# LANGUAGE AllowAmbiguousTypes #-}
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE AllowAmbiguousTypes  #-}
+{-# LANGUAGE DataKinds            #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# OPTIONS_GHC -Wtype-defaults   #-}
 
 module DenoMusic.Harmony (
   T (..),
@@ -16,11 +17,14 @@ module DenoMusic.Harmony (
   diatonic,
   spelledFlat,
   spelledSharp,
-  standard,
+  standardSharp,
+  standardFlat,
   vl3in7,
   vl7in12,
 ) where
 
+import Data.Bool
+import Data.Ratio
 import Data.Group
 import Data.Kind
 import Data.Proxy
@@ -136,8 +140,13 @@ kill ms (i :> j :> js) =
 
 -- | The standard triad-in-diatonic-in-chromatic 'MetaScales' that makes up
 -- most of Western music.
-standard :: MetaScales '[3, 7, 12] PitchClass
-standard = MSCons triad $ MSCons diatonic spelledFlat
+standardFlat :: MetaScales '[3, 7, 12] PitchClass
+standardFlat = MSCons triad $ MSCons diatonic spelledFlat
+
+-- | The standard triad-in-diatonic-in-chromatic 'MetaScales' that makes up
+-- most of Western music.
+standardSharp :: MetaScales '[3, 7, 12] PitchClass
+standardSharp = MSCons triad $ MSCons diatonic spelledSharp
 
 -- | A chromatic 'MetaScales' that spells its enharmonic black notes as sharps.
 spelledSharp :: MetaScales '[12] PitchClass
@@ -189,3 +198,34 @@ metaMove sc n r =
     LT -> iterate (metaPred sc) r !! abs n
     EQ -> r
     GT -> iterate (metaSucc sc) r !! abs n
+
+
+newtype VoiceLeading x y = VoiceLeading
+  { unVoiceLeading :: Int
+  }
+  deriving stock (Eq, Ord, Show)
+  deriving newtype Num
+
+toT :: forall x y. (KnownNat x, KnownNat y) => VoiceLeading x y -> T '[x, y]
+toT (VoiceLeading i) =
+  let x = natVal (Proxy @x)
+      y = natVal (Proxy @y)
+
+      angle_offset = x % y
+
+      -- First wrap i to [0, y)
+      i_wrapped = fromIntegral $ mod (fromIntegral i) y
+
+      -- Calculate angular position as fraction of full rotation
+      angle = fromIntegral i_wrapped * angle_offset
+      fractional = angle - fromIntegral (truncate @_ @Int angle)
+
+      -- Wrap to (-0.5, 0.5] to determine direction
+      wrapped = bool id (subtract 1) (fractional > 0.5) fractional
+
+      -- If moving counterclockwise (wrapped < 0), subtract scaleSize
+      tLevel = bool id (subtract y) (wrapped < 0) i_wrapped
+
+      -- Solve for sTrans to minimize voice leading
+      sTrans = negate $ round (fromIntegral tLevel * angle_offset)
+   in sTrans :> fromIntegral tLevel :> Nil

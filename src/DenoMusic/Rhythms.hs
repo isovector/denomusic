@@ -53,7 +53,7 @@ bossaNova =
   dotted quarter ## eighth ## quarter ## quarter
 
 tango :: Music () ()
-tango = dotted eighth ## sixteenth ## eighth ## quarter
+tango = dotted quarter ## eighth ## quarter ## quarter
 
 reggae :: Music () ()
 reggae = rest (1 / 8) ## eighth ## rest (1 / 8) ## eighth ## rest (1 / 8) ## eighth ## rest (1 / 8) ## eighth

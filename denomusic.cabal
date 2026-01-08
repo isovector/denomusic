@@ -38,7 +38,9 @@ library
       DenoMusic.Types
       DenoMusic.Utils
       Pieces.Musical
+      Pieces.NoChoices
       Pieces.Seventy
+      Pieces.SeventyTwo
       Pieces.SomethingNew
       Pieces.Test
       Pieces.Three
