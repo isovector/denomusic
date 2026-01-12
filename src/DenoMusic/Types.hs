@@ -14,6 +14,7 @@ import GHC.Generics
 import Witherable hiding (filter)
 import Data.Map.Monoidal (MonoidalMap)
 import Data.Map.Monoidal qualified as MM
+import Text.PrettyPrint.HughesPJClass hiding ((<>))
 
 
 -- | Attach a register to some value.
@@ -48,6 +49,26 @@ data PitchClass
   | Af | A | As
   | Bf | B
   deriving stock (Show, Eq, Ord, Read, Enum, Bounded)
+
+instance Pretty PitchClass where
+  pPrint = text . \case
+    C  -> "C"
+    Cs -> "C♯"
+    Df -> "D♭"
+    D  -> "D"
+    Ds -> "D♯"
+    Ef -> "E♭"
+    E  -> "E"
+    F  -> "F"
+    Fs -> "F♯"
+    Gf -> "G♭"
+    G  -> "G"
+    Gs -> "G♯"
+    Af -> "A♭"
+    A  -> "A"
+    As -> "A♯"
+    Bf -> "B♭"
+    B  -> "B"
 
 -- | Music is a mapping of voice labels to 'Voice's.
 data Music v a = Music

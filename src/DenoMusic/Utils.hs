@@ -252,6 +252,12 @@ discrete ns = Music (sum $ fmap fst ns) $ MM.singleton () $ Voice $ SF.fromList 
     go _ [] = []
     go t ((d, a) : as) = (t + d, Just a) : go (t + d) as
 
+switch
+  :: Monoid a
+  => a
+  -> Music () a
+switch a = Music 0 $ MM.singleton () $ Voice $ SF (M.singleton 0 $ Just mempty) (Just a)
+
 contour
   :: (Rational -> Maybe a)
   -- ^ Function to sample

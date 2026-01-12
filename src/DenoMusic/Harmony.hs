@@ -12,6 +12,13 @@ module DenoMusic.Harmony (
   MetaScales (..),
   MetaScale (..),
 
+  -- * Chord Name
+  ChordType(..),
+  TriadQuality(..),
+  chordName,
+  VoiceLeading(..),
+  toT,
+
   -- * Familiar objects
   triad,
   diatonic,
@@ -33,6 +40,7 @@ import Data.Set qualified as S
 import DenoMusic.Types (PitchClass (..), Reg (..))
 import GHC.Exts
 import GHC.TypeLits
+import Text.PrettyPrint.HughesPJClass hiding ((<>))
 
 -- | A coordinate inside of a 'MetaScales'. 'T's are little-endian cons lists.
 -- For example, given the 'standard' 'MetaScale', @1 :> (-2) :> 3 :> Nil@ means
@@ -229,3 +237,54 @@ toT (VoiceLeading i) =
       -- Solve for sTrans to minimize voice leading
       sTrans = negate $ round (fromIntegral tLevel * angle_offset)
    in sTrans :> fromIntegral tLevel :> Nil
+
+data ChordType q = ChordType
+  { ct_root :: PitchClass
+  , ct_quality :: q
+  , ct_bass :: PitchClass
+  }
+  deriving stock (Eq, Ord, Show)
+
+data TriadQuality = Major | Minor | Augmented | Diminished
+  deriving stock (Eq, Ord, Show)
+
+instance Pretty TriadQuality where
+  pPrint = text . \case
+    Major -> "M"
+    Minor -> "m"
+    Augmented -> "+"
+    Diminished -> "°"
+
+data TertianQuality = Major7 | Minor7 | Augmented7 | Diminished7 | HalfDiminished7 | Dominant7
+  deriving stock (Eq, Ord, Show)
+
+instance Pretty TertianQuality where
+  pPrint = text . \case
+    Major7 -> "△7"
+    Minor7 -> "m7"
+    Augmented7 -> "+7"
+    Diminished7 -> "°7"
+    HalfDiminished7 -> "ø7"
+    Dominant7 -> "7"
+
+instance Pretty q => Pretty (ChordType q) where
+  pPrint (ChordType r q b)
+    | r == b = pPrint r <> pPrint q
+    | otherwise = pPrint r <> pPrint q <> text "/" <> pPrint b
+
+-- TODO(sandy): generalize me
+chordName :: MetaScales '[3, 7, 12] PitchClass -> PitchClass -> T '[3, 7, 12] -> ChordType TriadQuality
+chordName ms pc t@(_ :> s :> c :> Nil) =
+  let root = unReg $ elim ms (Reg 4 pc) (0 :> s :> c :> Nil)
+      bass = unReg $ elim ms (Reg 4 pc) t
+      sym =
+        case mod s 7 of
+          0 -> Major
+          1 -> Minor
+          2 -> Minor
+          3 -> Major
+          4 -> Major
+          5 -> Minor
+          6 -> Diminished
+          _ -> error "impossible"
+   in ChordType root sym bass

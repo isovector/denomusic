@@ -2,14 +2,19 @@
 
 module DenoMusic.Notation
   ( toLilypond
+  , toLilypondScore
+  , finalizeLily
+  , Score
   , toPdf
+  , toPdf'
   ) where
 
 import Data.Map.Monoidal qualified as MM
 import Data.Foldable
 import Data.Set (Set)
 import DenoMusic.Types
-import DenoMusic.NotationBackend (finalizeLily, header, footer)
+import DenoMusic.NotationBackend (finalizeLily, header, footer, makeScore)
+import Data.Lilypond (Score)
 import System.Cmd (rawSystem)
 
 
@@ -28,8 +33,20 @@ toNotationVoices (Music _ m) = do
 
 
 toLilypond :: Music v (Set (Reg PitchClass)) -> String
-toLilypond = finalizeLily . toNotationVoices
+toLilypond = finalizeLily . makeScore . toNotationVoices
 
+toLilypondScore :: Music v (Set (Reg PitchClass)) -> Score
+toLilypondScore = makeScore . toNotationVoices
+
+
+-- | Generate lilypond code for a 'Music', and dump the resulting pdf to
+-- @\/tmp\/song.pdf@.
+toPdf' :: Score -> IO ()
+toPdf' m = do
+  let lp = finalizeLily m
+  writeFile "/tmp/out.lily" $ header <> lp <> footer
+  _ <- rawSystem "lilypond" ["-o", "/tmp/song", "/tmp/out.lily"]
+  pure ()
 
 -- | Generate lilypond code for a 'Music', and dump the resulting pdf to
 -- @\/tmp\/song.pdf@.

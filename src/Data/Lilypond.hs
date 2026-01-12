@@ -74,9 +74,26 @@ data Score
     | New String (Maybe String) Score               -- ^ New expression.
     | Context String (Maybe String) Score           -- ^ Context expression.
     | Command String -- ^ Arbitrary lilypond command
+    | ChordMode [(Rational, Pitch, ChordMod)]
     | Revert String
     | BarCheck
     deriving stock (Eq, Show, Ord)
+
+data ChordMod
+  = MajorChord | MinorChord | Minor7Chord
+  | Major7Chord | Dominant7Chord | AugChord | DimChord
+    deriving stock (Eq, Show, Ord)
+
+instance Pretty ChordMod where
+  pPrint = \case
+    MajorChord -> ""
+    Major7Chord -> ":maj7"
+    MinorChord -> ":m"
+    Minor7Chord -> ":m7"
+    AugChord -> ":aug"
+    DimChord -> ":dim"
+    Dominant7Chord -> ":7"
+
 
 
 instance Semigroup Score where
@@ -210,6 +227,12 @@ data PostEvent
 
 
 instance Pretty Score where
+    pPrint (ChordMode cs)   = sep $ mconcat
+      [ pure "\\chords {"
+      , flip fmap cs $ \(r, c, m) ->
+          nest 2 $ pPrint c <> pPrint (Duration r) <> pPrint m
+      , pure "}"
+      ]
     pPrint BarCheck       = "|"
     pPrint (Rest d p)       = "r" <> pPrint (Duration d) <> pPrintList prettyNormal p
 

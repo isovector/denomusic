@@ -95,16 +95,13 @@ main = defaultMain (Reg 4 C) $ trimStart 0 $ liftA2 (<>) (everyone $ note 5 memp
     ]
   RootVoice -> line
     [ [0, 0, 0] <$ quarter
-    , [0, -3, 0] <$ eighth
-    , [0, -3, 0] <$ eighth
+    , [0, -3, 0] <$ quarter
     , [0, -2, 0] <$ quarter
-    , [0, -5, 0] <$ eighth
-    , [0, -5, 0] <$ eighth
+    , [0, -5, 0] <$ quarter
     -- 2
     , [0, -4, 0] <$ quarter
     , [0, -6, 0] <$ quarter
-    , [0, -2, 0] <$ eighth
-    , [0, -2, 0] <$ eighth
+    , [0, -2, 0] <$ quarter
     , [0, -3, 0] <$ quarter
     , [0, -2, 0] <$ quarter
     , [0, 1, 0] <$ quarter

@@ -37,6 +37,8 @@ library
       DenoMusic.Test
       DenoMusic.Types
       DenoMusic.Utils
+      Pieces.Contour
+      Pieces.Lefty
       Pieces.Musical
       Pieces.NoChoices
       Pieces.Seventy

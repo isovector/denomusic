@@ -2,7 +2,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans       #-}
 {-# OPTIONS_GHC -fno-warn-x-partial     #-}
 
-module DenoMusic.NotationBackend (finalizeLily, header, footer) where
+module DenoMusic.NotationBackend (finalizeLily, makeScore, header, footer, pPrint, toPitch) where
 
 import Control.Arrow ((&&&))
 import Control.Monad.State
@@ -22,7 +22,7 @@ import Data.Ratio (denominator)
 import Data.Sequence (Seq(..))
 import Data.Sequence qualified as Seq
 import DenoMusic.Types hiding (Empty)
-import Text.PrettyPrint.HughesPJClass (pPrint)
+import Text.PrettyPrint.HughesPJClass (Doc, pPrint)
 
 
 toPitch :: Reg PitchClass -> Pitch
@@ -146,14 +146,30 @@ inject (treble, bass) =
     ]
 
 
-finalizeLily :: [[(Interval Rational, Either Score ([PostEvent], Reg PitchClass))]] -> String
+makeScore :: [[(Interval Rational, Either Score ([PostEvent], Reg PitchClass))]] -> Score
+makeScore
+  = inject
+  . bimap (imsToLilypond . fiddle) (imsToLilypond . fiddle)
+  . partition ((>= 4) . averagePitch (getReg . snd) . mapMaybe (hush . snd))
+  . sortOn (Down . averagePitch (getReg . snd) . mapMaybe (hush . snd))
+
+fiddle
+  :: [a]
+  -> [a]
+fiddle [] = []
+fiddle (a : as) = a : unfiddle (reverse as)
+
+unfiddle
+  :: [a]
+  -> [a]
+unfiddle [] = []
+unfiddle (a : as) = a : fiddle (reverse as)
+
+
+finalizeLily :: Score -> String
 finalizeLily
   = show
   . pPrint
-  . inject
-  . bimap imsToLilypond imsToLilypond
-  . partition ((>= 4) . averagePitch (getReg . snd) . mapMaybe (hush . snd))
-  . sortOn (Down . averagePitch (getReg . snd) . mapMaybe (hush . snd))
 
 hush :: Either e a -> Maybe a
 hush = either (const Nothing) Just
