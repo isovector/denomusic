@@ -44,6 +44,7 @@ library
       Pieces.Seventy
       Pieces.SeventyTwo
       Pieces.SomethingNew
+      Pieces.Structure
       Pieces.Test
       Pieces.Three
       Pieces.Two

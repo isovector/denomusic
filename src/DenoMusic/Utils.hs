@@ -276,3 +276,7 @@ mergeDurations
   -> Music v a
 mergeDurations (Music d m) = Music d $ fmap (Voice . SF.normalise . unVoice) m
 
+
+cutFor :: Rational -> Music v a -> Music v a
+cutFor d = delay d . trimStart d
+

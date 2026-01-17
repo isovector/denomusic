@@ -5,9 +5,12 @@
 
 module DenoMusic.Harmony (
   T (..),
+  T' (..),
+  N (..),
   extend,
   sink,
   kill,
+  kill',
   elim,
   MetaScales (..),
   MetaScale (..),
@@ -19,8 +22,11 @@ module DenoMusic.Harmony (
   VoiceLeading(..),
   toT,
 
+  metaMove,
+
   -- * Familiar objects
   triad,
+  seventh,
   diatonic,
   spelledFlat,
   spelledSharp,
@@ -42,6 +48,8 @@ import GHC.Exts
 import GHC.TypeLits
 import Text.PrettyPrint.HughesPJClass hiding ((<>))
 
+data N = Z | S N
+
 -- | A coordinate inside of a 'MetaScales'. 'T's are little-endian cons lists.
 -- For example, given the 'standard' 'MetaScale', @1 :> (-2) :> 3 :> Nil@ means
 -- to transpose up by one chord tone, down by two scale tones, and up by three
@@ -51,11 +59,21 @@ data T sizes where
   Nil :: T '[]
   (:>) :: Int -> !(T ns) -> T (n ': ns)
 
+type T' :: N -> Type
+data T' size where
+  TNil :: T' Z
+  (:>:) :: Int -> T' n -> T' (S n)
+
 infixr 6 :>
+infixr 5 :>:
 
 deriving stock instance Eq (T ns)
 deriving stock instance Ord (T ns)
 deriving stock instance Show (T ns)
+
+deriving stock instance Eq (T' ns)
+deriving stock instance Ord (T' ns)
+deriving stock instance Show (T' ns)
 
 instance IsList (T '[]) where
   type Item (T '[]) = Int
@@ -72,20 +90,38 @@ instance (IsList (T ns), Item (T ns) ~ Int) => IsList (T (n ': ns)) where
 instance Semigroup (T '[]) where
   _ <> _ = Nil
 
+instance Semigroup (T' Z) where
+  _ <> _ = TNil
+
 instance Semigroup (T ns) => Semigroup (T (n ': ns)) where
   (i :> is) <> (j :> js) = (i + j) :> (is <> js)
+
+instance Semigroup (T' ns) => Semigroup (T' (S ns)) where
+  (i :>: is) <> (j :>: js) = (i + j) :>: (is <> js)
 
 instance Monoid (T '[]) where
   mempty = Nil
 
+instance Monoid (T' Z) where
+  mempty = TNil
+
 instance Monoid (T ns) => Monoid (T (n ': ns)) where
   mempty = 0 :> mempty
+
+instance Monoid (T' ns) => Monoid (T' (S ns)) where
+  mempty = 0 :>: mempty
 
 instance Group (T '[]) where
   invert _ = Nil
 
+instance Group (T' Z) where
+  invert _ = TNil
+
 instance Group (T ns) => Group (T (n ': ns)) where
   invert (i :> is) = negate i :> invert is
+
+instance Group (T' ns) => Group (T' (S ns)) where
+  invert (i :>: is) = negate i :>: invert is
 
 -- | 'MetaScales' provide consistent vertical musical constraints (harmony), as
 -- well as give means for efficient voice leading in order to evolve that
@@ -128,6 +164,9 @@ diatonic = UnsafeMetaScale $ S.fromList [0, 2, 4, 5, 7, 9, 11]
 triad :: MetaScale 3
 triad = UnsafeMetaScale $ S.fromList [0, 2, 4]
 
+seventh :: MetaScale 4
+seventh = UnsafeMetaScale $ S.fromList [0, 2, 4, 6]
+
 -- | Transform a note along a 'MetaScales' by moving it along each scale
 -- dimension. This function forms monoid actions:
 --
@@ -145,6 +184,12 @@ kill :: forall n m ns. KnownNat m => MetaScale n -> T (n ': m ': ns) -> T (m ': 
 kill ms (i :> j :> js) =
   let (Reg z dj) = metaMove (getMetaScale ms) i (Reg 0 0)
    in ((dj + j + z * fromIntegral (natVal (Proxy @m))) :> js)
+
+
+kill' :: forall n m. MetaScale m -> T' (S (S n)) -> Reg (T' (S n))
+kill' ms (i :>: j :>: js) =
+  let (Reg z dj) = metaMove (getMetaScale ms) i (Reg 0 0)
+   in Reg z $ dj + j :>: js
 
 -- | The standard triad-in-diatonic-in-chromatic 'MetaScales' that makes up
 -- most of Western music.
