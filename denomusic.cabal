@@ -37,16 +37,19 @@ library
       DenoMusic.Test
       DenoMusic.Types
       DenoMusic.Utils
+      Music
       Pieces.Contour
       Pieces.Lefty
       Pieces.Musical
       Pieces.NoChoices
+      Pieces.Sets
       Pieces.Seventy
       Pieces.SeventyTwo
       Pieces.SomethingNew
       Pieces.Structure
       Pieces.Test
       Pieces.Three
+      Pieces.Transpose
       Pieces.Two
   other-modules:
       Paths_denomusic

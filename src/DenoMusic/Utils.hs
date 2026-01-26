@@ -280,3 +280,8 @@ mergeDurations (Music d m) = Music d $ fmap (Voice . SF.normalise . unVoice) m
 cutFor :: Rational -> Music v a -> Music v a
 cutFor d = delay d . trimStart d
 
+
+transpose :: Ord v => Music v a -> Music () (M.Map v a)
+transpose (Music x m) = Music x $ MM.singleton () $ mconcat $ do
+  (v, va) <- MM.toList m
+  pure $ fmap (M.singleton v) va

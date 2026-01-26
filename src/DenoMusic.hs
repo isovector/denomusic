@@ -10,7 +10,7 @@ module DenoMusic (
   play,
   toPdf,
   duration,
-  separate,
+  -- separate,
   split,
   trimStart,
   trimEnd,
@@ -45,8 +45,8 @@ module DenoMusic (
   -- * Harmony
   VoicePurpose (..),
   HasPurpose (..),
-  chordChange,
-  keyChange,
+  -- chordChange,
+  -- keyChange,
   triad,
   diatonic,
   spelledFlat,
@@ -105,7 +105,6 @@ import Data.Group
 import Data.Profunctor
 import Data.Set (Set)
 import Data.Set qualified as S
-import DenoMusic.Generators ()
 import DenoMusic.Harmony
 import DenoMusic.Modes
 import DenoMusic.Notation
