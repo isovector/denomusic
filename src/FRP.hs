@@ -1,7 +1,9 @@
+{-# LANGUAGE Arrows          #-}
 {-# LANGUAGE PatternSynonyms #-}
 
 module FRP where
 
+import Data.Bool
 import Control.Applicative
 import Control.Arrow
 import Control.Category
@@ -38,6 +40,7 @@ instance Monoid Clock where
 newtype Event a = MkEvent
   { eventToMaybe :: Maybe a
   }
+  deriving stock (Foldable, Traversable)
   deriving newtype (Functor, Applicative, Monad, Eq, Ord, Show, Alternative)
 
 {-# COMPLETE Event, NoEvent #-}
@@ -190,10 +193,6 @@ afterNext = proc (ewhat, ewhen) -> do
   mwhat <- hold Nothing -< asum [fmap Just ewhat, Nothing <$ ewhen']
   returnA -< ewhen >>= \when -> MkEvent $ fmap (, when) mwhat
 
-
-main :: IO ()
-main = print $ take 10 $ filter (not . null . fst . o_output) $ takeWhile ((<= 100) . o_time) $ observe $ test
-
 notYet :: SF (Event a) (Event a)
 notYet = sf (Clock [0]) $ \t a ->
   case t <= 0 of
@@ -212,10 +211,27 @@ takeEvents n = SF $ \(Signal clk s) -> Signal clk $ \t -> do
       True -> NoEvent
       False -> a
 
+accum :: a -> SF (Event (a -> a)) (Event a)
+accum a0 = SF $ \(Signal clk s) -> Signal clk $ \t -> do
+  _ <- s t
+  let ev = fst $ runWriter $ s t
+  pure $ appEndo (foldMap (foldMap Endo . fst . runWriter . s) $ takeWhile (<= t) $ getClock clk) a0 <$ ev
+
+
+onlyEvery :: Int -> SF (Event a) (Event a)
+onlyEvery n = proc ev -> do
+  x <- hold 0 <<< accum 0 -< (+1) <$ ev
+  returnA -< bool NoEvent ev $ mod x n == 0
+
+
+--------------------------------------------------------------------------------
+
+main :: IO ()
+main = print $ take 10 $ filter (not . null . fst . o_output) $ takeWhile ((<= 100) . o_time) $ observe $ test
 
 test :: SF () ()
 test = proc _ -> do
-  t <- takeEvents 2 <<< every 1 () -< ()
+  t <- onlyEvery 4 <<< notYet <<< every 1 () -< ()
   emit -< Music 1 <$ t
   returnA -< ()
 
