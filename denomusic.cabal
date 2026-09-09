@@ -37,6 +37,7 @@ library
       DenoMusic.Test
       DenoMusic.Types
       DenoMusic.Utils
+      FRP
       IMusic
       Music
       Pieces.Contour
