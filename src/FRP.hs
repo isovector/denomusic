@@ -3,16 +3,18 @@
 
 module FRP where
 
-import Data.Bool
 import Control.Applicative
 import Control.Arrow
 import Control.Category
 import Control.Monad.Writer (Writer, runWriter, tell)
+import Data.Bool
 import Data.Coerce
-import Data.Functor (void)
+import Data.Functor
+import Data.List.NonEmpty (NonEmpty(..))
 import Data.Maybe
 import Data.Monoid
 import Data.Ratio (denominator)
+import Data.Semigroup qualified as S
 import Data.Set (Set)
 import Data.Set qualified as S
 import GHC.Generics
@@ -152,13 +154,15 @@ delaySF = SF $ \(Signal clk s) -> do
      _ <- s t
      pure $ maybe NoEvent Event $ lookup t sampled
 
+foldEvs :: (Time -> Writer x (Event a)) -> [Time] -> [(Time, a)]
+foldEvs s ts = mapMaybe sequenceA $ zip ts $ fmap (eventToMaybe . fst . runWriter . s) ts
+
 hold :: a -> SF (Event a) a
-hold a0 = SF $ \(Signal clk s) -> Signal clk $ \t -> do
-  _ <- s t
-  -- TODO(sandy): easy enough to precompute this
-  pure $ fromMaybe a0 $ getLast $ mconcat $ do
-    tt <- takeWhile (<= t) $ getClock clk
-    pure $ Last $ eventToMaybe $ fst $ runWriter $ s tt
+hold a0 = SF $ \(Signal clk s) -> do
+  let xs = foldEvs s $ getClock clk
+  Signal clk $ \t -> do
+    _ <- s t
+    pure $ S.getLast $ S.sconcat $ coerce $ a0 :| fmap snd (takeWhile ((<= t) . fst) xs)
 
 delay :: Time -> SF a a
 delay dt = SF $ \(Signal clk s) ->
@@ -203,19 +207,27 @@ once :: SF (Event a) (Event a)
 once = takeEvents 1
 
 takeEvents :: Int -> SF (Event a) (Event a)
-takeEvents n = SF $ \(Signal clk s) -> Signal clk $ \t -> do
-  a <- s t
-  -- TODO(sandy): stupid implementation
-  pure $
-    case ((>= n) $ length $ mapMaybe (eventToMaybe . fst . runWriter . s) $ takeWhile (< t) $ getClock clk) of
-      True -> NoEvent
-      False -> a
+takeEvents n = proc ev -> do
+  ev' <- accum (0, NoEvent)
+      -< ev <&> \a -> \(n', _) ->
+          bool (n', NoEvent) (n' + 1, Event a) $ n' < n
+  returnA -< ev' >>= snd
+
+
+dropEvents :: Int -> SF (Event a) (Event a)
+dropEvents n = proc ev -> do
+  ev' <- accum (n, NoEvent)
+      -< ev <&> \a -> \(n', _) ->
+          bool (n', Event a) (n' - 1, NoEvent) $ n' > 0
+  returnA -< ev' >>= snd
 
 accum :: a -> SF (Event (a -> a)) (Event a)
-accum a0 = SF $ \(Signal clk s) -> Signal clk $ \t -> do
-  _ <- s t
-  let ev = fst $ runWriter $ s t
-  pure $ appEndo (foldMap (foldMap Endo . fst . runWriter . s) $ takeWhile (<= t) $ getClock clk) a0 <$ ev
+accum a0 = SF $ \(Signal clk s) -> do
+  let xs = scanl (\(_, a) (t, f) -> (t, f a)) (0, a0) $ foldEvs s $ getClock clk
+  Signal clk $ \t -> do
+    _ <- s t
+    let ev = fst $ runWriter $ s t
+    pure $ (S.getLast $ S.sconcat $ coerce $ a0 :| fmap snd (takeWhile ((<= t) . fst) xs)) <$ ev
 
 
 onlyEvery :: Int -> SF (Event a) (Event a)
@@ -231,7 +243,7 @@ main = print $ take 10 $ filter (not . null . fst . o_output) $ takeWhile ((<= 1
 
 test :: SF () ()
 test = proc _ -> do
-  t <- onlyEvery 4 <<< notYet <<< every 1 () -< ()
+  t <- dropEvents 4 <<< every 1 () -< ()
   emit -< Music 1 <$ t
   returnA -< ()
 
