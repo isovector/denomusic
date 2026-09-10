@@ -41,6 +41,7 @@ dependencies:
 - step-function
 - profunctors
 - witherable
+- MemoTrie
 
 default-extensions:
 - DerivingStrategies

@@ -38,6 +38,7 @@ library
       DenoMusic.Types
       DenoMusic.Utils
       FRP
+      FRP.Clock
       IMusic
       Music
       Pieces.Contour
@@ -70,6 +71,7 @@ library
   ghc-options: -Wall -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints -Wno-type-defaults
   build-depends:
       Euterpea
+    , MemoTrie
     , QuickCheck
     , base >=4.7 && <5
     , checkers
