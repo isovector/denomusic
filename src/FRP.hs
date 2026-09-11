@@ -61,7 +61,7 @@ instance Semigroup a => Monoid (Event a) where
   mempty = NoEvent
 
 
-data Music = Music { duration :: Time }
+data Music = Music {}
   deriving stock (Eq, Ord, Show)
 
 data Signal a = Signal
@@ -122,10 +122,10 @@ emitMany = SF $ \(Signal clk s) ->
       Event x -> tell x
       NoEvent -> pure ()
 
-play :: SF (Event Music) (Event ())
+play :: SF (Event (Time, Music)) (Event ())
 play = proc e -> do
-  emit -< e
-  delaySF -< fmap (\m -> (duration m, ())) e
+  emit -< fmap snd e
+  arr void <<< delaySF -< e
 
 
 -- TODO(sandy): unwise?
@@ -137,9 +137,9 @@ censor = SF $ \(Signal clk s) -> Signal clk $ \t -> do
       True -> NoEvent
       False -> Event mus
 
-playBefore :: SF (Event Music) (Event ())
+playBefore :: SF (Event (Time, Music)) (Event ())
 playBefore = proc evs -> do
-  delayed <- delaySF -< fmap (negate . duration &&& id) evs
+  delayed <- delaySF -< fmap (negate *** id) evs
   emit -< delayed
   returnA -< void delayed
 
@@ -244,7 +244,7 @@ main = print $ take 10 $ filter (not . null . fst . o_output) $ takeWhile ((<= 1
 test :: SF () ()
 test = proc _ -> do
   t <- dropEvents 4 <<< every 1 () -< ()
-  emit -< Music 1 <$ t
+  emit -< Music <$ t
   returnA -< ()
 
 
