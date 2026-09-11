@@ -3,6 +3,8 @@
 
 module FRP where
 
+import Data.Set qualified as S
+import Data.Set (Set)
 import Control.Applicative
 import Control.Arrow
 import Control.Category
@@ -15,7 +17,6 @@ import Data.Maybe
 import Data.Monoid
 import Data.Ratio (denominator)
 import Data.Semigroup qualified as S
-import GHC.Generics
 import Prelude hiding (id, (.))
 
 
@@ -58,12 +59,19 @@ instance Semigroup a => Semigroup (Event a) where
 instance Semigroup a => Monoid (Event a) where
   mempty = NoEvent
 
-data Signal m a = Signal
+data Signal m a = Ord m => Signal
   { clock  :: Clock
-  , sample :: Time -> Writer [m] a
+  , sample :: Time -> Writer (Set m) a
   }
-  deriving stock (Functor, Generic, Generic1)
-  deriving Applicative via Generically1 (Signal m)
+
+deriving stock instance Functor (Signal m)
+
+instance Ord m => Applicative (Signal m) where
+  pure = Signal mempty . pure . pure
+  liftA2 f (Signal c1 a) (Signal c2 b) =
+    Signal (c1 <> c2) $ liftA2 (liftA2 f) a b
+
+
 
 newtype SF m a b = SF { runSF :: Signal m a -> Signal m b }
   deriving (Functor, Applicative) via WrappedArrow (SF m) a
@@ -74,17 +82,8 @@ instance Category (SF m) where
 
 instance Arrow (SF m) where
   arr = SF . fmap
-  SF f *** SF g = SF $ \sb -> liftA2 (,) (f $ fmap fst sb) (g $ fmap snd sb)
-  -- potential improvement?
-  -- SF f *** SF g = SF $ \s -> do
-  --   let clkf = clock $ f $ fmap fst s
-  --       clkg = clock $ g $ fmap snd s
-
-  --   Signal (clock s <> clkf <> clkg) $ \t -> do
-  --     (a, b) <- sample s t
-  --     a' <- sample (f $ Signal clkf $ const $ pure a) t
-  --     b' <- sample (g $ Signal clkg $ const $ pure b) t
-  --     pure (a', b')
+  SF f *** SF g = SF $ \sg@(Signal{}) ->
+    liftA2 (,) (f $ fmap fst sg) (g $ fmap snd sg)
 
 
 sf :: Clock -> (Time -> a -> b) -> SF m a b
@@ -108,9 +107,9 @@ now a = sf (Clock [0]) $ \t _ ->
     False -> NoEvent
 
 emit :: SF m (Event m) ()
-emit = arr (fmap pure) >>> emitMany
+emit = arr (fmap S.singleton) >>> emitMany
 
-emitMany :: SF m (Event [m]) ()
+emitMany :: SF m (Event (Set m)) ()
 emitMany = SF $ \(Signal clk s) ->
   Signal clk $ \t -> do
     s t >>= \case
@@ -124,7 +123,7 @@ play = proc e -> do
 
 
 -- TODO(sandy): unwise?
-censor :: SF m a (Event [m])
+censor :: SF m a (Event (Set m))
 censor = SF $ \(Signal clk s) -> Signal clk $ \t -> do
   let (_, mus) = runWriter $ s t
   pure $
@@ -148,7 +147,7 @@ move = SF $ \(Signal clk s) -> do
         pure (t + dt, a)
   Signal (clk <> Clock (fmap fst sampled)) $ \t -> do
      _ <- s t
-     pure $ maybe NoEvent Event $ lookup t sampled
+     pure $ maybe NoEvent Event $ lookup t $ takeWhile ((<= t) . fst) sampled
 
 foldEvs :: (Time -> Writer x (Event a)) -> [Time] -> [(Time, a)]
 foldEvs s ts = mapMaybe sequenceA $ zip ts $ fmap (eventToMaybe . fst . runWriter . s) ts
@@ -171,7 +170,7 @@ played :: (m -> Bool) -> SF m x (Event m)
 played f = SF $ \(Signal clk s) -> do
   let sampled = do
         t <- getClock clk
-        let mm = listToMaybe $ filter f $ snd $ runWriter $ s t
+        let mm = listToMaybe $ filter f $ S.toList $ snd $ runWriter $ s t
         Just m <- pure mm
         pure (t, m)
   Signal clk $ \t -> pure $ MkEvent $ lookup t $ take 1 $ dropWhile ((< t) . fst) sampled
@@ -183,7 +182,7 @@ data Observation a = Observation
   }
   deriving stock (Eq, Ord, Show, Functor)
 
-observe :: SF m () a -> [Observation ([m], a)]
+observe :: Ord m => SF m () a -> [Observation (Set m, a)]
 observe (SF f) = do
   let Signal (Clock clk) s = f $ pure ()
   t <- clk
