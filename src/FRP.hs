@@ -167,6 +167,15 @@ offset dt = SF $ \(Signal clk s) ->
 time :: SF m x Time
 time = sf mempty const
 
+played :: (m -> Bool) -> SF m x (Event m)
+played f = SF $ \(Signal clk s) -> do
+  let sampled = do
+        t <- getClock clk
+        let mm = listToMaybe $ filter f $ snd $ runWriter $ s t
+        Just m <- pure mm
+        pure (t, m)
+  Signal clk $ \t -> pure $ MkEvent $ lookup t $ take 1 $ dropWhile ((< t) . fst) sampled
+
 
 data Observation a = Observation
   { o_time :: Time
@@ -237,10 +246,17 @@ onlyEvery n = proc ev -> do
 main :: IO ()
 main = print $ take 10 $ filter (not . null . fst . o_output) $ takeWhile ((<= 100) . o_time) $ observe $ test
 
-test :: SF Int () ()
+test :: SF Char () ()
 test = proc _ -> do
-  t <- dropEvents 4 <<< every 1 () -< ()
-  emit -< 5 <$ t
+  x <- every 1 'x' -< ()
+  y <- onlyEvery 2 -< x
+
+  emit -< x
+  emit -< 'y' <$ y
+
+  z <- onlyEvery 2 <<< played (== 'y') -< ()
+  emit -< 'z' <$ z
+
   returnA -< ()
 
 
