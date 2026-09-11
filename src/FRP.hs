@@ -120,7 +120,7 @@ emitMany = SF $ \(Signal clk s) ->
 play :: SF m (Event (Time, m)) (Event ())
 play = proc e -> do
   emit -< fmap snd e
-  arr void <<< delaySF -< e
+  arr void <<< move -< e
 
 
 -- TODO(sandy): unwise?
@@ -132,14 +132,15 @@ censor = SF $ \(Signal clk s) -> Signal clk $ \t -> do
       True -> NoEvent
       False -> Event mus
 
+
 playBefore :: SF m (Event (Time, m)) (Event ())
 playBefore = proc evs -> do
-  delayed <- delaySF -< fmap (negate *** id) evs
+  delayed <- move -< fmap (negate *** id) evs
   emit -< delayed
   returnA -< void delayed
 
-delaySF :: SF m (Event (Time, a)) (Event a)
-delaySF = SF $ \(Signal clk s) -> do
+move :: SF m (Event (Time, a)) (Event a)
+move = SF $ \(Signal clk s) -> do
   let sampled = do
         t <- getClock clk
         let (ev, _) = runWriter $ s t
@@ -159,8 +160,8 @@ hold a0 = SF $ \(Signal clk s) -> do
     _ <- s t
     pure $ S.getLast $ S.sconcat $ coerce $ a0 :| fmap snd (takeWhile ((<= t) . fst) xs)
 
-delay :: Time -> SF m a a
-delay dt = SF $ \(Signal clk s) ->
+offset :: Time -> SF m a a
+offset dt = SF $ \(Signal clk s) ->
   Signal (coerce (fmap @[] (+ dt)) clk) $ s . subtract dt
 
 time :: SF m x Time
@@ -188,7 +189,7 @@ gate True e = e
 
 afterNext :: SF m (Event what, Event when) (Event (what, when))
 afterNext = proc (ewhat, ewhen) -> do
-  ewhen' <- delay 0.000000001 -< ewhen
+  ewhen' <- offset 0.000000001 -< ewhen
   mwhat <- hold Nothing -< asum [fmap Just ewhat, Nothing <$ ewhen']
   returnA -< ewhen >>= \when -> MkEvent $ fmap (, when) mwhat
 
