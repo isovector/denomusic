@@ -26,12 +26,15 @@ module DenoMusic.Harmony (
 
   -- * Familiar objects
   triad,
-  seventh,
+  add7,
+  add9,
+  add11,
+  sus2,
+  sus4,
   diatonic,
+  harmonicMinor,
   spelledFlat,
   spelledSharp,
-  standardSharp,
-  standardFlat,
   vl3in7,
   vl7in12,
 ) where
@@ -158,14 +161,29 @@ newtype MetaScale size = UnsafeMetaScale
 diatonic :: MetaScale 7
 diatonic = UnsafeMetaScale $ S.fromList [0, 2, 4, 5, 7, 9, 11]
 
+harmonicMinor :: MetaScale 7
+harmonicMinor = UnsafeMetaScale $ S.fromList [0, 2, 3, 5, 7, 8, 11]
+
 -- | A metascale corresponding to the 1-3-5 triad. This will take on
 -- major/minor/diminished/augmented characteristics depending on where in the
 -- scale it is transposed to.
 triad :: MetaScale 3
 triad = UnsafeMetaScale $ S.fromList [0, 2, 4]
 
-seventh :: MetaScale 4
-seventh = UnsafeMetaScale $ S.fromList [0, 2, 4, 6]
+add7 :: MetaScale n -> MetaScale (n + 1)
+add7 (UnsafeMetaScale s) = UnsafeMetaScale $ S.insert 6 s
+
+add9 :: MetaScale n -> MetaScale (n + 1)
+add9 (UnsafeMetaScale s) = UnsafeMetaScale $ S.insert 1 s
+
+add11 :: MetaScale n -> MetaScale (n + 1)
+add11 (UnsafeMetaScale s) = UnsafeMetaScale $ S.insert 3 s
+
+sus2 :: MetaScale 3
+sus2 = UnsafeMetaScale $ S.fromList [0, 1, 4]
+
+sus4 :: MetaScale 3
+sus4 = UnsafeMetaScale $ S.fromList [0, 3, 4]
 
 -- | Transform a note along a 'MetaScales' by moving it along each scale
 -- dimension. This function forms monoid actions:
@@ -191,16 +209,6 @@ kill' ms (i :>: j :>: js) =
   let (Reg z dj) = metaMove (getMetaScale ms) i (Reg 0 0)
    in Reg z $ dj + j :>: js
 
--- | The standard triad-in-diatonic-in-chromatic 'MetaScales' that makes up
--- most of Western music.
-standardFlat :: MetaScales '[3, 7, 12] PitchClass
-standardFlat = MSCons triad $ MSCons diatonic spelledFlat
-
--- | The standard triad-in-diatonic-in-chromatic 'MetaScales' that makes up
--- most of Western music.
-standardSharp :: MetaScales '[3, 7, 12] PitchClass
-standardSharp = MSCons triad $ MSCons diatonic spelledSharp
-
 -- | A chromatic 'MetaScales' that spells its enharmonic black notes as sharps.
 spelledSharp :: MetaScales '[12] PitchClass
 spelledSharp = Base (S.fromList [A, As, B, C, Cs, D, Ds, E, F, Fs, G, Gs])
@@ -208,6 +216,7 @@ spelledSharp = Base (S.fromList [A, As, B, C, Cs, D, Ds, E, F, Fs, G, Gs])
 -- | A chromatic 'MetaScales' that spells its enharmonic black notes as flats.
 spelledFlat :: MetaScales '[12] PitchClass
 spelledFlat = Base (S.fromList [A, Af, B, Bf, C, D, Df, E, Ef, F, G, Gf])
+
 
 -- | A smooth downwards voice-leading of triads-in-diatonic. Use 'invert' to
 -- instead get an upwards voice-leading.
