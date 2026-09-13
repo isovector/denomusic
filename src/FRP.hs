@@ -1,6 +1,3 @@
-{-# LANGUAGE Arrows          #-}
-{-# LANGUAGE PatternSynonyms #-}
-
 module FRP where
 
 import Data.Set qualified as S
@@ -238,24 +235,4 @@ onlyEvery :: Int -> SF m (Event a) (Event a)
 onlyEvery n = proc ev -> do
   x <- hold 0 <<< accum 0 -< (+1) <$ ev
   returnA -< bool NoEvent ev $ mod x n == 0
-
-
---------------------------------------------------------------------------------
-
-main :: IO ()
-main = print $ take 10 $ filter (not . null . fst . o_output) $ takeWhile ((<= 100) . o_time) $ observe $ test
-
-test :: SF Char () ()
-test = proc _ -> do
-  x <- every 1 'x' -< ()
-  y <- onlyEvery 2 -< x
-
-  emit -< x
-  emit -< 'y' <$ y
-
-  z <- onlyEvery 2 <<< played (== 'y') -< ()
-  emit -< 'z' <$ z
-
-  returnA -< ()
-
 

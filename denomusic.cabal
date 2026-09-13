@@ -26,15 +26,12 @@ source-repository head
 library
   exposed-modules:
       Data.Lilypond
-      DenoMusic
       DenoMusic.Harmony
       DenoMusic.Modes
       DenoMusic.Notation
       DenoMusic.NotationBackend
       DenoMusic.Play
-      DenoMusic.Rhythms
       DenoMusic.Types
-      DenoMusic.Utils
       FRP
   other-modules:
       Paths_denomusic
@@ -43,13 +40,14 @@ library
   hs-source-dirs:
       src
   default-extensions:
+      Arrows
+      DataKinds
       DerivingStrategies
       DerivingVia
-      TypeFamilies
       LambdaCase
-      ViewPatterns
       PatternSynonyms
-      DataKinds
+      TypeFamilies
+      ViewPatterns
   ghc-options: -Wall -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints -Wno-type-defaults
   build-depends:
       Euterpea

@@ -44,13 +44,14 @@ dependencies:
 - MemoTrie
 
 default-extensions:
+- Arrows
+- DataKinds
 - DerivingStrategies
 - DerivingVia
-- TypeFamilies
 - LambdaCase
-- ViewPatterns
 - PatternSynonyms
-- DataKinds
+- TypeFamilies
+- ViewPatterns
 
 ghc-options:
 - -Wall
