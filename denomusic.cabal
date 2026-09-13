@@ -37,7 +37,6 @@ library
       DenoMusic.Utils
       FRP
       FRP.Clock
-      IMusic
   other-modules:
       Paths_denomusic
   autogen-modules:
