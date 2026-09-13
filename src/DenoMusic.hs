@@ -5,8 +5,6 @@ module DenoMusic (
   PitchClass (..),
 
   -- * Using Music
-  defaultMain,
-  defaultMainSharp,
   play,
   toPdf,
   duration,
@@ -55,8 +53,6 @@ module DenoMusic (
   -- * Western Harmony
   vl3in7,
   vl7in12,
-  standardSharp,
-  standardFlat,
 
   -- * Modes
   dorian,
@@ -104,7 +100,6 @@ module DenoMusic (
 import Data.Group
 import Data.Profunctor
 import Data.Set (Set)
-import Data.Set qualified as S
 import DenoMusic.Harmony
 import DenoMusic.Modes
 import DenoMusic.Notation
@@ -112,27 +107,3 @@ import DenoMusic.Play
 import DenoMusic.Rhythms
 import DenoMusic.Types
 import DenoMusic.Utils
-
--- | Generate sheet music and play the given 'Music'.
-defaultMain
-  :: Finite v
-  => Reg PitchClass
-  -- ^ "Home" pitch
-  -> Music v (T '[3, 7, 12])
-  -> IO ()
-defaultMain root m = do
-  let score = fmap (S.singleton . elim standardFlat root) m
-  toPdf score
-  play score
-
--- | Generate sheet music and play the given 'Music'.
-defaultMainSharp
-  :: Finite v
-  => Reg PitchClass
-  -- ^ "Home" pitch
-  -> Music v (T '[3, 7, 12])
-  -> IO ()
-defaultMainSharp root m = do
-  let score = fmap (S.singleton . elim standardSharp root) m
-  toPdf score
-  play score

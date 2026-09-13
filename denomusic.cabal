@@ -27,33 +27,17 @@ library
   exposed-modules:
       Data.Lilypond
       DenoMusic
-      DenoMusic.Generators
       DenoMusic.Harmony
       DenoMusic.Modes
       DenoMusic.Notation
       DenoMusic.NotationBackend
       DenoMusic.Play
       DenoMusic.Rhythms
-      DenoMusic.Test
       DenoMusic.Types
       DenoMusic.Utils
       FRP
       FRP.Clock
       IMusic
-      Music
-      Pieces.Contour
-      Pieces.Lefty
-      Pieces.Musical
-      Pieces.NoChoices
-      Pieces.Sets
-      Pieces.Seventy
-      Pieces.SeventyTwo
-      Pieces.SomethingNew
-      Pieces.Structure
-      Pieces.Test
-      Pieces.Three
-      Pieces.Transpose
-      Pieces.Two
   other-modules:
       Paths_denomusic
   autogen-modules:
