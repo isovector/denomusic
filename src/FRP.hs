@@ -1,5 +1,11 @@
-module FRP where
+module FRP
+  ( module Control.Arrow
+  , Alternative (..)
+  , module FRP
+  , Interval(..)
+  ) where
 
+import Data.IntervalMap.FingerTree (Interval(..))
 import Data.Set qualified as S
 import Data.Set (Set)
 import Control.Applicative
@@ -58,7 +64,7 @@ instance Semigroup a => Monoid (Event a) where
 
 data Signal m a = Ord m => Signal
   { clock  :: Clock
-  , sample :: Time -> Writer (Set m) a
+  , sample :: Time -> Writer (Set (Time, m)) a
   }
 
 deriving stock instance Functor (Signal m)
@@ -68,10 +74,9 @@ instance Ord m => Applicative (Signal m) where
   liftA2 f (Signal c1 a) (Signal c2 b) =
     Signal (c1 <> c2) $ liftA2 (liftA2 f) a b
 
-
-
 newtype SF m a b = SF { runSF :: Signal m a -> Signal m b }
   deriving (Functor, Applicative) via WrappedArrow (SF m) a
+  deriving (Semigroup, Monoid) via Ap (SF m a) b
 
 instance Category (SF m) where
   id = SF id
@@ -90,6 +95,12 @@ sf clk' f = SF $ \(Signal clk s) ->
     pure $ f t a
 
 
+discrete :: [(Time, a)] -> SF m x (Event a)
+discrete ts =
+  sf (Clock $ fmap fst ts) $ \t _ ->
+    MkEvent $ lookup t ts
+
+
 
 every :: Time -> a -> SF m x (Event a)
 every dur a = sf (Clock $ iterate (+ dur) 0) $ \t _ ->
@@ -103,10 +114,10 @@ now a = sf (Clock [0]) $ \t _ ->
     True -> Event a
     False -> NoEvent
 
-emit :: SF m (Event m) ()
+emit :: SF m (Event (Time, m)) ()
 emit = arr (fmap S.singleton) >>> emitMany
 
-emitMany :: SF m (Event (Set m)) ()
+emitMany :: SF m (Event (Set (Time, m))) ()
 emitMany = SF $ \(Signal clk s) ->
   Signal clk $ \t -> do
     s t >>= \case
@@ -115,12 +126,12 @@ emitMany = SF $ \(Signal clk s) ->
 
 play :: SF m (Event (Time, m)) (Event ())
 play = proc e -> do
-  emit -< fmap snd e
+  emit -< e
   arr void <<< move -< e
 
 
 -- TODO(sandy): unwise?
-censor :: SF m a (Event (Set m))
+censor :: SF m a (Event (Set (Time, m)))
 censor = SF $ \(Signal clk s) -> Signal clk $ \t -> do
   let (_, mus) = runWriter $ s t
   pure $
@@ -129,11 +140,11 @@ censor = SF $ \(Signal clk s) -> Signal clk $ \t -> do
       False -> Event mus
 
 
-playBefore :: SF m (Event (Time, m)) (Event ())
-playBefore = proc evs -> do
-  delayed <- move -< fmap (negate *** id) evs
-  emit -< delayed
-  returnA -< void delayed
+-- playBefore :: SF m (Event (Time, m)) (Event ())
+-- playBefore = proc evs -> do
+--   delayed <- move -< fmap (negate *** id) evs
+--   emit -< delayed
+--   returnA -< void delayed
 
 move :: SF m (Event (Time, a)) (Event a)
 move = SF $ \(Signal clk s) -> do
@@ -163,11 +174,11 @@ offset dt = SF $ \(Signal clk s) ->
 time :: SF m x Time
 time = sf mempty const
 
-played :: (m -> Bool) -> SF m x (Event m)
+played :: (m -> Bool) -> SF m x (Event (Time, m))
 played f = SF $ \(Signal clk s) -> do
   let sampled = do
         t <- getClock clk
-        let mm = listToMaybe $ filter f $ S.toList $ snd $ runWriter $ s t
+        let mm = listToMaybe $ filter (f . snd) $ S.toList $ snd $ runWriter $ s t
         Just m <- pure mm
         pure (t, m)
   Signal clk $ \t -> pure $ MkEvent $ lookup t $ take 1 $ dropWhile ((< t) . fst) sampled
@@ -179,7 +190,7 @@ data Observation a = Observation
   }
   deriving stock (Eq, Ord, Show, Functor)
 
-observe :: Ord m => SF m () a -> [Observation (Set m, a)]
+observe :: Ord m => SF m () a -> [Observation (Set (Time, m), a)]
 observe (SF f) = do
   let Signal (Clock clk) s = f $ pure ()
   t <- clk
@@ -235,4 +246,20 @@ onlyEvery :: Int -> SF m (Event a) (Event a)
 onlyEvery n = proc ev -> do
   x <- hold 0 <<< accum 0 -< (+1) <$ ev
   returnA -< bool NoEvent ev $ mod x n == 0
+
+
+export :: Ord m => (Rational, Rational) -> SF m () x -> [(Interval Rational, Set m)]
+export (lo, hi) s
+  = mapMaybe (\o -> do
+      let t = o_time o
+      (d, _) <- S.lookupMin $ o_output o
+      pure (Interval t (t + d), S.map snd $ o_output o)
+        )
+
+      -- let t = o_time o
+      --  in
+  $ fmap (fmap fst)
+  $ takeWhile ((<= hi) . o_time)
+  $ dropWhile ((< lo) . o_time)
+  $ observe s
 
