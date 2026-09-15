@@ -33,6 +33,7 @@ library
       DenoMusic.Play
       DenoMusic.Types
       FRP
+      Galant
       Test
   other-modules:
       Paths_denomusic

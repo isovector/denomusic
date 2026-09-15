@@ -134,6 +134,9 @@ now a = sf (Clock [0]) $ \t _ ->
     True -> Event a
     False -> NoEvent
 
+at :: Time -> a -> SF m x (Event a)
+at t a = offset t <<< now a
+
 emit :: SF m (Event (Time, m)) ()
 emit = arr (fmap S.singleton) >>> emitMany
 
