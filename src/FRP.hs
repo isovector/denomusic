@@ -146,6 +146,9 @@ play = proc e -> do
   emit -< e
   arr void <<< move -< e
 
+rest :: SF m (Event Time) (Event ())
+rest = arr void <<< move <<< arr (fmap (, ()))
+
 
 -- TODO(sandy): unwise?
 censor :: SF m a (Event (Set (Time, m)))
