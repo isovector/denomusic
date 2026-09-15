@@ -7,23 +7,26 @@ module FRP
   , Interval(..)
   ) where
 
-import Data.IntervalMap.FingerTree (Interval(..))
-import Data.Set qualified as S
-import Data.Set (Set)
 import Control.Applicative
 import Control.Arrow
 import Control.Category
+import Control.Exception (evaluate)
 import Control.Monad.Writer (Writer, runWriter, tell)
 import Data.Bool
 import Data.Coerce
 import Data.Functor
+import Data.IntervalMap.FingerTree (Interval(..))
 import Data.List.NonEmpty (NonEmpty(..))
 import Data.Maybe
+import Data.MemoTrie
 import Data.Monoid
 import Data.Ratio
 import Data.Semigroup qualified as S
+import Data.Set (Set)
+import Data.Set qualified as S
 import Prelude hiding (id, (.))
-import Data.MemoTrie
+import System.IO.Unsafe (unsafePerformIO)
+import System.Timeout (timeout)
 
 
 type Time = Rational
@@ -159,6 +162,13 @@ censor = SF $ \(Signal clk s) -> Signal clk $ \t -> do
       True -> NoEvent
       False -> Event mus
 
+-- | Observe whether a computation would diverge, and if so, return 'Nothing'
+-- instead. This can be used to guard otherwise-sketchy combinators which need
+-- to fold over infinite event streams.
+--
+-- This is impolemented by terminating after 10ms of trying.
+terminating :: a -> Maybe a
+terminating = unsafePerformIO . timeout 10_000 . evaluate
 
 -- TODO(sandy): What would fswitch do? Run the first SF until the event in the
 -- second would trigger?
@@ -208,12 +218,12 @@ evSF f = SF $ \sig@(Signal clk s) -> do
 
 -- | Hold the value of the most recent value of an 'Event'.
 hold :: a -> SF m (Event a) a
-hold a0 = evSF $ \xs t -> S.getLast $ S.sconcat $ coerce $ a0 :| fmap snd (takeWhile ((<= t) . fst) xs)
+hold a0 = evSF $ \xs t -> fromMaybe a0 $ terminating $ S.getLast $ S.sconcat $ coerce $ a0 :| fmap snd (takeWhile ((<= t) . fst) xs)
 
 -- | Hold the value of the next (not yet occurred!) value of an 'Event'.
 fhold :: a -> SF m (Event a) a
 fhold a0 = evSF $ \xs t ->
-  maybe a0 snd $ listToMaybe $ dropWhile ((<= t) . fst) xs
+  maybe a0 snd $ listToMaybe (dropWhile ((<= t) . fst) xs) >>= terminating
 
 offset :: Time -> SF m a a
 offset dt = SF $ \(Signal clk s) ->
@@ -308,4 +318,6 @@ export (lo, hi) s
   $ takeWhile ((<= hi) . o_time)
   $ dropWhile ((< lo) . o_time)
   $ observe s
+
+
 
