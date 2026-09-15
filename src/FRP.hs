@@ -177,15 +177,29 @@ move = SF $ \(Signal clk s) -> do
      _ <- s t
      pure $ maybe NoEvent Event $ lookup t $ takeWhile ((<= t) . fst) sampled
 
-foldEvs :: (Time -> Writer x (Event a)) -> [Time] -> [(Time, a)]
-foldEvs s ts = mapMaybe sequenceA $ zip ts $ fmap (eventToMaybe . fst . runWriter . s) ts
 
-hold :: a -> SF m (Event a) a
-hold a0 = SF $ \(Signal clk s) -> do
-  let xs = foldEvs s $ getClock clk
+-- | Fold a 'Signal' into its event stream.
+signalEvs :: Signal m (Event a) -> [(Time, a)]
+signalEvs (Signal (Clock ts) f) = mapMaybe sequenceA $ zip ts $ fmap (eventToMaybe . fst . runWriter . f) ts
+
+
+-- | Construct an 'SF' by folding over an input event stream.
+evSF :: ([(Time, a)] -> Time -> b) -> SF m (Event a) b
+evSF f = SF $ \sig@(Signal clk s) -> do
+  let xs = signalEvs sig
   Signal clk $ \t -> do
     _ <- s t
-    pure $ S.getLast $ S.sconcat $ coerce $ a0 :| fmap snd (takeWhile ((<= t) . fst) xs)
+    pure $ f xs t
+
+
+-- | Hold the value of the most recent value of an 'Event'.
+hold :: a -> SF m (Event a) a
+hold a0 = evSF $ \xs t -> S.getLast $ S.sconcat $ coerce $ a0 :| fmap snd (takeWhile ((<= t) . fst) xs)
+
+-- | Hold the value of the next (not yet occurred!) value of an 'Event'.
+fhold :: a -> SF m (Event a) a
+fhold a0 = evSF $ \xs t ->
+  maybe a0 snd $ listToMaybe $ dropWhile ((<= t) . fst) xs
 
 offset :: Time -> SF m a a
 offset dt = SF $ \(Signal clk s) ->
@@ -254,12 +268,10 @@ dropEvents n = proc ev -> do
   returnA -< ev' >>= snd
 
 accum :: a -> SF m (Event (a -> a)) (Event a)
-accum a0 = SF $ \(Signal clk s) -> do
-  let xs = scanl (\(_, a) (t, f) -> (t, f a)) (0, a0) $ foldEvs s $ getClock clk
-  Signal clk $ \t -> do
-    _ <- s t
-    let ev = fst $ runWriter $ s t
-    pure $ (S.getLast $ S.sconcat $ coerce $ a0 :| fmap snd (takeWhile ((<= t) . fst) xs)) <$ ev
+accum a0 = evSF $ \evs t -> do
+  let xs = scanl (\(_, a) (t', f) -> (t', f a)) (0, a0) evs
+  let ev = lookup t $ takeWhile ((<= t) . fst) evs
+  (S.getLast $ S.sconcat $ coerce $ a0 :| fmap snd (takeWhile ((<= t) . fst) xs)) <$ MkEvent ev
 
 
 onlyEvery :: Int -> SF m (Event a) (Event a)
