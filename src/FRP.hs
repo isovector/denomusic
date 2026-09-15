@@ -160,6 +160,20 @@ censor = SF $ \(Signal clk s) -> Signal clk $ \t -> do
       False -> Event mus
 
 
+-- TODO(sandy): What would fswitch do? Run the first SF until the event in the
+-- second would trigger?
+switch :: SF m a (b, Event c) -> (c -> SF m a b) -> SF m a b
+switch (SF f) k = SF $ \sig0@Signal{} -> do
+  let sig1 = f sig0
+      sig1b = fmap fst sig1
+  case listToMaybe $ signalEvs $ fmap snd sig1 of
+    Nothing -> sig1b
+    Just (t0, c) -> do
+      let sig2 = runSF (offset t0 <<< k c <<< offset (- t0)) sig0
+      Signal (clock sig1 <> clock sig2) $ \t ->
+        flip sample t $ bool sig1b sig2 $ t >= t0
+
+
 -- playBefore :: SF m (Event (Time, m)) (Event ())
 -- playBefore = proc evs -> do
 --   delayed <- move -< fmap (negate *** id) evs
@@ -205,8 +219,8 @@ offset :: Time -> SF m a a
 offset dt = SF $ \(Signal clk s) ->
   Signal (coerce (fmap @[] (+ dt)) clk) $ s . subtract dt
 
-time :: SF m x Time
-time = sf mempty const
+localTime :: SF m x Time
+localTime = sf mempty const
 
 played :: (m -> Bool) -> SF m x (Event (Time, m))
 played f = SF $ \(Signal clk s) -> do
