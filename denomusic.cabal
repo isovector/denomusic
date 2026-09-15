@@ -33,6 +33,7 @@ library
       DenoMusic.Play
       DenoMusic.Types
       FRP
+      Test
   other-modules:
       Paths_denomusic
   autogen-modules:
