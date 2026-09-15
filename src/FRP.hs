@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -Wno-orphans #-}
+
 module FRP
   ( module Control.Arrow
   , Alternative (..)
@@ -18,12 +20,20 @@ import Data.Functor
 import Data.List.NonEmpty (NonEmpty(..))
 import Data.Maybe
 import Data.Monoid
-import Data.Ratio (denominator)
+import Data.Ratio
 import Data.Semigroup qualified as S
 import Prelude hiding (id, (.))
+import Data.MemoTrie
 
 
 type Time = Rational
+
+instance HasTrie Rational where
+  data Rational :->: x = RationalTrie (Integer :->: (Integer :->: x))
+  trie f = RationalTrie $ trie $ trie . \n d -> f (n % d)
+  untrie (RationalTrie x) = (\f r -> f (numerator r) (denominator r)) (untrie . untrie x)
+  enumerate = error "no enumerate for Rational"
+
 
 -- | A (possibly infinite) list of interesting times
 newtype Clock = Clock { getClock :: [Time] }
@@ -62,12 +72,19 @@ instance Semigroup a => Semigroup (Event a) where
 instance Semigroup a => Monoid (Event a) where
   mempty = NoEvent
 
-data Signal m a = Ord m => Signal
+data Signal m a = Ord m => UnsafeSignal
   { clock  :: Clock
   , sample :: Time -> Writer (Set (Time, m)) a
   }
 
-deriving stock instance Functor (Signal m)
+pattern Signal :: () => Ord m => Clock -> (Time -> Writer (Set (Time, m)) a) -> Signal m a
+pattern Signal c f <- UnsafeSignal c f
+  where
+    Signal c f = UnsafeSignal c $ memo f
+{-# COMPLETE Signal #-}
+
+instance Functor (Signal m) where
+  fmap f (Signal c g) = Signal c $ fmap (fmap f) g
 
 instance Ord m => Applicative (Signal m) where
   pure = Signal mempty . pure . pure
