@@ -7,6 +7,7 @@ module FRP
   , Interval(..)
   ) where
 
+import Control.Monad (join)
 import Control.Applicative
 import Control.Arrow
 import Control.Category
@@ -226,12 +227,18 @@ evSF f = SF $ \sig@(Signal clk s) -> do
 
 -- | Hold the value of the most recent value of an 'Event'.
 hold :: a -> SF m (Event a) a
-hold a0 = evSF $ \xs t -> fromMaybe a0 $ terminating $ S.getLast $ S.sconcat $ coerce $ a0 :| fmap snd (takeWhile ((<= t) . fst) xs)
+hold a0 = evSF $ \xs t ->
+  fromMaybe a0
+    $ terminating
+    $ S.getLast
+    $ S.sconcat
+    $ coerce
+    $ a0 :| fmap snd (takeWhile ((<= t) . fst) xs)
 
 -- | Hold the value of the next (not yet occurred!) value of an 'Event'.
 fhold :: a -> SF m (Event a) a
 fhold a0 = evSF $ \xs t ->
-  maybe a0 snd $ listToMaybe (dropWhile ((<= t) . fst) xs) >>= terminating
+  maybe a0 snd $ join $ terminating $ listToMaybe $ dropWhile ((<= t) . fst) xs
 
 offset :: Time -> SF m a a
 offset dt = SF $ \(Signal clk s) ->
@@ -285,19 +292,11 @@ once :: SF m (Event a) (Event a)
 once = takeEvents 1
 
 takeEvents :: Int -> SF m (Event a) (Event a)
-takeEvents n = proc ev -> do
-  ev' <- accum (0, NoEvent)
-      -< ev <&> \a -> \(n', _) ->
-          bool (n', NoEvent) (n' + 1, Event a) $ n' < n
-  returnA -< ev' >>= snd
+takeEvents n = evSF $ \evs t -> MkEvent $ join $ terminating $ lookup t $ take n evs
 
 
 dropEvents :: Int -> SF m (Event a) (Event a)
-dropEvents n = proc ev -> do
-  ev' <- accum (n, NoEvent)
-      -< ev <&> \a -> \(n', _) ->
-          bool (n', Event a) (n' - 1, NoEvent) $ n' > 0
-  returnA -< ev' >>= snd
+dropEvents n = evSF $ \evs t -> MkEvent $ join $ terminating $ lookup t $ drop n evs
 
 accum :: a -> SF m (Event (a -> a)) (Event a)
 accum a0 = evSF $ \evs t -> do
@@ -319,13 +318,8 @@ export (lo, hi) s
       (d, _) <- S.lookupMin $ o_output o
       pure (Interval t (t + d), S.map snd $ o_output o)
         )
-
-      -- let t = o_time o
-      --  in
   $ fmap (fmap fst)
   $ takeWhile ((<= hi) . o_time)
   $ dropWhile ((< lo) . o_time)
   $ observe s
-
-
 
