@@ -11,7 +11,7 @@ import Control.Applicative
 import Control.Arrow
 import Control.Category
 import Control.Exception (evaluate)
-import Control.Monad.Writer (Writer, runWriter, tell)
+import Control.Monad.Writer (Writer, runWriter, tell, mapWriter)
 import Data.Bool
 import Data.Coerce
 import Data.Functor
@@ -115,6 +115,7 @@ sf clk' f = SF $ \(Signal clk s) ->
     pure $ f t a
 
 
+-- | The 'Time's must be monotonically increasing.
 discrete :: [(Time, a)] -> SF m x (Event a)
 discrete ts =
   sf (Clock $ fmap fst ts) $ \t _ ->
@@ -133,6 +134,20 @@ now a = sf (Clock [0]) $ \t _ ->
   case t == 0 of
     True -> Event a
     False -> NoEvent
+
+
+-- | Stretch time by the given amount, without changing the duration of emitted
+-- notes.
+stretch :: Rational -> SF m a a
+stretch r = SF $ \(Signal clk s) ->
+  Signal (coerce (fmap @[] (* r)) clk) $ s . (/ r)
+
+-- | Stretch time by the given amount, including the duration of already
+-- emitted notes.
+magnify :: Rational -> SF m a b -> SF m a b
+magnify r f = SF $ \sig@Signal{} -> do
+  let (Signal clk s) = runSF (stretch r <<< f) sig
+  Signal clk $ mapWriter (fmap $ S.map $ first (* r)) . s
 
 at :: Time -> a -> SF m x (Event a)
 at t a = offset t <<< now a
@@ -154,16 +169,6 @@ play = proc e -> do
 
 rest :: SF m (Event Time) (Event ())
 rest = arr void <<< move <<< arr (fmap (, ()))
-
-
--- TODO(sandy): unwise?
-censor :: SF m a (Event (Set (Time, m)))
-censor = SF $ \(Signal clk s) -> Signal clk $ \t -> do
-  let (_, mus) = runWriter $ s t
-  pure $
-    case null mus of
-      True -> NoEvent
-      False -> Event mus
 
 -- | Observe whether a computation would diverge, and if so, return 'Nothing'
 -- instead. This can be used to guard otherwise-sketchy combinators which need
