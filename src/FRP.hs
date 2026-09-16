@@ -129,9 +129,9 @@ every dur a = sf (Clock $ iterate (+ dur) 0) $ \t _ ->
     True -> Event a
     False -> NoEvent
 
-now :: a -> SF m x (Event a)
-now a = sf (Clock [0]) $ \t _ ->
-  case t == 0 of
+at :: Time -> a -> SF m x (Event a)
+at t' a = sf (Clock [t']) $ \t _ ->
+  case t == t' of
     True -> Event a
     False -> NoEvent
 
@@ -149,8 +149,8 @@ magnify r f = SF $ \sig@Signal{} -> do
   let (Signal clk s) = runSF (stretch r <<< f) sig
   Signal clk $ mapWriter (fmap $ S.map $ first (* r)) . s
 
-at :: Time -> a -> SF m x (Event a)
-at t a = offset t <<< now a
+now :: a -> SF m x (Event a)
+now = at 0
 
 emit :: SF m (Event (Time, m)) ()
 emit = arr (fmap S.singleton) >>> emitMany
