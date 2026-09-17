@@ -34,21 +34,21 @@ import System.IO.Unsafe (unsafePerformIO)
 import System.Timeout (timeout)
 
 
-timeSignature :: Int -> Int -> SF m x (Event Int)
-timeSignature n v = do
-  let d = 1 % fromIntegral v
-  sf (Clock $ iterate (+ d) 0) $ \t _ -> do
-    let r = t / d
-    case denominator r == 1 of
-      True -> Event $ mod (fromIntegral $ numerator r) n
-      False -> NoEvent
-
 
 sf :: Clock -> (Time -> a -> b) -> SF m a b
 sf clk' f = SF $ \(Signal clk s) ->
   Signal (clk <> clk') $ \t -> do
     a <- s t
     pure $ f t a
+
+
+downbeat :: SF m (Event Beat) (Event ())
+downbeat = fmap void $ filterEvents (== 0)
+
+upbeat :: SF m (Event Beat) (Event ())
+upbeat = proc ev -> do
+  y <- fhold (-1) -< ev
+  returnA -< void $ ev >> bool NoEvent (Event ()) (y == 0)
 
 -- | The 'Time's must be monotonically increasing.
 discrete :: [(Time, a)] -> SF m x (Event a)
@@ -205,6 +205,9 @@ partitionEvents f = evSF $ \as t -> do
       go :: [(Time, x)] -> Event x
       go = maybe NoEvent Event . join . terminating . lookup t
   (go bs, go cs)
+
+filterEvents :: (a -> Bool) -> SF m (Event a) (Event a)
+filterEvents f = evSF $ \as t -> MkEvent $ join $ terminating $ lookup t $ filter (f . snd) as
 
 
 gate :: Bool -> Event a -> Event a

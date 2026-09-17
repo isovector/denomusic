@@ -1,3 +1,4 @@
+{-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module FRP.Types
@@ -11,10 +12,12 @@ import Control.Category
 import Control.Monad.Writer (Writer, runWriter)
 import Data.Coerce
 import Data.Functor
+import Data.Functor.Foldable.TH
 import Data.IntervalMap.FingerTree (Interval(..))
 import Data.Maybe
 import Data.MemoTrie
 import Data.Monoid
+import Data.Ord (Down(..))
 import Data.Ratio
 import Data.Set (Set)
 import Data.Set qualified as S
@@ -125,4 +128,34 @@ export (lo, hi) s
   $ takeWhile ((<= hi) . o_time)
   $ dropWhile ((< lo) . o_time)
   $ observe s
+
+
+data Beat = Beat
+  { duration :: Time
+  , stress :: Priority
+  }
+  deriving stock (Eq, Ord, Show)
+
+newtype Priority = P Int
+  deriving stock (Show)
+  deriving newtype (Enum)
+  deriving (Eq, Ord) via Down Int
+
+data Meter a
+  = Pulse a
+  | Group [Meter a]
+  deriving stock (Eq, Ord, Show, Functor, Foldable, Traversable)
+
+instance Applicative Meter where
+  pure = Pulse
+  liftA2 f (Pulse a) (Pulse b) = Pulse $ f a b
+  liftA2 f (Group a) (Pulse b) = Group $ fmap (fmap $ flip f b) a
+  liftA2 f (Pulse a) (Group b) = Group $ fmap (fmap $ f a) b
+  liftA2 f (Group a) (Group b) = Group $ liftA2 (liftA2 f) a b
+
+instance Monad Meter where
+  Pulse a >>= f = f a
+  Group as >>= f = Group $ fmap (>>= f) as
+
+makeBaseFunctor ''Meter
 
