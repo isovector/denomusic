@@ -34,6 +34,16 @@ import System.IO.Unsafe (unsafePerformIO)
 import System.Timeout (timeout)
 
 
+timeSignature :: Int -> Int -> SF m x (Event Int)
+timeSignature n v = do
+  let d = 1 % fromIntegral v
+  sf (Clock $ iterate (+ d) 0) $ \t _ -> do
+    let r = t / d
+    case denominator r == 1 of
+      True -> Event $ mod (fromIntegral $ numerator r) n
+      False -> NoEvent
+
+
 sf :: Clock -> (Time -> a -> b) -> SF m a b
 sf clk' f = SF $ \(Signal clk s) ->
   Signal (clk <> clk') $ \t -> do

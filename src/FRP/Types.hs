@@ -114,7 +114,7 @@ observe (SF f) = do
   pure $ Observation t (stuff, a)
 
 
-export :: Ord m => (Rational, Rational) -> SF m () x -> [(Interval Rational, Set m)]
+export :: Ord m => (Time, Time) -> SF m () x -> [(Interval Time, Set m)]
 export (lo, hi) s
   = mapMaybe (\o -> do
       let t = o_time o
