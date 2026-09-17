@@ -4,113 +4,34 @@ module FRP
   ( module Control.Arrow
   , Alternative (..)
   , module FRP
+  , module FRP.Types
   , Interval(..)
   ) where
 
-import Data.Bifunctor (bimap)
-import Data.Either (partitionEithers)
 import Control.Applicative
 import Control.Arrow
 import Control.Category
 import Control.Exception (evaluate)
 import Control.Monad (join)
-import Control.Monad.Writer (Writer, runWriter, tell, mapWriter)
+import Control.Monad.Writer (runWriter, tell, mapWriter)
 import Data.Align
+import Data.Bifunctor (bimap)
 import Data.Bool
 import Data.Coerce
+import Data.Either (partitionEithers)
 import Data.Functor
-import Data.IntervalMap.FingerTree (Interval(..))
 import Data.List.NonEmpty (NonEmpty(..))
 import Data.Maybe
-import Data.MemoTrie
 import Data.Monoid
 import Data.Ratio
 import Data.Semigroup qualified as S
 import Data.Set (Set)
 import Data.Set qualified as S
 import Data.These
+import FRP.Types
 import Prelude hiding (id, (.))
 import System.IO.Unsafe (unsafePerformIO)
 import System.Timeout (timeout)
-
-
-type Time = Rational
-
-instance HasTrie Rational where
-  data Rational :->: x = RationalTrie (Integer :->: (Integer :->: x))
-  trie f = RationalTrie $ trie $ trie . \n d -> f (n % d)
-  untrie (RationalTrie x) = (\f r -> f (numerator r) (denominator r)) (untrie . untrie x)
-  enumerate = error "no enumerate for Rational"
-
-
--- | A (possibly infinite) list of interesting times
-newtype Clock = Clock { getClock :: [Time] }
-
--- | Merge two clocks, keeping them in ascending time order
-instance Semigroup Clock where
-  Clock [] <> Clock ys = Clock ys
-  Clock (x : xs) <> Clock [] = Clock (x : xs)
-  xx@(Clock (x : xs)) <> yy@(Clock (y : ys)) =
-    case compare x y of
-      LT -> Clock $ x : coerce (Clock xs <> yy)
-      GT -> Clock $ y : coerce (xx <> Clock ys)
-      EQ -> Clock $ x : coerce (Clock xs <> Clock ys)
-
-instance Monoid Clock where
-  mempty = Clock []
-
-newtype Event a = MkEvent
-  { eventToMaybe :: Maybe a
-  }
-  deriving stock (Foldable, Traversable)
-  deriving newtype (Functor, Applicative, Monad, Eq, Ord, Show, Alternative)
-
-{-# COMPLETE Event, NoEvent #-}
-pattern Event :: a -> Event a
-pattern Event a = MkEvent (Just a)
-
-pattern NoEvent :: Event a
-pattern NoEvent = MkEvent Nothing
-
-instance Semigroup a => Semigroup (Event a) where
-  NoEvent <> a = a
-  Event a <> NoEvent = Event a
-  Event a <> Event b = Event (a <> b)
-
-instance Semigroup a => Monoid (Event a) where
-  mempty = NoEvent
-
-data Signal m a = Ord m => UnsafeSignal
-  { clock  :: Clock
-  , sample :: Time -> Writer (Set (Time, m)) a
-  }
-
-pattern Signal :: () => Ord m => Clock -> (Time -> Writer (Set (Time, m)) a) -> Signal m a
-pattern Signal c f <- UnsafeSignal c f
-  where
-    Signal c f = UnsafeSignal c $ memo f
-{-# COMPLETE Signal #-}
-
-instance Functor (Signal m) where
-  fmap f (Signal c g) = Signal c $ fmap (fmap f) g
-
-instance Ord m => Applicative (Signal m) where
-  pure = Signal mempty . pure . pure
-  liftA2 f (Signal c1 a) (Signal c2 b) =
-    Signal (c1 <> c2) $ liftA2 (liftA2 f) a b
-
-newtype SF m a b = SF { runSF :: Signal m a -> Signal m b }
-  deriving (Functor, Applicative) via WrappedArrow (SF m) a
-  deriving (Semigroup, Monoid) via Ap (SF m a) b
-
-instance Category (SF m) where
-  id = SF id
-  SF g . SF f = SF (g . f)
-
-instance Arrow (SF m) where
-  arr = SF . fmap
-  SF f *** SF g = SF $ \sg@(Signal{}) ->
-    liftA2 (,) (f $ fmap fst sg) (g $ fmap snd sg)
 
 
 sf :: Clock -> (Time -> a -> b) -> SF m a b
@@ -119,14 +40,11 @@ sf clk' f = SF $ \(Signal clk s) ->
     a <- s t
     pure $ f t a
 
-
 -- | The 'Time's must be monotonically increasing.
 discrete :: [(Time, a)] -> SF m x (Event a)
 discrete ts =
   sf (Clock $ fmap fst ts) $ \t _ ->
     MkEvent $ lookup t ts
-
-
 
 every :: Time -> a -> SF m x (Event a)
 every dur a = sf (Clock $ iterate (+ dur) 0) $ \t _ ->
@@ -139,7 +57,6 @@ at t' a = sf (Clock [t']) $ \t _ ->
   case t == t' of
     True -> Event a
     False -> NoEvent
-
 
 -- | Stretch time by the given amount, without changing the duration of emitted
 -- notes.
@@ -279,19 +196,6 @@ partitionEvents f = evSF $ \as t -> do
       go = maybe NoEvent Event . join . terminating . lookup t
   (go bs, go cs)
 
-data Observation a = Observation
-  { o_time :: Time
-  , o_output :: a
-  }
-  deriving stock (Eq, Ord, Show, Functor)
-
-observe :: Ord m => SF m () a -> [Observation (Set (Time, m), a)]
-observe (SF f) = do
-  let Signal (Clock clk) s = f $ pure ()
-  t <- clk
-  let (a, stuff) = runWriter (s t)
-  pure $ Observation t (stuff, a)
-
 
 gate :: Bool -> Event a -> Event a
 gate False _ = NoEvent
@@ -331,17 +235,4 @@ onlyEvery :: Int -> SF m (Event a) (Event a)
 onlyEvery n = proc ev -> do
   x <- hold 0 <<< accum 0 -< (+1) <$ ev
   returnA -< bool NoEvent ev $ mod x n == 0
-
-
-export :: Ord m => (Rational, Rational) -> SF m () x -> [(Interval Rational, Set m)]
-export (lo, hi) s
-  = mapMaybe (\o -> do
-      let t = o_time o
-      (d, _) <- S.lookupMin $ o_output o
-      pure (Interval t (t + d), S.map snd $ o_output o)
-        )
-  $ fmap (fmap fst)
-  $ takeWhile ((<= hi) . o_time)
-  $ dropWhile ((< lo) . o_time)
-  $ observe s
 
