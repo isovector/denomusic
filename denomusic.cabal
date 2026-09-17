@@ -70,7 +70,9 @@ library
     , process
     , profunctors
     , recursion-schemes
+    , semialign
     , step-function
+    , these
     , transformers
     , witherable
   default-language: GHC2021

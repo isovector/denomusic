@@ -7,12 +7,15 @@ module FRP
   , Interval(..)
   ) where
 
-import Control.Monad (join)
+import Data.Bifunctor (bimap)
+import Data.Either (partitionEithers)
 import Control.Applicative
 import Control.Arrow
 import Control.Category
 import Control.Exception (evaluate)
+import Control.Monad (join)
 import Control.Monad.Writer (Writer, runWriter, tell, mapWriter)
+import Data.Align
 import Data.Bool
 import Data.Coerce
 import Data.Functor
@@ -25,6 +28,7 @@ import Data.Ratio
 import Data.Semigroup qualified as S
 import Data.Set (Set)
 import Data.Set qualified as S
+import Data.These
 import Prelude hiding (id, (.))
 import System.IO.Unsafe (unsafePerformIO)
 import System.Timeout (timeout)
@@ -256,6 +260,24 @@ played f = SF $ \(Signal clk s) -> do
         pure (t, m)
   Signal clk $ \t -> pure $ MkEvent $ lookup t $ take 1 $ dropWhile ((< t) . fst) sampled
 
+replace :: [a] -> SF m (Event b) (Event a, Event b)
+replace as = evSF $ \bs t ->
+  fromMaybe (NoEvent, NoEvent)
+    $ join
+    $ terminating
+    $ lookup t
+    $ flip mapMaybe (align as bs) $
+        \case
+          This _ -> Nothing
+          That (t', b) -> Just (t', (NoEvent, Event b))
+          These a (t', _) -> Just (t', (Event a, NoEvent))
+
+partitionEvents :: (a -> Either b c) -> SF m (Event a) (Event b, Event c)
+partitionEvents f = evSF $ \as t -> do
+  let (bs, cs) = partitionEithers $ fmap (\(t', a) -> bimap (t',) (t',) $ f a) as
+      go :: [(Time, x)] -> Event x
+      go = maybe NoEvent Event . join . terminating . lookup t
+  (go bs, go cs)
 
 data Observation a = Observation
   { o_time :: Time
