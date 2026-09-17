@@ -149,10 +149,10 @@ stretch r = SF $ \(Signal clk s) ->
 
 -- | Stretch time by the given amount, including the duration of already
 -- emitted notes.
-magnify :: Rational -> SF m a b -> SF m a b
-magnify r f = SF $ \sig@Signal{} -> do
-  let (Signal clk s) = runSF (stretch r <<< f) sig
-  Signal clk $ mapWriter (fmap $ S.map $ first (* r)) . s
+magnify :: Rational -> SF m a a
+magnify r = SF $ \(Signal clk s) ->
+  Signal (coerce (fmap @[] (* r)) clk)
+    $ mapWriter (fmap $ S.map $ first (* r)) . s . (/ r)
 
 now :: a -> SF m x (Event a)
 now = at 0
