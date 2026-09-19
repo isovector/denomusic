@@ -17,7 +17,6 @@ import Data.IntervalMap.FingerTree (Interval(..))
 import Data.Maybe
 import Data.MemoTrie
 import Data.Monoid
-import Data.Ord (Down(..))
 import Data.Ratio
 import Data.Set (Set)
 import Data.Set qualified as S
@@ -138,8 +137,7 @@ data Beat = Beat
 
 newtype Priority = P Int
   deriving stock (Show)
-  deriving newtype (Enum)
-  deriving (Eq, Ord) via Down Int
+  deriving newtype (Eq, Ord, Enum)
 
 data Meter a
   = Pulse a
