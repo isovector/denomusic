@@ -2,25 +2,21 @@
 
 module Test where
 
-import Data.Set qualified as S
-import Data.Set (Set)
-import Data.Functor
 import Data.Coerce
+import Data.Functor
+import Data.Set qualified as S
 import DenoMusic.Harmony
 import DenoMusic.Modes
 import DenoMusic.Notation
-import DenoMusic.Types
 import DenoMusic.Play qualified as Play
+import DenoMusic.Types
 import FRP
+import FRP.TimeSig
 
-type Music = SF (Reg PitchClass)
-
-regular :: Time -> SF m x (Event Time)
-regular t = every t t
 
 type Chord = (MetaScale 4, T [4, 7, 12])
 
-chords :: SF m x (Event Chord)
+chords :: SF x (Event Chord)
 chords =
   discrete
     [ (0,   (add11 triad,  [0,  0, 0]))
@@ -31,54 +27,60 @@ chords =
     , (3.5, (add11 triad,  [0, -1, 0]))
     , (4,   (coerce triad, [0, -2, 0]))
     , (4.5, (add7 triad,   [0, -2, 0]))
-    , (6,   (coerce triad,   [-1, 1, 0]))
+    , (6,   (coerce triad, [-1, 1, 0]))
     , (7,   (add7 triad,   [-1, 2, 0]))
     ]
 
 
-note :: SF (Reg PitchClass) (Event (Time, T [7, 12])) (Event ())
+note :: SF (Event (Time, T [7, 12])) (Event (Notes (Reg PitchClass)))
 note
   = arr
-      (fmap $ fmap $ \t ->
-        elim
+      (fmap $ \(t, x) -> Notes $ S.singleton (t, elim
           (MSCons harmonicMinor spelledSharp)
           (Reg 4 Fs)
-          $ t <> mixolydian harmonicMinor)
-  >>> play
+          $ x <> mixolydian harmonicMinor)
+      )
 
-chordTone :: SF (Reg PitchClass) (Chord, Event (Time, T [4, 7, 12])) (Event ())
+chordTone :: SF (Chord, Event (Time, T [4, 7, 12])) (Event (Notes (Reg PitchClass)))
 chordTone = proc ((ms, t), e) ->
   note -< e <&> fmap (\t0 -> kill ms (t <> t0))
 
+type C = T [4, 7, 12]
 
-motif1 :: Music (Chord, Event x) ()
-motif1 = proc (ms, e0) -> do
-  e1 <- offset (1/16) -< e0
-  e2 <- chordTone -< (ms, (1/16, [0, 0, 0]) <$ e1)
-  e3 <- chordTone -< (ms, (1/16, [-1, 0, 0]) <$ e2)
-  e4 <- chordTone -< (ms, (1/16, [-2, 0, 0]) <$ e3)
-  e5 <- rest -< (1/16) <$ e4
-  e7 <- chordTone -< (ms, (1/16, [-2, 0, 0]) <$ e5)
-  e8 <- chordTone -< (ms, (1/16, [-1, 0, 0]) <$ e7)
-  chordTone -< (ms, (1/16, [0, 0, 0]) <$ e8)
-  returnA -< ()
+motif1 :: [C]
+motif1 =
+  [ [0, 0, 0]
+  , [-1, 0, 0]
+  , [-2, 0, 0]
+  , [-2, 0, 0]
+  , [-1, 0, 0]
+  , [0, 0, 0]
+  ]
+
+bassline :: [C]
+bassline =
+  [ [-2, 0, -12]
+  , [-2, 4, -12]
+  ]
 
 
-song :: SF (Reg PitchClass) () ()
+song :: SF () (Event (Notes (Reg PitchClass)))
 song = proc _ -> do
   ch <- hold (add7 triad, mempty) <<< chords -< ()
+  b  <- beatsOf (time4'4 >>= subdivide 2) -< ()
+  sb <- filterEvents ((<= P 2) . stress) -< b
+  wb <- filterEvents ((>  P 2) . stress) -< b
 
-  b <- regular 1 -< ()
-  q <- regular (1/4) -< ()
-  sq <- offset (- 1/4) <<< onlyEvery 2 -< q
-  wq <- offset (1/4) <<< regular (1/2) -< q
+  (m1, _) <- replace (cycle motif1) -< wb
+  (b1, _) <- replace (cycle bassline) -< sb
 
-  motif1 -< (ch, sq)
+  m1' <- chordTone -< (ch, fmap (first duration) m1)
+  b1' <- chordTone -< (ch, fmap (first $ const (1/4)) b1)
 
-  x <- chordTone -< (ch, (1/4, [-2, 0, -12]) <$ sq)
-  chordTone -< (ch, (1/4, [-2, 4, -12]) <$ x)
-
-  returnA -< ()
+  returnA -< mconcat
+    [ m1'
+    , b1'
+    ]
 
 
 main :: IO ()

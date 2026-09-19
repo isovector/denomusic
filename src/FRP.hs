@@ -35,179 +35,144 @@ import System.Timeout (timeout)
 
 
 
-sf :: Clock -> (Time -> a -> b) -> SF m a b
+sf :: Clock -> (Time -> a -> b) -> SF a b
 sf clk' f = SF $ \(Signal clk s) ->
-  Signal (clk <> clk') $ \t -> do
-    a <- s t
-    pure $ f t a
+  Signal (clk <> clk') $ \t -> f t (s t)
 
 
-downbeat :: SF m (Event Beat) (Event ())
-downbeat = fmap void $ filterEvents (== 0)
+-- downbeat :: SF (Event Beat) (Event ())
+-- downbeat = fmap void $ filterEvents (== 0)
 
-upbeat :: SF m (Event Beat) (Event ())
-upbeat = proc ev -> do
-  y <- fhold (-1) -< ev
-  returnA -< void $ ev >> bool NoEvent (Event ()) (y == 0)
+-- upbeat :: SF (Event Beat) (Event ())
+-- upbeat = proc ev -> do
+--   y <- fhold (-1) -< ev
+--   returnA -< void $ ev >> bool NoEvent (Event ()) (y == 0)
 
 -- | The 'Time's must be monotonically increasing.
-discrete :: [(Time, a)] -> SF m x (Event a)
+discrete :: [(Time, a)] -> SF x (Event a)
 discrete ts =
   sf (Clock $ fmap fst ts) $ \t _ ->
     MkEvent $ lookup t ts
 
-every :: Time -> a -> SF m x (Event a)
+every :: Time -> a -> SF x (Event a)
 every dur a = sf (Clock $ iterate (+ dur) 0) $ \t _ ->
   case denominator (t / dur) == 1 of
     True -> Event a
     False -> NoEvent
 
-at :: Time -> a -> SF m x (Event a)
+at :: Time -> a -> SF x (Event a)
 at t' a = sf (Clock [t']) $ \t _ ->
   case t == t' of
     True -> Event a
     False -> NoEvent
 
--- | Stretch time by the given amount, without changing the duration of emitted
--- notes.
-stretch :: Rational -> SF m a a
+-- | Stretch time by the given amount.
+stretch :: Rational -> SF a a
 stretch r = SF $ \(Signal clk s) ->
   Signal (coerce (fmap @[] (* r)) clk) $ s . (/ r)
 
--- | Stretch time by the given amount, including the duration of already
--- emitted notes.
-magnify :: Rational -> SF m a a
-magnify r = SF $ \(Signal clk s) ->
-  Signal (coerce (fmap @[] (* r)) clk)
-    $ mapWriter (fmap $ S.map $ first (* r)) . s . (/ r)
-
-now :: a -> SF m x (Event a)
+now :: a -> SF x (Event a)
 now = at 0
 
-emit :: SF m (Event (Time, m)) ()
-emit = arr (fmap S.singleton) >>> emitMany
+-- -- | Observe whether a computation would diverge, and if so, return 'Nothing'
+-- -- instead. This can be used to guard otherwise-sketchy combinators which need
+-- -- to fold over infinite event streams.
+-- --
+-- -- This is impolemented by terminating after 10ms of trying.
+-- terminating :: a -> Maybe a
+-- terminating = unsafePerformIO . timeout 10_000 . evaluate
 
-emitMany :: SF m (Event (Set (Time, m))) ()
-emitMany = SF $ \(Signal clk s) ->
-  Signal clk $ \t -> do
-    s t >>= \case
-      Event x -> tell x
-      NoEvent -> pure ()
-
-play :: SF m (Event (Time, m)) (Event ())
-play = proc e -> do
-  emit -< e
-  arr void <<< move -< e
-
-rest :: SF m (Event Time) (Event ())
-rest = arr void <<< move <<< arr (fmap (, ()))
-
--- | Observe whether a computation would diverge, and if so, return 'Nothing'
--- instead. This can be used to guard otherwise-sketchy combinators which need
--- to fold over infinite event streams.
---
--- This is impolemented by terminating after 10ms of trying.
-terminating :: a -> Maybe a
-terminating = unsafePerformIO . timeout 10_000 . evaluate
-
--- TODO(sandy): What would fswitch do? Run the first SF until the event in the
--- second would trigger?
-switch :: SF m a (b, Event c) -> (c -> SF m a b) -> SF m a b
-switch (SF f) k = SF $ \sig0@Signal{} -> do
-  let sig1 = f sig0
-      sig1b = fmap fst sig1
-  case listToMaybe $ signalEvs $ fmap snd sig1 of
-    Nothing -> sig1b
-    Just (t0, c) -> do
-      let sig2 = runSF (offset t0 <<< k c <<< offset (- t0)) sig0
-      Signal (clock sig1 <> clock sig2) $ \t ->
-        flip sample t $ bool sig1b sig2 $ t >= t0
+-- -- TODO(sandy): What would fswitch do? Run the first SF until the event in the
+-- -- second would trigger?
+-- switch :: SF a (b, Event c) -> (c -> SF a b) -> SF a b
+-- switch (SF f) k = SF $ \sig0@Signal{} -> do
+--   let sig1 = f sig0
+--       sig1b = fmap fst sig1
+--   case listToMaybe $ signalEvs $ fmap snd sig1 of
+--     Nothing -> sig1b
+--     Just (t0, c) -> do
+--       let sig2 = runSF (offset t0 <<< k c <<< offset (- t0)) sig0
+--       Signal (clock sig1 <> clock sig2) $ \t ->
+--         flip sample t $ bool sig1b sig2 $ t >= t0
 
 
--- playBefore :: SF m (Event (Time, m)) (Event ())
--- playBefore = proc evs -> do
---   delayed <- move -< fmap (negate *** id) evs
---   emit -< delayed
---   returnA -< void delayed
-
-move :: SF m (Event (Time, a)) (Event a)
-move = SF $ \(Signal clk s) -> do
-  let sampled = do
-        t <- getClock clk
-        let (ev, _) = runWriter $ s t
-        Event (dt, a) <- pure ev
-        pure (t + dt, a)
-  Signal (clk <> Clock (fmap fst sampled)) $ \t -> do
-     _ <- s t
-     pure $ maybe NoEvent Event $ lookup t $ takeWhile ((<= t) . fst) sampled
+-- move :: SF (Event (Time, a)) (Event a)
+-- move = SF $ \(Signal clk s) -> do
+--   let sampled = do
+--         t <- getClock clk
+--         let (ev, _) = runWriter $ s t
+--         Event (dt, a) <- pure ev
+--         pure (t + dt, a)
+--   Signal (clk <> Clock (fmap fst sampled)) $ \t -> do
+--      _ <- s t
+--      pure $ maybe NoEvent Event $ lookup t $ takeWhile ((<= t) . fst) sampled
 
 
 -- | Fold a 'Signal' into its event stream.
-signalEvs :: Signal m (Event a) -> [(Time, a)]
-signalEvs (Signal (Clock ts) f) = mapMaybe sequenceA $ zip ts $ fmap (eventToMaybe . fst . runWriter . f) ts
+signalEvs :: Signal (Event a) -> [(Time, Maybe a)]
+signalEvs (Signal (Clock ts) f) = zip ts $ fmap (eventToMaybe . f) ts
 
 
 -- | Construct an 'SF' by folding over an input event stream.
-evSF :: ([(Time, a)] -> Time -> b) -> SF m (Event a) b
-evSF f = SF $ \sig@(Signal clk s) -> do
+evSF :: ([(Time, Maybe a)] -> Time -> b) -> SF (Event a) b
+evSF f = SF $ \sig@(Signal clk _) -> do
   let xs = signalEvs sig
-  Signal clk $ \t -> do
-    _ <- s t
-    pure $ f xs t
+  Signal clk $ \t -> f xs t
 
 
 -- | Hold the value of the most recent value of an 'Event'.
-hold :: a -> SF m (Event a) a
+hold :: a -> SF (Event a) a
 hold a0 = evSF $ \xs t ->
   fromMaybe a0
-    $ terminating
-    $ S.getLast
-    $ S.sconcat
-    $ coerce
-    $ a0 :| fmap snd (takeWhile ((<= t) . fst) xs)
+    $ getLast
+    $ foldMap (Last . snd)
+    $ bounded t xs
 
 -- | Hold the value of the next (not yet occurred!) value of an 'Event'.
-fhold :: a -> SF m (Event a) a
+fhold :: a -> SF (Event a) a
 fhold a0 = evSF $ \xs t ->
-  maybe a0 snd $ join $ terminating $ listToMaybe $ dropWhile ((<= t) . fst) xs
+  fromMaybe a0
+    $ getFirst
+    $ foldMap (First . snd)
+    $ dropWhile ((<= t) . fst) xs
 
-offset :: Time -> SF m a a
+offset :: Time -> SF a a
 offset dt = SF $ \(Signal clk s) ->
   Signal (coerce (fmap @[] (+ dt)) clk) $ s . subtract dt
 
-localTime :: SF m x Time
+localTime :: SF x Time
 localTime = sf mempty const
 
-played :: (m -> Bool) -> SF m x (Event (Time, m))
-played f = SF $ \(Signal clk s) -> do
-  let sampled = do
-        t <- getClock clk
-        let mm = listToMaybe $ filter (f . snd) $ S.toList $ snd $ runWriter $ s t
-        Just m <- pure mm
-        pure (t, m)
-  Signal clk $ \t -> pure $ MkEvent $ lookup t $ take 1 $ dropWhile ((< t) . fst) sampled
+bounded :: Time -> [(Time, Maybe a)] -> [(Time, Maybe a)]
+bounded t = takeWhile ((<= t) . fst)
 
-replace :: [a] -> SF m (Event b) (Event a, Event b)
-replace as = evSF $ \bs t ->
+values :: Time -> [(Time, Maybe a)] -> [(Time, a)]
+values t = mapMaybe sequenceA . bounded t
+
+replace :: [a] -> SF (Event b) (Event (b, a), Event b)
+replace as = evSF $ \xs t -> do
+  let bs = values t xs
   fromMaybe (NoEvent, NoEvent)
-    $ join
-    $ terminating
     $ lookup t
-    $ flip mapMaybe (align as bs) $
+    $ flip mapMaybe (align (take (length bs) as) bs) $
         \case
           This _ -> Nothing
           That (t', b) -> Just (t', (NoEvent, Event b))
-          These a (t', _) -> Just (t', (Event a, NoEvent))
+          These a (t', b) -> Just (t', (Event (b, a), NoEvent))
 
-partitionEvents :: (a -> Either b c) -> SF m (Event a) (Event b, Event c)
-partitionEvents f = evSF $ \as t -> do
-  let (bs, cs) = partitionEithers $ fmap (\(t', a) -> bimap (t',) (t',) $ f a) as
-      go :: [(Time, x)] -> Event x
-      go = maybe NoEvent Event . join . terminating . lookup t
-  (go bs, go cs)
+-- partitionEvents :: (a -> Either b c) -> SF (Event a) (Event b, Event c)
+-- partitionEvents f = evSF $ \as t -> do
+--   let (bs, cs) = partitionEithers $ fmap (\(t', a) -> bimap (t',) (t',) $ f a) as
+--       go :: [(Time, x)] -> Event x
+--       go = maybe NoEvent Event . join . terminating . lookup t
+--   (go bs, go cs)
 
-filterEvents :: (a -> Bool) -> SF m (Event a) (Event a)
-filterEvents f = evSF $ \as t -> MkEvent $ join $ terminating $ lookup t $ filter (f . snd) as
+filterEvents :: (a -> Bool) -> SF (Event a) (Event a)
+filterEvents f = evSF $ \as t ->
+  MkEvent
+    $ lookup t
+    $ filter (f . snd)
+    $ values t as
 
 
 gate :: Bool -> Event a -> Event a
@@ -215,37 +180,37 @@ gate False _ = NoEvent
 gate True e = e
 
 
-afterNext :: SF m (Event what, Event when) (Event (what, when))
-afterNext = proc (ewhat, ewhen) -> do
-  ewhen' <- offset 0.000000001 -< ewhen
-  mwhat <- hold Nothing -< asum [fmap Just ewhat, Nothing <$ ewhen']
-  returnA -< ewhen >>= \when -> MkEvent $ fmap (, when) mwhat
+-- afterNext :: SF (Event what, Event when) (Event (what, when))
+-- afterNext = proc (ewhat, ewhen) -> do
+--   ewhen' <- offset 0.000000001 -< ewhen
+--   mwhat <- hold Nothing -< asum [fmap Just ewhat, Nothing <$ ewhen']
+--   returnA -< ewhen >>= \when -> MkEvent $ fmap (, when) mwhat
 
-notYet :: SF m (Event a) (Event a)
+notYet :: SF (Event a) (Event a)
 notYet = sf (Clock [0]) $ \t a ->
   case t <= 0 of
     True -> NoEvent
     False -> a
 
-once :: SF m (Event a) (Event a)
+once :: SF (Event a) (Event a)
 once = takeEvents 1
 
-takeEvents :: Int -> SF m (Event a) (Event a)
-takeEvents n = evSF $ \evs t -> MkEvent $ join $ terminating $ lookup t $ take n evs
+takeEvents :: Int -> SF (Event a) (Event a)
+takeEvents n = evSF $ \evs t -> MkEvent $ lookup t $ take n $ values t evs
 
 
-dropEvents :: Int -> SF m (Event a) (Event a)
-dropEvents n = evSF $ \evs t -> MkEvent $ join $ terminating $ lookup t $ drop n evs
+-- dropEvents :: Int -> SF (Event a) (Event a)
+-- dropEvents n = evSF $ \evs t -> MkEvent $ join $ terminating $ lookup t $ drop n evs
 
-accum :: a -> SF m (Event (a -> a)) (Event a)
-accum a0 = evSF $ \evs t -> do
-  let xs = scanl (\(_, a) (t', f) -> (t', f a)) (0, a0) evs
-  let ev = lookup t $ takeWhile ((<= t) . fst) evs
-  (S.getLast $ S.sconcat $ coerce $ a0 :| fmap snd (takeWhile ((<= t) . fst) xs)) <$ MkEvent ev
+-- accum :: a -> SF (Event (a -> a)) (Event a)
+-- accum a0 = evSF $ \evs t -> do
+--   let xs = scanl (\(_, a) (t', f) -> (t', f a)) (0, a0) evs
+--   let ev = lookup t $ takeWhile ((<= t) . fst) evs
+--   (S.getLast $ S.sconcat $ coerce $ a0 :| fmap snd (takeWhile ((<= t) . fst) xs)) <$ MkEvent ev
 
 
-onlyEvery :: Int -> SF m (Event a) (Event a)
-onlyEvery n = proc ev -> do
-  x <- hold 0 <<< accum 0 -< (+1) <$ ev
-  returnA -< bool NoEvent ev $ mod x n == 0
+-- onlyEvery :: Int -> SF (Event a) (Event a)
+-- onlyEvery n = proc ev -> do
+--   x <- hold 0 <<< accum 0 -< (+1) <$ ev
+--   returnA -< bool NoEvent ev $ mod x n == 0
 

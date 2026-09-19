@@ -75,16 +75,15 @@ time9'8 = pure (9/8) >>= subdivide 3 >>= subdivide 3
 time12'8 :: Meter Time
 time12'8 = pure (12/8) >>= subdivide 2 >>= subdivide 2 >>= subdivide 3
 
-beatsOf :: Meter Time -> SF m x (Event Beat)
+beatsOf :: Meter Time -> SF x (Event Beat)
 beatsOf m = do
   let bs = toList $ weight m
       dur = sum $ fmap fst bs
       ts = init $ scanl (+) 0 $ fmap fst bs
       clk' = ts <> fmap (+ dur) clk'
       ws = zip ts $ fmap (uncurry Beat) bs
-  SF $ \(Signal clk s)->
-    Signal (clk <> Clock clk') $ \t -> do
-      _ <- s t
+  SF $ \_ ->
+    Signal (Clock clk') $ \t -> do
       let t' = t - fromIntegral (floor $ t / dur)
-      pure $ MkEvent $ lookup t' ws
+      MkEvent $ lookup t' ws
 

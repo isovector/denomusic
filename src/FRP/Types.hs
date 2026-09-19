@@ -9,7 +9,6 @@ module FRP.Types
 import Control.Applicative
 import Control.Arrow
 import Control.Category
-import Control.Monad.Writer (Writer, runWriter)
 import Data.Coerce
 import Data.Functor
 import Data.Functor.Foldable.TH
@@ -69,34 +68,34 @@ instance Semigroup a => Semigroup (Event a) where
 instance Semigroup a => Monoid (Event a) where
   mempty = NoEvent
 
-data Signal m a = Ord m => UnsafeSignal
+data Signal a = UnsafeSignal
   { clock  :: Clock
-  , sample :: Time -> Writer (Set (Time, m)) a
+  , sample :: Time -> a
   }
 
-pattern Signal :: () => Ord m => Clock -> (Time -> Writer (Set (Time, m)) a) -> Signal m a
+pattern Signal :: Clock -> (Time -> a) -> Signal a
 pattern Signal c f <- UnsafeSignal c f
   where
     Signal c f = UnsafeSignal c $ memo f
 {-# COMPLETE Signal #-}
 
-instance Functor (Signal m) where
-  fmap f (Signal c g) = Signal c $ fmap (fmap f) g
+instance Functor Signal where
+  fmap f (Signal c g) = Signal c $ fmap f g
 
-instance Ord m => Applicative (Signal m) where
-  pure = Signal mempty . pure . pure
+instance Applicative Signal where
+  pure = Signal mempty . pure
   liftA2 f (Signal c1 a) (Signal c2 b) =
-    Signal (c1 <> c2) $ liftA2 (liftA2 f) a b
+    Signal (c1 <> c2) $ liftA2 f a b
 
-newtype SF m a b = SF { runSF :: Signal m a -> Signal m b }
-  deriving (Functor, Applicative) via WrappedArrow (SF m) a
-  deriving (Semigroup, Monoid) via Ap (SF m a) b
+newtype SF a b = SF { runSF :: Signal a -> Signal b }
+  deriving (Functor, Applicative) via WrappedArrow SF a
+  deriving (Semigroup, Monoid) via Ap (SF a) b
 
-instance Category (SF m) where
+instance Category (SF) where
   id = SF id
   SF g . SF f = SF (g . f)
 
-instance Arrow (SF m) where
+instance Arrow SF where
   arr = SF . fmap
   SF f *** SF g = SF $ \sg@(Signal{}) ->
     liftA2 (,) (f $ fmap fst sg) (g $ fmap snd sg)
@@ -106,25 +105,31 @@ data Observation a = Observation
   { o_time :: Time
   , o_output :: a
   }
-  deriving stock (Eq, Ord, Show, Functor)
+  deriving stock (Eq, Ord, Show, Functor, Foldable, Traversable)
 
-observe :: Ord m => SF m () a -> [Observation (Set (Time, m), a)]
+observe :: SF () a -> [Observation a]
 observe (SF f) = do
   let Signal (Clock clk) s = f $ pure ()
   t <- clk
-  let (a, stuff) = runWriter (s t)
-  pure $ Observation t (stuff, a)
+  pure $ Observation t $ s t
 
 
-export :: Ord m => (Time, Time) -> SF m () x -> [(Interval Time, Set m)]
+newtype Notes a = Notes
+  { getNotes :: Set (Time, a)
+  }
+  deriving newtype (Eq, Ord, Show, Semigroup, Monoid)
+
+
+export :: (Ord a) => (Time, Time) -> SF () (Event (Notes a)) -> [(Interval Time, Set a)]
 export (lo, hi) s
   = mapMaybe (\o -> do
-      let t = o_time o
-      (d, _) <- S.lookupMin $ o_output o
-      pure (Interval t (t + d), S.map snd $ o_output o)
+      let t = o_time o - lo
+      (d, _) <- S.lookupMin $ getNotes $ o_output o
+      pure (Interval t (t + d), S.map snd $ getNotes $ o_output o)
         )
-  $ fmap (fmap fst)
-  $ takeWhile ((<= hi) . o_time)
+  $ mapMaybe sequenceA
+  $ fmap (fmap eventToMaybe)
+  $ takeWhile ((< hi) . o_time)
   $ dropWhile ((< lo) . o_time)
   $ observe s
 
