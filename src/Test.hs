@@ -13,39 +13,22 @@ import DenoMusic.Types
 import FRP
 import FRP.TimeSig
 
-
-type Chord = (MetaScale 4, T [4, 7, 12])
+--------------------------------------------------------------------------------
 
 chords :: SF x (Event Chord)
 chords =
   discrete
-    [ (0,   (add11 triad,  [0,  0, 0]))
+    [ (0,   (add11  triad, [0,  0, 0]))
     , (1,   (coerce triad, [0, -1, 0]))
-    , (1.5, (add11 triad,  [0, -1, 0]))
-    , (2,   (add11 triad,  [0 , 0, 0]))
+    , (1.5, (add11  triad, [0, -1, 0]))
+    , (2,   (add11  triad, [0 , 0, 0]))
     , (3,   (coerce triad, [0, -1, 0]))
-    , (3.5, (add11 triad,  [0, -1, 0]))
+    , (3.5, (add11  triad, [0, -1, 0]))
     , (4,   (coerce triad, [0, -2, 0]))
-    , (4.5, (add7 triad,   [0, -2, 0]))
+    , (4.5, (add7   triad, [0, -2, 0]))
     , (6,   (coerce triad, [-1, 1, 0]))
-    , (7,   (add7 triad,   [-1, 2, 0]))
+    , (7,   (add7   triad, [-1, 2, 0]))
     ]
-
-
-note :: SF (Event (Time, T [7, 12])) (Event (Notes (Reg PitchClass)))
-note
-  = arr
-      (fmap $ \(t, x) -> Notes $ S.singleton (t, elim
-          (MSCons harmonicMinor spelledSharp)
-          (Reg 4 Fs)
-          $ x <> mixolydian harmonicMinor)
-      )
-
-chordTone :: SF (Chord, Event (Time, T [4, 7, 12])) (Event (Notes (Reg PitchClass)))
-chordTone = proc ((ms, t), e) ->
-  note -< e <&> fmap (\t0 -> kill ms (t <> t0))
-
-type C = T [4, 7, 12]
 
 motif1 :: [C]
 motif1 =
@@ -62,6 +45,7 @@ bassline =
   [ [-2, 0, -12]
   , [-2, 4, -12]
   ]
+
 
 
 song :: SF () (Event (Notes (Reg PitchClass)))
@@ -81,6 +65,27 @@ song = proc _ -> do
     [ m1'
     , b1'
     ]
+
+--------------------------------------------------------------------------------
+
+
+type C = T [4, 7, 12]
+type Chord = (MetaScale 4, C)
+
+
+note :: SF (Event (Time, T [7, 12])) (Event (Notes (Reg PitchClass)))
+note
+  = arr
+      (fmap $ \(t, x) -> Notes $ S.singleton (t, elim
+          (MSCons harmonicMinor spelledSharp)
+          (Reg 4 Fs)
+          $ x <> mixolydian harmonicMinor)
+      )
+
+chordTone :: SF (Chord, Event (Time, C)) (Event (Notes (Reg PitchClass)))
+chordTone = proc ((ms, t), e) ->
+  note -< e <&> fmap (\t0 -> kill ms (t <> t0))
+
 
 
 main :: IO ()
