@@ -79,7 +79,7 @@ beatsOf :: Meter Time -> SF m x (Event Beat)
 beatsOf m = do
   let bs = toList $ weight m
       dur = sum $ fmap fst bs
-      ts = scanl (+) 0 $ fmap fst bs
+      ts = init $ scanl (+) 0 $ fmap fst bs
       clk' = ts <> fmap (+ dur) clk'
       ws = zip ts $ fmap (uncurry Beat) bs
   SF $ \(Signal clk s)->
