@@ -14,6 +14,8 @@ module FRP.TimeSig
   , time12'8
   ) where
 
+import Control.Monad (join)
+import Data.Maybe (mapMaybe)
 import Data.Coerce
 import Data.Foldable
 import Data.Functor.Foldable
@@ -86,4 +88,18 @@ beatsOf m = do
     Signal (Clock clk') $ \t -> do
       let t' = t - fromIntegral (floor $ t / dur)
       MkEvent $ lookup t' ws
+
+
+-- beating :: (Time -> Meter Time) -> SF (Event Beat) (Event Beat)
+-- beating f = SF $ \s -> do
+--   let evs = signalEvs s
+--       evs' = join $ mapMaybe (\(t, mb) -> fmap (\b -> flatten (stress b) t . f $ duration b) mb) evs
+--   Signal (Clock $ fmap fst evs') $ \t ->
+--     MkEvent $ lookup t evs'
+
+-- flatten :: Priority -> Time -> Meter Time -> [(Time, Beat)]
+-- flatten p t m = do
+--   let bs = toList m
+--       ts = init $ scanl (+) t bs
+--   zip ts $ fmap (flip Beat (succ p)) bs
 

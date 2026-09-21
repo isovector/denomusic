@@ -1,11 +1,14 @@
-{-# LANGUAGE TemplateHaskell #-}
-{-# OPTIONS_GHC -Wno-orphans #-}
+{-# LANGUAGE TemplateHaskell   #-}
+{-# OPTIONS_GHC -Wno-orphans   #-}
+{-# OPTIONS_GHC -Wno-x-partial #-}
 
 module FRP.Types
   ( module FRP.Types
   , Interval(..)
   ) where
 
+import Data.Function (on)
+import Data.List (groupBy, sortBy)
 import Control.Applicative
 import Control.Arrow
 import Control.Category
@@ -122,10 +125,11 @@ newtype Notes a = Notes
 
 export :: (Ord a) => (Time, Time) -> SF () (Event (Notes a)) -> [(Interval Time, Set a)]
 export (lo, hi) s
-  = mapMaybe (\o -> do
+  = concatMap (\o -> do
       let t = o_time o - lo
-      (d, _) <- S.lookupMin $ getNotes $ o_output o
-      pure (Interval t (t + d), S.map snd $ getNotes $ o_output o)
+      xs <- groupBy (on (==) fst) $ sortBy (on compare fst)$ S.toList $ getNotes $ o_output o
+      let d = fst $ head xs
+      pure (Interval t (t + d), S.fromList $ fmap snd xs)
         )
   $ mapMaybe sequenceA
   $ fmap (fmap eventToMaybe)
@@ -162,3 +166,7 @@ instance Monad Meter where
 
 makeBaseFunctor ''Meter
 
+
+-- | Fold a 'Signal' into its event stream.
+signalEvs :: Signal (Event a) -> [(Time, Maybe a)]
+signalEvs (Signal (Clock ts) f) = zip ts $ fmap (eventToMaybe . f) ts

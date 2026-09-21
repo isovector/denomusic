@@ -11,6 +11,7 @@ import DenoMusic.Notation
 import DenoMusic.Play qualified as Play
 import DenoMusic.Types
 import FRP
+import FRP.Extra
 import FRP.TimeSig
 
 --------------------------------------------------------------------------------
@@ -38,6 +39,8 @@ motif1 =
   , [-2, 0, 0]
   , [-1, 0, 0]
   , [0, 0, 0]
+  , [0, 1, 0]
+  , [0, 2, 0]
   ]
 
 bassline :: [C]
@@ -52,14 +55,13 @@ song :: SF () (Event (Notes (Reg PitchClass)))
 song = proc _ -> do
   ch <- hold (add7 triad, mempty) <<< chords -< ()
   b  <- beatsOf (time4'4 >>= subdivide 2) -< ()
-  sb <- filterEvents ((<= P 2) . stress) -< b
-  wb <- filterEvents ((>  P 2) . stress) -< b
+  (sb, wb) <- partitionBeats (P 2) -< b
 
   (m1, _) <- replace (cycle motif1) -< wb
   (b1, _) <- replace (cycle bassline) -< sb
 
   m1' <- chordTone -< (ch, fmap (first duration) m1)
-  b1' <- chordTone -< (ch, fmap (first $ const (1/4)) b1)
+  b1' <- chordTone -< (ch, fmap (first $ const (1/8)) b1)
 
   returnA -< mconcat
     [ m1'

@@ -108,11 +108,6 @@ now = at 0
 --      pure $ maybe NoEvent Event $ lookup t $ takeWhile ((<= t) . fst) sampled
 
 
--- | Fold a 'Signal' into its event stream.
-signalEvs :: Signal (Event a) -> [(Time, Maybe a)]
-signalEvs (Signal (Clock ts) f) = zip ts $ fmap (eventToMaybe . f) ts
-
-
 -- | Construct an 'SF' by folding over an input event stream.
 evSF :: ([(Time, Maybe a)] -> Time -> b) -> SF (Event a) b
 evSF f = SF $ \sig@(Signal clk _) -> do
@@ -202,15 +197,19 @@ takeEvents n = evSF $ \evs t -> MkEvent $ lookup t $ take n $ values t evs
 -- dropEvents :: Int -> SF (Event a) (Event a)
 -- dropEvents n = evSF $ \evs t -> MkEvent $ join $ terminating $ lookup t $ drop n evs
 
--- accum :: a -> SF (Event (a -> a)) (Event a)
--- accum a0 = evSF $ \evs t -> do
---   let xs = scanl (\(_, a) (t', f) -> (t', f a)) (0, a0) evs
---   let ev = lookup t $ takeWhile ((<= t) . fst) evs
---   (S.getLast $ S.sconcat $ coerce $ a0 :| fmap snd (takeWhile ((<= t) . fst) xs)) <$ MkEvent ev
+accum :: a -> SF (Event (a -> a)) (Event a)
+accum a0 = evSF $ \evs t -> do
+  let xs = scanl (\(_, a) (t', mf) ->
+            case mf of
+              Just f -> (t', f a)
+              Nothing -> (t', a)) (0, a0) evs
+  MkEvent $ lookup t xs
 
+foldE :: Monoid a => SF (Event a) (Event a)
+foldE = accum mempty . arr (fmap (<>))
 
--- onlyEvery :: Int -> SF (Event a) (Event a)
--- onlyEvery n = proc ev -> do
---   x <- hold 0 <<< accum 0 -< (+1) <$ ev
---   returnA -< bool NoEvent ev $ mod x n == 0
+onlyEvery :: Int -> SF (Event a) (Event a)
+onlyEvery n = proc ev -> do
+  x <- hold 0 <<< accum 0 -< (+1) <$ ev
+  returnA -< bool NoEvent ev $ mod x n == 0
 
