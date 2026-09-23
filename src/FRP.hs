@@ -160,12 +160,15 @@ replace as = evSF $ \xs t -> do
           That (t', b) -> Just (t', (NoEvent, Event b))
           These a (t', b) -> Just (t', (Event (b, a), NoEvent))
 
--- partitionEvents :: (a -> Either b c) -> SF (Event a) (Event b, Event c)
--- partitionEvents f = evSF $ \as t -> do
---   let (bs, cs) = partitionEithers $ fmap (\(t', a) -> bimap (t',) (t',) $ f a) as
---       go :: [(Time, x)] -> Event x
---       go = maybe NoEvent Event . join . terminating . lookup t
---   (go bs, go cs)
+distrib :: (a, Either b c) -> Either (a, b) (a, c)
+distrib (a, Left b) = Left (a, b)
+distrib (a, Right c) = Right (a, c)
+
+partitionEvents :: (a -> Either b c) -> SF (Event a) (Event b, Event c)
+partitionEvents f = evSF $ \xs t -> do
+  let (bs, cs) = partitionEithers $ fmap (distrib . fmap f) $ values t xs
+  (MkEvent $ lookup t bs, MkEvent $ lookup t cs)
+
 
 filterEvents :: (a -> Bool) -> SF (Event a) (Event a)
 filterEvents f = evSF $ \as t ->
