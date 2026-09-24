@@ -170,3 +170,4 @@ makeBaseFunctor ''Meter
 -- | Fold a 'Signal' into its event stream.
 signalEvs :: Signal (Event a) -> [(Time, Maybe a)]
 signalEvs (Signal (Clock ts) f) = zip ts $ fmap (eventToMaybe . f) ts
+

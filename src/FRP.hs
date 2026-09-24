@@ -13,18 +13,14 @@ import Control.Applicative
 import Control.Arrow
 import Control.Category
 import Control.Exception (evaluate)
-import Control.Monad (join, (<=<))
+import Control.Monad (join)
 import Data.Align
 import Data.Bool
 import Data.Coerce
-import Data.Either (partitionEithers)
 import Data.Functor
-import Data.List.NonEmpty (NonEmpty(..))
 import Data.Maybe
 import Data.Monoid
 import Data.Ratio
-import Data.Set (Set)
-import Data.Set qualified as S
 import Data.These
 import FRP.Types
 import Prelude hiding (id, (.))
@@ -80,30 +76,20 @@ now = at 0
 terminating :: a -> Maybe a
 terminating = unsafePerformIO . timeout 10_000 . evaluate
 
--- TODO(sandy): What would fswitch do? Run the first SF until the event in the
--- second would trigger?
-switch :: SF a (b, Event c) -> (c -> SF a b) -> SF a b
-switch (SF f) k = SF $ \sig0@Signal{} -> do
+switchBy :: (b -> b -> b) -> SF a (b, Event c) -> (c -> SF a b) -> SF a b
+switchBy merge (SF f) k = SF $ \sig0 -> do
   let sig1 = f sig0
       sig1b = fmap fst sig1
-  case (terminating <=< listToMaybe) $ mapMaybe sequenceA $ signalEvs $ fmap snd sig1 of
+  case join $ terminating $ listToMaybe $ mapMaybe sequenceA $ signalEvs $ fmap snd sig1 of
     Nothing -> sig1b
     Just (t0, c) -> do
       let sig2 = runSF (offset t0 <<< k c <<< offset (- t0)) sig0
       Signal (clock sig1 <> clock sig2) $ \t ->
-        flip sample t $ bool sig1b sig2 $ t >= t0
+        case compare t0 t of
+          GT -> sample sig1b t
+          LT -> sample sig2 t
+          EQ -> merge (sample sig1b t) (sample sig2 t)
 
-
--- move :: SF (Event (Time, a)) (Event a)
--- move = SF $ \(Signal clk s) -> do
---   let sampled = do
---         t <- getClock clk
---         let (ev, _) = runWriter $ s t
---         Event (dt, a) <- pure ev
---         pure (t + dt, a)
---   Signal (clk <> Clock (fmap fst sampled)) $ \t -> do
---      _ <- s t
---      pure $ maybe NoEvent Event $ lookup t $ takeWhile ((<= t) . fst) sampled
 
 
 -- | Construct an 'SF' by folding over an input event stream.
@@ -217,8 +203,11 @@ newtype Seq i o a = Seq
   }
   deriving newtype (Functor, Applicative, Monad)
 
-toSeq :: SF i (o, Event a) -> Seq i o a
-toSeq = Seq . cont . switch
+toSeqBy :: (o -> o -> o) -> SF i (o, Event a) -> Seq i o a
+toSeqBy f = Seq . cont . switchBy f
+
+toSeq :: SF i (Event o, Event a) -> Seq i (Event o) a
+toSeq = toSeqBy (flip (<|>))
 
 switchSeq :: Seq i o a -> (a -> SF i o) -> SF i o
 switchSeq = runCont . unSeq
@@ -227,13 +216,13 @@ getSeq :: Seq i (Event o) a -> SF i (Event o)
 getSeq = flip switchSeq $ const $ arr $ const NoEvent
 
 rest :: Time -> Seq i (Event a) ()
-rest t = toSeq $ proc _ -> do
-  e <- at t () -< ()
+rest t = toSeq $ proc i -> do
+  e <- at t () -< i
   returnA -< (NoEvent, e)
 
 pulse :: a -> Seq i (Event a) ()
-pulse a = toSeq $ proc _ -> do
-  n <- now a -< ()
+pulse a = toSeq $ proc i -> do
+  n <- now a -< i
   returnA -< (n, void n)
 
 hit :: Time -> a -> Seq i (Event a) ()
