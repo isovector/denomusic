@@ -115,16 +115,23 @@ hold a0 = SF $ \case
   Discrete k _ as -> Stepwise (const id) a0 $ mapMaybe (\(t, a) -> sequenceA (t, eventToMaybe $ k t a)) as
   Const NoEvent -> Const a0
   Const (Event a) -> Const a
-  Continuous _ -> error "hold on continuous"
-  Stepwise k a as -> undefined -- Stepwise _ _ $ mapMaybe (traverse $ eventToMaybe . k) as
+  Continuous{} -> error "hold on continuous"
+  Stepwise{} -> error "hold on stepwise"
 
 -- -- | Hold the value of the next (not yet occurred!) value of an 'Event'.
--- fhold :: a -> SF (Event a) a
--- fhold = hold a0
---   fromMaybe a0
---     $ getFirst
---     $ foldMap (First . snd)
---     $ dropWhile ((<= t) . fst) xs
+fhold :: a -> SF (Event a) a
+fhold a0 = SF $ \case
+  Discrete k _ as -> do
+    let as' = mapMaybe (\(t, a) -> sequenceA (t, eventToMaybe $ k t a)) as
+    case terminating $! as' of
+      Just ((_, a) : as') ->
+        Stepwise (const id) a $ zip (fmap fst as) (fmap snd as' <> [a0])
+      _ -> Const a0
+    -- Stepwise (const id) a0 $
+  Const NoEvent -> Const a0
+  Const (Event a) -> Const a
+  Continuous{} -> error "fhold on continuous"
+  Stepwise{} -> error "fhold on stepwise"
 
 offset :: Time -> SF a a
 offset dt = invmapTime (+ dt) (subtract dt)
