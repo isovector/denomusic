@@ -8,38 +8,21 @@ module FRP
   , Interval(..)
   ) where
 
-import Control.Applicative hiding (Const)
+import Data.Void
+import Control.Applicative
 import Control.Arrow
 import Control.Category
 import Control.Exception (evaluate)
-import Control.Monad (join)
-import Data.Align
 import Data.Bool
-import Data.Coerce
 import Data.Functor
 import Data.Maybe
 import Data.Monoid
 import Data.Ratio
-import Data.These
 import FRP.Types
 import Prelude hiding (id, (.))
 import System.IO.Unsafe (unsafePerformIO)
 import System.Timeout (timeout)
 
-
-
--- sf :: Clock -> (Time -> a -> b) -> SF a b
--- sf clk' f = SF $ \(Signal clk s) ->
---   Signal (clk <> clk') $ \t -> f t (s t)
-
-
--- -- downbeat :: SF (Event Beat) (Event ())
--- -- downbeat = fmap void $ filterE (== 0)
-
--- -- upbeat :: SF (Event Beat) (Event ())
--- -- upbeat = proc ev -> do
--- --   y <- fhold (-1) -< ev
--- --   returnA -< void $ ev >> bool NoEvent (Event ()) (y == 0)
 
 -- | The 'Time's must be monotonically increasing.
 discrete :: [(Time, a)] -> SF x (Event a)
@@ -51,16 +34,13 @@ every dur a = discrete $ zip (iterate (+ dur) 0) $ repeat a
 at :: Time -> a -> SF x (Event a)
 at t' a = discrete $ pure (t', a)
 
--- TODO(sandy): do we need to update the continuations?
 invmapTime
     :: (Time -> Time)  -- ^ co
     -> (Time -> Time)  -- ^ contra
     -> SF a a
 invmapTime co contra = SF $ \case
-  Const a -> Const a
-  Continuous f -> Continuous $ f . contra
-  Discrete k a0 as -> Discrete k a0 $ fmap (first co) as
-  Stepwise k a as ->  Stepwise k a $ fmap (first co) as
+  Discrete k a0 as -> Discrete (k . contra) (a0 . contra) $ fmap (first co) as
+  Stepwise k a as ->  Stepwise (k . contra) a             $ fmap (first co) as
 
 -- | Stretch time by the given amount.
 stretch :: Rational -> SF a a
@@ -106,9 +86,6 @@ terminating a = unsafePerformIO $! timeout 10_000 $! evaluate a
 hold :: a -> SF (Event a) a
 hold a0 = SF $ \case
   Discrete k _ as -> Stepwise (const id) a0 $ mapMaybe (\(t, a) -> sequenceA (t, eventToMaybe $ k t a)) as
-  Const NoEvent -> Const a0
-  Const (Event a) -> Const a
-  Continuous{} -> error "hold on continuous"
   Stepwise{} -> error "hold on stepwise"
 
 -- -- | Hold the value of the next (not yet occurred!) value of an 'Event'.
@@ -117,20 +94,16 @@ fhold a0 = SF $ \case
   Discrete k _ as -> do
     let as' = mapMaybe (\(t, a) -> sequenceA (t, eventToMaybe $ k t a)) as
     case terminating $! as' of
-      Just ((_, a) : as') ->
-        Stepwise (const id) a $ zip (fmap fst as) (fmap snd as' <> [a0])
-      _ -> Const a0
-    -- Stepwise (const id) a0 $
-  Const NoEvent -> Const a0
-  Const (Event a) -> Const a
-  Continuous{} -> error "fhold on continuous"
+      Just ((_, a) : as'') ->
+        Stepwise (const id) a $ zip (fmap fst as) (fmap snd as'' <> [a0])
+      _ -> pure a0
   Stepwise{} -> error "fhold on stepwise"
 
 offset :: Time -> SF a a
 offset dt = invmapTime (+ dt) (subtract dt)
 
 localTime :: SF x Time
-localTime = SF $ const $ Continuous id
+localTime = SF $ const $ Discrete @Void (const absurd) id mempty
 
 replace :: [a] -> SF (Event b) (Event (b, a))
 replace as = ev2ev $ \bs -> zipWith (\(t, b) a -> (t, (b, a))) bs as

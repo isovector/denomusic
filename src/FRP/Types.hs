@@ -23,8 +23,6 @@ import Data.Ratio
 import Data.Set (Set)
 import Data.Set qualified as S
 import Data.These
-import Debug.RecoverRTTI
-import Debug.Trace
 import Prelude hiding (id, (.))
 
 
@@ -122,27 +120,14 @@ instance Monad Meter where
 
 
 data Signal a where
-  Const      :: a -> Signal a
-  Continuous :: (Time -> a) -> Signal a
-  Discrete   :: (Time -> b -> a) -> (Time -> a) -> [(Time, b)] -> Signal a
-  Stepwise   :: (Time -> b -> a) -> b -> [(Time, b)] -> Signal a
+  Discrete :: (Time -> b -> a) -> (Time -> a) -> [(Time, b)] -> Signal a
+  Stepwise :: (Time -> b -> a) -> b -> [(Time, b)] -> Signal a
 
 deriving stock instance Functor Signal
 
 
 instance Applicative Signal where
-  pure = Const
-  liftA2 f (Const a) b = fmap (f a) b
-  liftA2 f a (Const b) = fmap (flip f b) a
-  liftA2 f (Continuous a) (Continuous b) = Continuous $ liftA2 f a b
-  liftA2 f (Discrete k a0 as) (Continuous b) = Discrete (const id) (liftA2 f a0 b) $ do
-    (t, a) <- as
-    pure (t, f (k t a) $ b t)
-  liftA2 f a@Continuous{} b@Discrete{} = liftA2 (flip f) b a
-
-  liftA2 f (Stepwise k a as) (Continuous b) = Stepwise (\t x -> f (k t x) (b t)) a as
-  liftA2 f a@Continuous{} b@Stepwise{} = liftA2 (flip f) b a
-
+  pure a = Stepwise (const id) a mempty
   liftA2 f (Discrete ka a0 as) (Stepwise kb b0 bs) =
     Discrete (const id) (\t -> f (a0 t) $ kb t b0) $
       flip evalState b0 $
@@ -191,9 +176,7 @@ ev2ev :: ([(Time, a)] -> [(Time, b)]) -> SF (Event a) (Event b)
 ev2ev f = SF $
   \case
     Discrete f' _ as -> Discrete (const Event) (const NoEvent) $ f $ mapMaybe (\(t, a) -> sequenceA (t, eventToMaybe $ f' t a)) as
-    Const{} -> Const NoEvent
-    Continuous{} -> Const NoEvent
-    Stepwise{} -> Const NoEvent
+    Stepwise{} -> pure NoEvent
 
 
 deriving via Ap (State s) a instance Semigroup a => Semigroup (State s a)
