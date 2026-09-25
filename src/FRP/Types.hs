@@ -63,12 +63,24 @@ data Observation a = Observation
   deriving stock (Eq, Ord, Show, Functor, Foldable, Traversable)
 
 observe :: SF () a -> [Observation a]
-observe (SF f) = do
-  case f $ pure () of
-    Discrete k _ as -> do
-      (t, a) <- as
-      pure $ Observation t $ k t a
-    _ -> mempty
+observe (SF f) = observeSig $ f $ pure ()
+    -- Hybrid s ss -> mconcat
+    --   [ observe $ SF $ const s
+    --   , undefined
+    --   ]
+    -- _ -> mempty
+
+observeSig :: Signal a -> [Observation a]
+observeSig (Discrete k _ as) = do
+  (t, a) <- as
+  pure $ Observation t $ k t a
+observeSig (Hybrid s []) = observeSig s
+observeSig (Hybrid s ((t1, s1) : ss)) =
+  mconcat
+    [ takeWhile ((< t1) . o_time) $ observeSig s
+    , dropWhile ((< t1) . o_time) $ observeSig $ Hybrid s1 ss
+    ]
+observeSig Stepwise{} = mempty
 
 
 newtype Notes a = Notes
@@ -122,6 +134,7 @@ instance Monad Meter where
 data Signal a where
   Discrete :: (Time -> b -> a) -> (Time -> a) -> [(Time, b)] -> Signal a
   Stepwise :: (Time -> b -> a) -> b -> [(Time, b)] -> Signal a
+  Hybrid :: Signal a -> [(Time, Signal a)] -> Signal a
 
 deriving stock instance Functor Signal
 
@@ -156,6 +169,34 @@ instance Applicative Signal where
     Stepwise (\t (a, b) -> f (ka t a) (kb t b)) (a0, b0) $
       joining a0 b0 as bs
 
+  liftA2 f (Hybrid a as) (Hybrid b bs) =
+    mkHybrid (liftA2 f a b) $ fmap (fmap $ uncurry $ liftA2 f) $ joining a b as bs
+
+  liftA2 f (Hybrid a as) b = mkHybrid (liftA2 f a b) $ fmap (fmap $ flip (liftA2 f) b) as
+  liftA2 f a (Hybrid b bs) = mkHybrid (liftA2 f a b) $ fmap (fmap $ liftA2 f a) bs
+
+-- | Invariant: none of the given signals are themselves 'Hybrid'
+mkHybrid :: Signal a -> [(Time, Signal a)] -> Signal a
+mkHybrid = Hybrid
+
+-- mergeS :: Signal a -> Time -> Signal a -> Signal a
+-- mergeS Hybrid{} _ _ = error "mergeS: hybrid"
+-- mergeS _ _ Hybrid{} = error "mergeS: hybrid"
+-- mergeS (Discrete ka a0 as) t0 (Discrete kb b0 bs) =
+--   Discrete
+--       (\t -> either (ka t) (kb t))
+--       (\t -> bool (a0 t) (b0 t) $ t0 <= t) $ mconcat
+--     [ fmap (fmap Left) $ takeWhile ((< t0) . fst) as
+--     , fmap (fmap Right) $ dropWhile ((< t0) . fst) bs
+--     ]
+-- mergeS (Stepwise ka a0 as) t0 (Stepwise kb b0 bs) =
+--   Stepwise
+--       (\t -> either (ka t) (kb t))
+--       (Left a0) $ mconcat
+--     [ fmap (fmap Left) $ takeWhile ((< t0) . fst) as
+--     , fmap (fmap Right) $ dropWhile ((< t0) . fst) bs
+--     ]
+
 
 newtype SF a b = SF
   { runSF :: Signal a -> Signal b
@@ -177,6 +218,7 @@ ev2ev f = SF $
   \case
     Discrete f' _ as -> Discrete (const Event) (const NoEvent) $ f $ mapMaybe (\(t, a) -> sequenceA (t, eventToMaybe $ f' t a)) as
     Stepwise{} -> pure NoEvent
+    Hybrid a as -> Hybrid (runSF (ev2ev f) a) $ fmap (fmap $ runSF $ ev2ev f) as
 
 
 deriving via Ap (State s) a instance Semigroup a => Semigroup (State s a)

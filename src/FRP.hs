@@ -8,13 +8,14 @@ module FRP
   , Interval(..)
   ) where
 
+import Control.Monad
+import Control.Monad.Cont
 import Data.Void
 import Control.Applicative
 import Control.Arrow
 import Control.Category
 import Control.Exception (evaluate)
 import Data.Bool
-import Data.Functor
 import Data.Maybe
 import Data.Monoid
 import Data.Ratio
@@ -39,8 +40,15 @@ invmapTime
     -> (Time -> Time)  -- ^ contra
     -> SF a a
 invmapTime co contra = SF $ \case
-  Discrete k a0 as -> Discrete (k . contra) (a0 . contra) $ fmap (first co) as
-  Stepwise k a as ->  Stepwise (k . contra) a             $ fmap (first co) as
+  Discrete k a0 as ->
+    Discrete (k . contra) (a0 . contra) $
+      fmap (first co) as
+  Stepwise k a as ->
+    Stepwise (k . contra) a $
+      fmap (first co) as
+  Hybrid a as ->
+    Hybrid (runSF (invmapTime co contra) a) $
+      fmap (co *** runSF (invmapTime co contra)) as
 
 -- | Stretch time by the given amount.
 stretch :: Rational -> SF a a
@@ -57,29 +65,17 @@ now = at 0
 terminating :: a -> Maybe a
 terminating a = unsafePerformIO $! timeout 10_000 $! evaluate a
 
--- -- TODO(sandy): What would fswitch do? Run the first SF until the event in the
--- -- second would trigger?
--- switchBy :: (b -> b -> b) -> SF a (b, Event c) -> (c -> SF a b) -> SF a b
--- switchBy comb (SF f) k = SF $ \sig -> do
---   let sig' = f sig
---   case sig' of
---     Const (_, Event c) -> runSF (k c) sig
---     Discrete ka as ->
---       case terminating $! listToMaybe as of
---         Just (Just (t0, a)) -> do
---           let sig2 = runSF (offset t0 <<< k c <<< offset (- t0)) sig0
-
---           -- Signal (clock sig1 <> clock sig2) $ \t ->
---           --   flip sample t $ bool sig1b sig2 $ t >= t0
---         _ -> fmap fst sig'
---     _ -> fmap fst sig'
-
---   -- SF $ \sig0@Signal{} -> do
---   -- let sig1 = f sig0
---   --     sig1b = fmap fst sig1
---   -- case listToMaybe $ signalEvs $ fmap snd sig1 of
---   --   Nothing -> sig1b
---   --   Just (t0, c) -> do
+switch :: SF a (b, Event c) -> (c -> SF a b) -> SF a b
+switch (SF f) k = SF $ \sig -> do
+  let sig' = f sig
+      sig'1 = fmap fst sig'
+  case sig' of
+    Discrete ka _ as -> do
+      case terminating $! listToMaybe $! mapMaybe (\(t, a) -> sequenceA (t, eventToMaybe $ snd $ ka t a)) as of
+        Just (Just (t0, a)) ->
+          mkHybrid sig'1 $ pure (t0, runSF (offset t0 <<< k a <<< offset (- t0)) sig)
+        _ -> sig'1
+    Stepwise{} -> sig'1
 
 
 -- | Hold the value of the most recent value of an 'Event'.
@@ -87,6 +83,7 @@ hold :: a -> SF (Event a) a
 hold a0 = SF $ \case
   Discrete k _ as -> Stepwise (const id) a0 $ mapMaybe (\(t, a) -> sequenceA (t, eventToMaybe $ k t a)) as
   Stepwise{} -> error "hold on stepwise"
+  Hybrid{} -> error "hold on hybrid"
 
 -- -- | Hold the value of the next (not yet occurred!) value of an 'Event'.
 fhold :: a -> SF (Event a) a
@@ -98,6 +95,7 @@ fhold a0 = SF $ \case
         Stepwise (const id) a $ zip (fmap fst as) (fmap snd as'' <> [a0])
       _ -> pure a0
   Stepwise{} -> error "fhold on stepwise"
+  Hybrid{} -> error "hold on hybrid"
 
 offset :: Time -> SF a a
 offset dt = invmapTime (+ dt) (subtract dt)
@@ -154,4 +152,40 @@ subdiv n = ev2ev $ \bs -> do
   (t, Beat d s) <- bs
   let d' = d / fromIntegral n
   take n $ zip (iterate (+ d') t) $ Beat d' s : repeat (Beat d' $ succ s)
+
+newtype Seq i o a = Seq
+  { unSeq :: Cont (SF i o) a
+  }
+  deriving newtype (Functor, Applicative, Monad)
+
+
+toSeq :: SF i (Event o, Event a) -> Seq i (Event o) a
+toSeq = Seq . cont . switch
+
+switchSeq :: Seq i o a -> (a -> SF i o) -> SF i o
+switchSeq = runCont . unSeq
+
+getSeq :: Seq i (Event o) a -> SF i (Event o)
+getSeq = flip switchSeq $ const $ arr $ const NoEvent
+
+rest :: Time -> Seq i (Event a) ()
+rest t = toSeq $ proc i -> do
+  e <- at t () -< i
+  returnA -< (NoEvent, e)
+
+hit :: Time -> a -> Seq i (Event a) ()
+hit t a = toSeq $ proc i -> do
+  n <- now a -< i
+  e <- at t () -< i
+  returnA -< (n, e)
+
+beat :: Time -> Priority -> Seq i (Event Beat) ()
+beat t p = hit t $ Beat t p
+
+
+-- test :: SF i (Event Char)
+-- test =
+--   switch
+--     (liftA2 (,) (getSeq $ replicateM 4 $ hit 0.25 'a') (at 0.55 ()))
+--     $ const $ getSeq $ replicateM 4 $ hit 0.05 'b'
 
