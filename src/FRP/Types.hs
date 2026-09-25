@@ -9,7 +9,7 @@ module FRP.Types
 
 import Control.Monad.State (evalState, get, put, State)
 import Data.These
-import Control.Applicative (WrappedArrow(..), Alternative(..), asum)
+import Control.Applicative (WrappedArrow(..), Alternative(..))
 import Control.Arrow
 import Control.Category
 import Data.Coerce
@@ -166,75 +166,59 @@ instance Monad Meter where
 makeBaseFunctor ''Meter
 
 
-data Sig2 a
-  = Const a
-  | Continuous (Time -> a)
-  | Discrete (Time -> a) [(Time, a)]
-  | Stepwise (Time -> a) [(Time, a)]
-  deriving stock (Functor)
+data Sig2 a where
+  Const      :: a -> Sig2 a
+  Continuous :: (Time -> a) -> Sig2 a
+  Discrete   :: (b -> a) -> [(Time, b)] -> Sig2 a
+  Stepwise   :: (Time -> b -> a) -> b -> [(Time, b)] -> Sig2 a
+
+discrt :: [(Time, a)] -> SF2 x (Event a)
+discrt = SF2 . const . Discrete Event
+
+deriving stock instance Functor Sig2
+
 
 instance Applicative Sig2 where
   pure = Const
   liftA2 f (Const a) b = fmap (f a) b
   liftA2 f a (Const b) = fmap (flip f b) a
   liftA2 f (Continuous a) (Continuous b) = Continuous $ liftA2 f a b
-  liftA2 f (Discrete a0 as) (Continuous b) = Discrete (liftA2 f a0 b) $ do
+  liftA2 f (Discrete k as) (Continuous b) = Discrete id $ do
     (t, a) <- as
-    pure (t, f a $ b t)
-  liftA2 f (Continuous a) (Discrete b0 bs) = Discrete (liftA2 f a b0) $ do
-    (t, b) <- bs
-    pure (t, f (a t) b)
-  liftA2 f (Stepwise a0 as) (Continuous b) = Stepwise (liftA2 f a0 b)  $ do
-    (t, a) <- as
-    pure (t, f a $ b t)
-  liftA2 f (Continuous a) (Stepwise b0 bs) = Stepwise (liftA2 f a b0) $ do
-    (t, b) <- bs
-    pure (t, f (a t) b)
-  liftA2 f (Discrete a0 as) (Discrete b0 bs) =
-    Discrete (liftA2 f a0 b0) $ do
-      (t, These a b) <- align as bs
-      pure (t, f a b)
-  liftA2 f (Stepwise a0 as) (Stepwise b0 bs) =
-    Stepwise (liftA2 f a0 b0) $ do
-      let at0 = listToMaybe $ fmap fst as
-          bt0 = listToMaybe $ fmap fst bs
-          t0 = fromMaybe 0 $ asum
-                [ liftA2 min at0 bt0
-                , at0
-                , bt0
-                ]
-          xs = scanl
-                 (\(_, (a, b)) (t, th) ->
-                   case th of
-                     This a' -> (t, (a', b))
-                     That b' -> (t, (a, b'))
-                     These a' b' -> (t, (a', b'))
-                 ) (t0, (a0 t0, b0 t0)) $ align as bs
-      fmap (fmap $ uncurry f) xs
-  liftA2 f (Discrete a0 as) (Stepwise b0 bs) =
-    Discrete (liftA2 f a0 b0) $ do
-      let mat0 = listToMaybe $ fmap fst as
-          mbt0 = listToMaybe $ fmap fst bs
-          b0' =
-            case (mat0, mbt0) of
-              (Nothing, _) -> error "impossible: unused"
-              (Just at0, Nothing) -> b0 at0
-              (Just at0, Just bt0) ->
-                case compare at0 bt0 of
-                  LT -> b0 at0
-                  GT -> snd $ head bs
-                  EQ -> snd $ head bs
-      flip evalState b0' $ flip foldMap (align as bs) $ uncurry $ \t -> \case
-        This a -> do
-          b <- get
-          pure $ pure (t, f a b)
-        That b -> do
-          put b
-          pure mempty
-        These a b -> do
-          put b
-          pure $ pure (t, f a b)
+    pure (t, f (k a) $ b t)
+  liftA2 f a@Continuous{} b@Discrete{} = liftA2 (flip f) b a
+
+  liftA2 f (Stepwise k a as) (Continuous b) = Stepwise (\t x -> f (k t x) (b t)) a as
+  liftA2 f a@Continuous{} b@Stepwise{} = liftA2 (flip f) b a
+
+  liftA2 f (Discrete ka as) (Stepwise kb b0 bs) =
+    Discrete id $
+      flip evalState b0 $
+        flip foldMap (align as bs) $ uncurry $ \t -> \case
+          This a -> do
+            b <- get
+            pure $ pure (t, f (ka a) (kb t b))
+          That b -> do
+            put b
+            pure mempty
+          These a b -> do
+            put b
+            pure $ pure (t, f (ka a) (kb t b))
   liftA2 f x@Stepwise{} y@Discrete{} = liftA2 (flip f) y x
+
+  liftA2 f (Discrete ka as) (Discrete kb bs) =
+    Discrete id $ do
+      (t, These a b) <- align as bs
+      pure (t, f (ka a) (kb b))
+  liftA2 f (Stepwise ka a0 as) (Stepwise kb b0 bs) =
+    Stepwise (\t (a, b) -> f (ka t a) (kb t b)) (a0, b0) $ do
+      drop 1 $ scanl
+        (\(_, (a, b)) (t, th) ->
+          case th of
+            This a' -> (t, (a', b))
+            That b' -> (t, (a, b'))
+            These a' b' -> (t, (a', b'))
+        ) (undefined, (a0, b0)) $ align as bs
 
 
 newtype SF2 a b = SF2 { runSF2 :: Sig2 a -> Sig2 b }
@@ -250,10 +234,13 @@ instance Arrow SF2 where
   SF2 f *** SF2 g = SF2 $ \sg ->
     liftA2 (,) (f $ fmap fst sg) (g $ fmap snd sg)
 
-ev2ev :: ([a] -> [b]) -> SF2 (Event a) (Event b)
+ev2ev :: ([(Time, a)] -> [(Time, b)]) -> SF2 (Event a) (Event b)
 ev2ev f = SF2 $
   \case
-    Discrete _ as -> Discrete (const NoEvent) $ fmap (id *** _) as
+    Discrete f' as -> Discrete Event $ f $ mapMaybe (traverse eventToMaybe . fmap f') as
+    Const{} -> error "impossible"
+    Continuous{} -> error "impossible"
+    Stepwise{} -> error "impossible"
 
 
 deriving via Ap (State s) a instance Semigroup a => Semigroup (State s a)
