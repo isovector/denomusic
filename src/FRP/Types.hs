@@ -7,12 +7,13 @@ module FRP.Types
   , Interval(..)
   ) where
 
+import Debug.RecoverRTTI
+import Debug.Trace
 import Control.Monad.State (evalState, get, put, State)
 import Data.These
 import Control.Applicative (WrappedArrow(..), Alternative(..))
 import Control.Arrow
 import Control.Category
-import Data.Coerce
 import Data.Functor
 import Data.Functor.Foldable.TH
 import Data.IntervalMap.FingerTree (Interval(..))
@@ -32,23 +33,6 @@ instance HasTrie Rational where
   trie f = RationalTrie $ trie $ trie . \n d -> f (n % d)
   untrie (RationalTrie x) = (\f r -> f (numerator r) (denominator r)) (untrie . untrie x)
   enumerate = error "no enumerate for Rational"
-
-
--- | A (possibly infinite) list of interesting times
-newtype Clock = Clock { getClock :: [Time] }
-
--- | Merge two clocks, keeping them in ascending time order
-instance Semigroup Clock where
-  Clock [] <> Clock ys = Clock ys
-  Clock (x : xs) <> Clock [] = Clock (x : xs)
-  xx@(Clock (x : xs)) <> yy@(Clock (y : ys)) =
-    case compare x y of
-      LT -> Clock $ x : coerce (Clock xs <> yy)
-      GT -> Clock $ y : coerce (xx <> Clock ys)
-      EQ -> Clock $ x : coerce (Clock xs <> Clock ys)
-
-instance Monoid Clock where
-  mempty = Clock []
 
 newtype Event a = MkEvent
   { eventToMaybe :: Maybe a
@@ -71,38 +55,6 @@ instance Semigroup a => Semigroup (Event a) where
 instance Semigroup a => Monoid (Event a) where
   mempty = NoEvent
 
-data Signal a = UnsafeSignal
-  { clock  :: Clock
-  , sample :: Time -> a
-  }
-
-pattern Signal :: Clock -> (Time -> a) -> Signal a
-pattern Signal c f <- UnsafeSignal c f
-  where
-    Signal c f = UnsafeSignal c $ memo f
-{-# COMPLETE Signal #-}
-
-instance Functor Signal where
-  fmap f (Signal c g) = Signal c $ fmap f g
-
-instance Applicative Signal where
-  pure = Signal mempty . pure
-  liftA2 f (Signal c1 a) (Signal c2 b) =
-    Signal (c1 <> c2) $ liftA2 f a b
-
-newtype SF a b = SF { runSF :: Signal a -> Signal b }
-  deriving (Functor, Applicative) via WrappedArrow SF a
-  deriving (Semigroup, Monoid) via Ap (SF a) b
-
-instance Category (SF) where
-  id = SF id
-  SF g . SF f = SF (g . f)
-
-instance Arrow SF where
-  arr = SF . fmap
-  SF f *** SF g = SF $ \sg@(Signal{}) ->
-    liftA2 (,) (f $ fmap fst sg) (g $ fmap snd sg)
-
 
 data Observation a = Observation
   { o_time :: Time
@@ -112,9 +64,11 @@ data Observation a = Observation
 
 observe :: SF () a -> [Observation a]
 observe (SF f) = do
-  let Signal (Clock clk) s = f $ pure ()
-  t <- clk
-  pure $ Observation t $ s t
+  case f $ pure () of
+    Discrete k as -> do
+      (t, a) <- as
+      pure $ Observation t $ k a
+    _ -> mempty
 
 
 newtype Notes a = Notes
@@ -124,17 +78,17 @@ newtype Notes a = Notes
 
 
 export :: (Ord a) => (Time, Time) -> SF () (Event (Notes a)) -> [(Interval Time, Set a)]
-export (lo, hi) s
+export (lo, hi)
   = mapMaybe (\o -> do
       let t = o_time o - lo
       (d, _) <- S.lookupMin $ getNotes $ o_output o
       pure (Interval t (t + d), S.map snd $ getNotes $ o_output o)
         )
-  $ mapMaybe sequenceA
-  $ fmap (fmap eventToMaybe)
-  $ takeWhile ((< hi) . o_time)
-  $ dropWhile ((< lo) . o_time)
-  $ observe s
+  . mapMaybe sequenceA
+  . fmap (fmap eventToMaybe)
+  . takeWhile ((< hi) . o_time)
+  . dropWhile ((< lo) . o_time)
+  . observe
 
 
 data Beat = Beat
@@ -163,22 +117,17 @@ instance Monad Meter where
   Pulse a >>= f = f a
   Group as >>= f = Group $ fmap (>>= f) as
 
-makeBaseFunctor ''Meter
+
+data Signal a where
+  Const      :: a -> Signal a
+  Continuous :: (Time -> a) -> Signal a
+  Discrete   :: (b -> a) -> [(Time, b)] -> Signal a
+  Stepwise   :: (Time -> b -> a) -> b -> [(Time, b)] -> Signal a
+
+deriving stock instance Functor Signal
 
 
-data Sig2 a where
-  Const      :: a -> Sig2 a
-  Continuous :: (Time -> a) -> Sig2 a
-  Discrete   :: (b -> a) -> [(Time, b)] -> Sig2 a
-  Stepwise   :: (Time -> b -> a) -> b -> [(Time, b)] -> Sig2 a
-
-discrt :: [(Time, a)] -> SF2 x (Event a)
-discrt = SF2 . const . Discrete Event
-
-deriving stock instance Functor Sig2
-
-
-instance Applicative Sig2 where
+instance Applicative Signal where
   pure = Const
   liftA2 f (Const a) b = fmap (f a) b
   liftA2 f a (Const b) = fmap (flip f b) a
@@ -194,7 +143,7 @@ instance Applicative Sig2 where
   liftA2 f (Discrete ka as) (Stepwise kb b0 bs) =
     Discrete id $
       flip evalState b0 $
-        flip foldMap (align as bs) $ uncurry $ \t -> \case
+        flip foldMap (merge as bs) $ uncurry $ \t -> \case
           This a -> do
             b <- get
             pure $ pure (t, f (ka a) (kb t b))
@@ -207,9 +156,14 @@ instance Applicative Sig2 where
   liftA2 f x@Stepwise{} y@Discrete{} = liftA2 (flip f) y x
 
   liftA2 f (Discrete ka as) (Discrete kb bs) =
-    Discrete id $ do
-      (t, These a b) <- align as bs
-      pure (t, f (ka a) (kb b))
+    Discrete
+      ( \case
+          This a -> f (ka a) undefined
+          That b -> f undefined (kb b)
+          These a b -> f (ka a) (kb b)
+      ) $ merge as bs
+      -- (t, These a b) <-
+      -- pure (t, f (ka a) (kb b))
   liftA2 f (Stepwise ka a0 as) (Stepwise kb b0 bs) =
     Stepwise (\t (a, b) -> f (ka t a) (kb t b)) (a0, b0) $ do
       drop 1 $ scanl
@@ -218,26 +172,28 @@ instance Applicative Sig2 where
             This a' -> (t, (a', b))
             That b' -> (t, (a, b'))
             These a' b' -> (t, (a', b'))
-        ) (undefined, (a0, b0)) $ align as bs
+        ) (undefined, (a0, b0)) $ merge as bs
 
 
-newtype SF2 a b = SF2 { runSF2 :: Sig2 a -> Sig2 b }
-  deriving (Functor, Applicative) via WrappedArrow SF2 a
-  deriving (Semigroup, Monoid) via Ap (SF2 a) b
+newtype SF a b = SF
+  { runSF :: Signal a -> Signal b
+  }
+  deriving (Functor, Applicative) via WrappedArrow SF a
+  deriving (Semigroup, Monoid) via Ap (SF a) b
 
-instance Category (SF2) where
-  id = SF2 id
-  SF2 g . SF2 f = SF2 (g . f)
+instance Category SF where
+  id = SF id
+  SF g . SF f = SF (g . f)
 
-instance Arrow SF2 where
-  arr = SF2 . fmap
-  SF2 f *** SF2 g = SF2 $ \sg ->
+instance Arrow SF where
+  arr = SF . fmap
+  SF f *** SF g = SF $ \sg ->
     liftA2 (,) (f $ fmap fst sg) (g $ fmap snd sg)
 
-ev2ev :: ([(Time, a)] -> [(Time, b)]) -> SF2 (Event a) (Event b)
-ev2ev f = SF2 $
+ev2ev :: ([(Time, a)] -> [(Time, b)]) -> SF (Event a) (Event b)
+ev2ev f = SF $
   \case
-    Discrete f' as -> Discrete Event $ f $ mapMaybe (traverse eventToMaybe . fmap f') as
+    Discrete f' as -> Discrete Event $ f $ traceWith anythingToString $ mapMaybe (traverse eventToMaybe . fmap f') as
     Const{} -> error "impossible"
     Continuous{} -> error "impossible"
     Stepwise{} -> error "impossible"
@@ -247,19 +203,15 @@ deriving via Ap (State s) a instance Semigroup a => Semigroup (State s a)
 deriving via Ap (State s) a instance Monoid a => Monoid (State s a)
 
 
-align :: Ord a => [(a, b)] -> [(a, c)] -> [(a, These b c)]
-align [] ys       = fmap (fmap That) ys
-align (x : xs) [] = fmap (fmap This) (x : xs)
-align xx@((tx, x) : xs) yy@((ty, y) : ys) =
+merge :: Ord a => [(a, b)] -> [(a, c)] -> [(a, These b c)]
+merge [] ys       = fmap (fmap That) ys
+merge (x : xs) [] = fmap (fmap This) (x : xs)
+merge xx@((tx, x) : xs) yy@((ty, y) : ys) =
   case compare tx ty of
-    LT -> (tx, This x) : align xs yy
-    GT -> (ty, That y) : align xx ys
-    EQ -> (tx, These x y) : align xs ys
+    LT -> (tx, This x) : merge xs yy
+    GT -> (ty, That y) : merge xx ys
+    EQ -> (tx, These x y) : merge xs ys
 
 
--- sample2 :: Sig2 a -> Time -> a
--- sample2 (Const k) = pure k
--- sample2 (Continuous f) = f
--- sample2 (Discrete as) = fromMaybe undefined . flip lookup as
--- sample2 (Stepwise as) = \t -> maybe undefined snd $ listToMaybe $ reverse $ takeWhile ((<= t) . fst) as
+makeBaseFunctor ''Meter
 

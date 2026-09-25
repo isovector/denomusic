@@ -46,6 +46,13 @@ packages:
       size: 212
   original:
     hackage: prettify-1.0@sha256:7105b5783f3d899311f6e392cfe8a230eabc7db98b77e7557b7d1335d91a5bc0,775
+- completed:
+    hackage: recover-rtti-0.6.1@sha256:df7be36c97336f943f8e54d00f621be73db42d941a5b2a396ac495d943311e77,4459
+    pantry-tree:
+      sha256: 8e073e9ec7d2901bf0356bd5c3cc0b3f3c2af41e815c8f5efb0344d710929696
+      size: 2780
+  original:
+    hackage: recover-rtti-0.6.1
 snapshots:
 - completed:
     sha256: 1191e70bcd219fb660a5bf5d43a0fb235ef12a891994fd02d02643f61d6755ed

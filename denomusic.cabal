@@ -71,6 +71,7 @@ library
     , pretty
     , process
     , profunctors
+    , recover-rtti
     , recursion-schemes
     , semialign
     , step-function

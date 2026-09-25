@@ -44,6 +44,7 @@ dependencies:
 - MemoTrie
 - semialign
 - these
+- recover-rtti
 
 default-extensions:
 - Arrows
