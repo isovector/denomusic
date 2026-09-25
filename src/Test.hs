@@ -11,7 +11,6 @@ import DenoMusic.Notation
 import DenoMusic.Play qualified as Play
 import DenoMusic.Types
 import FRP
-import FRP.Extra
 import FRP.TimeSig
 
 --------------------------------------------------------------------------------
@@ -39,8 +38,6 @@ motif1 =
   , [-2, 0, 0]
   , [-1, 0, 0]
   , [0, 0, 0]
-  , [0, 1, 0]
-  , [0, 2, 0]
   ]
 
 bassline :: [C]
@@ -55,13 +52,14 @@ song :: SF () (Event (Notes (Reg PitchClass)))
 song = proc _ -> do
   ch <- hold (add7 triad, mempty) <<< chords -< ()
   b  <- beatsOf (time4'4 >>= subdivide 2) -< ()
-  (sb, wb) <- partitionBeats (P 2) -< b
+  sb <- filterE ((<= P 2) . stress) -< b
+  wb <- filterE ((>  P 2) . stress) -< b
 
-  (m1, _) <- replace (cycle motif1) -< wb
-  (b1, _) <- replace (cycle bassline) -< sb
+  (m1) <- replace (cycle motif1) -< wb
+  (b1) <- replace (cycle bassline) -< sb
 
   m1' <- chordTone -< (ch, fmap (first duration) m1)
-  b1' <- chordTone -< (ch, fmap (first $ const (1/8)) b1)
+  b1' <- chordTone -< (ch, fmap (first $ const (1/4)) b1)
 
   returnA -< mconcat
     [ m1'
@@ -93,6 +91,6 @@ chordTone = proc ((ms, t), e) ->
 main :: IO ()
 main = do
   let ns = export (0, 8) song
-  toPdf $ makeScore $ pure $ fmap (\(i, s) -> (i, Right (mempty, S.findMin s))) ns
+  -- toPdf $ makeScore $ pure $ fmap (\(i, s) -> (i, Right (mempty, S.findMin s))) ns
   Play.play ns
 

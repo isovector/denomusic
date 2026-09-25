@@ -82,12 +82,9 @@ beatsOf m = do
   let bs = toList $ weight m
       dur = sum $ fmap fst bs
       ts = init $ scanl (+) 0 $ fmap fst bs
-      clk' = ts <> fmap (+ dur) clk'
-      ws = zip ts $ fmap (uncurry Beat) bs
-  SF $ \_ ->
-    Signal (Clock clk') $ \t -> do
-      let t' = t - fromIntegral (floor $ t / dur)
-      MkEvent $ lookup t' ws
+      clk = ts <> fmap (+ dur) clk
+      ws = zip clk $ cycle $ fmap (uncurry Beat) bs
+  SF . const $ Discrete (const Event) (const NoEvent) ws
 
 
 -- beating :: (Time -> Meter Time) -> SF (Event Beat) (Event Beat)

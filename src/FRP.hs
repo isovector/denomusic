@@ -8,8 +8,7 @@ module FRP
   , Interval(..)
   ) where
 
-import Control.Monad.Cont
-import Control.Applicative
+import Control.Applicative hiding (Const)
 import Control.Arrow
 import Control.Category
 import Control.Exception (evaluate)
@@ -29,41 +28,43 @@ import System.Timeout (timeout)
 
 
 
-sf :: Clock -> (Time -> a -> b) -> SF a b
-sf clk' f = SF $ \(Signal clk s) ->
-  Signal (clk <> clk') $ \t -> f t (s t)
+-- sf :: Clock -> (Time -> a -> b) -> SF a b
+-- sf clk' f = SF $ \(Signal clk s) ->
+--   Signal (clk <> clk') $ \t -> f t (s t)
 
 
--- downbeat :: SF (Event Beat) (Event ())
--- downbeat = fmap void $ filterEvents (== 0)
+-- -- downbeat :: SF (Event Beat) (Event ())
+-- -- downbeat = fmap void $ filterE (== 0)
 
--- upbeat :: SF (Event Beat) (Event ())
--- upbeat = proc ev -> do
---   y <- fhold (-1) -< ev
---   returnA -< void $ ev >> bool NoEvent (Event ()) (y == 0)
+-- -- upbeat :: SF (Event Beat) (Event ())
+-- -- upbeat = proc ev -> do
+-- --   y <- fhold (-1) -< ev
+-- --   returnA -< void $ ev >> bool NoEvent (Event ()) (y == 0)
 
 -- | The 'Time's must be monotonically increasing.
 discrete :: [(Time, a)] -> SF x (Event a)
-discrete ts =
-  sf (Clock $ fmap fst ts) $ \t _ ->
-    MkEvent $ lookup t ts
+discrete = SF . const . Discrete (const Event) (const NoEvent)
 
 every :: Time -> a -> SF x (Event a)
-every dur a = sf (Clock $ iterate (+ dur) 0) $ \t _ ->
-  case denominator (t / dur) == 1 of
-    True -> Event a
-    False -> NoEvent
+every dur a = discrete $ zip (iterate (+ dur) 0) $ repeat a
 
 at :: Time -> a -> SF x (Event a)
-at t' a = sf (Clock [t']) $ \t _ ->
-  case t == t' of
-    True -> Event a
-    False -> NoEvent
+at t' a = discrete $ pure (t', a)
+
+-- TODO(sandy): do we need to update the continuations?
+invmapTime
+    :: (Time -> Time)  -- ^ co
+    -> (Time -> Time)  -- ^ contra
+    -> SF a a
+invmapTime co contra = SF $ \case
+  Const a -> Const a
+  Continuous f -> Continuous $ f . contra
+  Discrete k a0 as -> Discrete k a0 $ fmap (first co) as
+  Stepwise k a as ->  Stepwise k a $ fmap (first co) as
 
 -- | Stretch time by the given amount.
 stretch :: Rational -> SF a a
-stretch r = SF $ \(Signal clk s) ->
-  Signal (coerce (fmap @[] (* r)) clk) $ s . (/ r)
+stretch r = invmapTime (* r) (/ r)
 
 now :: a -> SF x (Event a)
 now = at 0
@@ -72,164 +73,112 @@ now = at 0
 -- instead. This can be used to guard otherwise-sketchy combinators which need
 -- to fold over infinite event streams.
 --
--- This is implemented by terminating after 10ms of trying.
+-- This is impolemented by terminating after 10ms of trying.
 terminating :: a -> Maybe a
-terminating = unsafePerformIO . timeout 10_000 . evaluate
+terminating a = unsafePerformIO $! timeout 10_000 $! evaluate a
 
-switchBy :: (b -> b -> b) -> SF a (b, Event c) -> (c -> SF a b) -> SF a b
-switchBy merge (SF f) k = SF $ \sig0 -> do
-  let sig1 = f sig0
-      sig1b = fmap fst sig1
-  case join $ terminating $ listToMaybe $ mapMaybe sequenceA $ signalEvs $ fmap snd sig1 of
-    Nothing -> sig1b
-    Just (t0, c) -> do
-      let sig2 = runSF (offset t0 <<< k c <<< offset (- t0)) sig0
-      Signal (clock sig1 <> clock sig2) $ \t ->
-        case compare t0 t of
-          GT -> sample sig1b t
-          LT -> sample sig2 t
-          EQ -> merge (sample sig1b t) (sample sig2 t)
+-- -- TODO(sandy): What would fswitch do? Run the first SF until the event in the
+-- -- second would trigger?
+-- switchBy :: (b -> b -> b) -> SF a (b, Event c) -> (c -> SF a b) -> SF a b
+-- switchBy comb (SF f) k = SF $ \sig -> do
+--   let sig' = f sig
+--   case sig' of
+--     Const (_, Event c) -> runSF (k c) sig
+--     Discrete ka as ->
+--       case terminating $! listToMaybe as of
+--         Just (Just (t0, a)) -> do
+--           let sig2 = runSF (offset t0 <<< k c <<< offset (- t0)) sig0
 
+--           -- Signal (clock sig1 <> clock sig2) $ \t ->
+--           --   flip sample t $ bool sig1b sig2 $ t >= t0
+--         _ -> fmap fst sig'
+--     _ -> fmap fst sig'
 
-
--- | Construct an 'SF' by folding over an input event stream.
-evSF :: ([(Time, Maybe a)] -> Time -> b) -> SF (Event a) b
-evSF f = SF $ \sig@(Signal clk _) -> do
-  let xs = signalEvs sig
-  Signal clk $ \t -> f xs t
+--   -- SF $ \sig0@Signal{} -> do
+--   -- let sig1 = f sig0
+--   --     sig1b = fmap fst sig1
+--   -- case listToMaybe $ signalEvs $ fmap snd sig1 of
+--   --   Nothing -> sig1b
+--   --   Just (t0, c) -> do
 
 
 -- | Hold the value of the most recent value of an 'Event'.
 hold :: a -> SF (Event a) a
-hold a0 = evSF $ \xs t ->
-  fromMaybe a0
-    $ getLast
-    $ foldMap (Last . snd)
-    $ bounded t xs
+hold a0 = SF $ \case
+  Discrete k _ as -> Stepwise (const id) a0 $ mapMaybe (\(t, a) -> sequenceA (t, eventToMaybe $ k t a)) as
+  Const NoEvent -> Const a0
+  Const (Event a) -> Const a
+  Continuous{} -> error "hold on continuous"
+  Stepwise{} -> error "hold on stepwise"
 
--- | Hold the value of the next (not yet occurred!) value of an 'Event'.
+-- -- | Hold the value of the next (not yet occurred!) value of an 'Event'.
 fhold :: a -> SF (Event a) a
-fhold a0 = evSF $ \xs t ->
-  fromMaybe a0
-    $ getFirst
-    $ foldMap (First . snd)
-    $ dropWhile ((<= t) . fst) xs
+fhold a0 = SF $ \case
+  Discrete k _ as -> do
+    let as' = mapMaybe (\(t, a) -> sequenceA (t, eventToMaybe $ k t a)) as
+    case terminating $! as' of
+      Just ((_, a) : as') ->
+        Stepwise (const id) a $ zip (fmap fst as) (fmap snd as' <> [a0])
+      _ -> Const a0
+    -- Stepwise (const id) a0 $
+  Const NoEvent -> Const a0
+  Const (Event a) -> Const a
+  Continuous{} -> error "fhold on continuous"
+  Stepwise{} -> error "fhold on stepwise"
 
 offset :: Time -> SF a a
-offset dt = SF $ \(Signal clk s) ->
-  Signal (coerce (fmap @[] (+ dt)) clk) $ s . subtract dt
+offset dt = invmapTime (+ dt) (subtract dt)
 
 localTime :: SF x Time
-localTime = sf mempty const
+localTime = SF $ const $ Continuous id
 
-bounded :: Time -> [(Time, Maybe a)] -> [(Time, Maybe a)]
-bounded t = takeWhile ((<= t) . fst)
+replace :: [a] -> SF (Event b) (Event (b, a))
+replace as = ev2ev $ \bs -> zipWith (\(t, b) a -> (t, (b, a))) bs as
 
-values :: Time -> [(Time, Maybe a)] -> [(Time, a)]
-values t = mapMaybe sequenceA . bounded t
+partitionEvents :: (a -> Either b c) -> SF (Event a) (Event b, Event c)
+partitionEvents f = proc eva -> do
+  evb <- mapMaybeE (either Just (const Nothing) . f) -< eva
+  evc <- mapMaybeE (either (const Nothing) Just . f) -< eva
+  returnA -< (evb, evc)
 
-replace :: [a] -> SF (Event b) (Event (b, a), Event b)
-replace as = evSF $ \xs t -> do
-  let bs = values t xs
-  fromMaybe (NoEvent, NoEvent)
-    $ lookup t
-    $ flip mapMaybe (align (take (length bs) as) bs) $
-        \case
-          This _ -> Nothing
-          That (t', b) -> Just (t', (NoEvent, Event b))
-          These a (t', b) -> Just (t', (Event (b, a), NoEvent))
 
--- partitionEvents :: (a -> Either b c) -> SF (Event a) (Event b, Event c)
--- partitionEvents f = evSF $ \as t -> do
---   let (bs, cs) = partitionEithers $ fmap (\(t', a) -> bimap (t',) (t',) $ f a) as
---       go :: [(Time, x)] -> Event x
---       go = maybe NoEvent Event . join . terminating . lookup t
---   (go bs, go cs)
+filterE :: (a -> Bool) -> SF (Event a) (Event a)
+filterE f = ev2ev $ filter (f . snd)
 
-filterEvents :: (a -> Bool) -> SF (Event a) (Event a)
-filterEvents f = evSF $ \as t ->
-  MkEvent
-    $ lookup t
-    $ filter (f . snd)
-    $ values t as
+filterTimeE :: (Time -> Bool) -> SF (Event a) (Event a)
+filterTimeE f = ev2ev $ filter (f . fst)
+
+mapMaybeE :: (a -> Maybe b) -> SF (Event a) (Event b)
+mapMaybeE = ev2ev . mapMaybe . traverse
 
 
 gate :: Bool -> Event a -> Event a
 gate False _ = NoEvent
 gate True e = e
 
-
--- afterNext :: SF (Event what, Event when) (Event (what, when))
--- afterNext = proc (ewhat, ewhen) -> do
---   ewhen' <- offset 0.000000001 -< ewhen
---   mwhat <- hold Nothing -< asum [fmap Just ewhat, Nothing <$ ewhen']
---   returnA -< ewhen >>= \when -> MkEvent $ fmap (, when) mwhat
-
 notYet :: SF (Event a) (Event a)
-notYet = sf (Clock [0]) $ \t a ->
-  case t <= 0 of
-    True -> NoEvent
-    False -> a
+notYet = filterTimeE (> 0)
 
 once :: SF (Event a) (Event a)
-once = takeEvents 1
+once = takeE 1
 
-takeEvents :: Int -> SF (Event a) (Event a)
-takeEvents n = evSF $ \evs t -> MkEvent $ lookup t $ take n $ values t evs
+takeE :: Int -> SF (Event a) (Event a)
+takeE = ev2ev . take
 
-
--- dropEvents :: Int -> SF (Event a) (Event a)
--- dropEvents n = evSF $ \evs t -> MkEvent $ join $ terminating $ lookup t $ drop n evs
+dropE :: Int -> SF (Event a) (Event a)
+dropE = ev2ev . drop
 
 accum :: a -> SF (Event (a -> a)) (Event a)
-accum a0 = evSF $ \evs t -> do
-  let xs = scanl (\(_, a) (t', mf) ->
-            case mf of
-              Just f -> (t', f a)
-              Nothing -> (t', a)) (0, a0) evs
-  MkEvent $ lookup t xs
-
-foldE :: Monoid a => SF (Event a) (Event a)
-foldE = accum mempty . arr (fmap (<>))
+accum a0 = ev2ev $ drop 1 . scanl (\(_, a) (t', f) -> (t', f a)) (undefined, a0)
 
 onlyEvery :: Int -> SF (Event a) (Event a)
 onlyEvery n = proc ev -> do
   x <- hold 0 <<< accum 0 -< (+1) <$ ev
   returnA -< bool NoEvent ev $ mod x n == 0
 
-
-newtype Seq i o a = Seq
-  { unSeq :: Cont (SF i o) a
-  }
-  deriving newtype (Functor, Applicative, Monad)
-
-toSeqBy :: (o -> o -> o) -> SF i (o, Event a) -> Seq i o a
-toSeqBy f = Seq . cont . switchBy f
-
-toSeq :: SF i (Event o, Event a) -> Seq i (Event o) a
-toSeq = toSeqBy (flip (<|>))
-
-switchSeq :: Seq i o a -> (a -> SF i o) -> SF i o
-switchSeq = runCont . unSeq
-
-getSeq :: Seq i (Event o) a -> SF i (Event o)
-getSeq = flip switchSeq $ const $ arr $ const NoEvent
-
-rest :: Time -> Seq i (Event a) ()
-rest t = toSeq $ proc i -> do
-  e <- at t () -< i
-  returnA -< (NoEvent, e)
-
-pulse :: a -> Seq i (Event a) ()
-pulse a = toSeq $ proc i -> do
-  n <- now a -< i
-  returnA -< (n, void n)
-
-hit :: Time -> a -> Seq i (Event a) ()
-hit t a = do
-  pulse a
-  rest t
-
-beat :: Time -> Priority -> Seq i (Event Beat) ()
-beat t p = hit t $ Beat t p
+subdiv :: Int -> SF (Event Beat) (Event Beat)
+subdiv n = ev2ev $ \bs -> do
+  (t, Beat d s) <- bs
+  let d' = d / fromIntegral n
+  take n $ zip (iterate (+ d') t) $ Beat d' s : repeat (Beat d' $ succ s)
 

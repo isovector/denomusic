@@ -7,21 +7,24 @@ module FRP.Types
   , Interval(..)
   ) where
 
-import Data.Function (on)
-import Data.List (groupBy, sortBy)
-import Control.Applicative
+import Control.Applicative (WrappedArrow(..), Alternative(..))
 import Control.Arrow
 import Control.Category
-import Data.Coerce
+import Control.Monad.State (evalState, get, put, State)
+import Data.Function (on)
 import Data.Functor
 import Data.Functor.Foldable.TH
 import Data.IntervalMap.FingerTree (Interval(..))
+import Data.List (groupBy, sortBy)
 import Data.Maybe
 import Data.MemoTrie
 import Data.Monoid
 import Data.Ratio
 import Data.Set (Set)
 import Data.Set qualified as S
+import Data.These
+import Debug.RecoverRTTI
+import Debug.Trace
 import Prelude hiding (id, (.))
 
 
@@ -32,23 +35,6 @@ instance HasTrie Rational where
   trie f = RationalTrie $ trie $ trie . \n d -> f (n % d)
   untrie (RationalTrie x) = (\f r -> f (numerator r) (denominator r)) (untrie . untrie x)
   enumerate = error "no enumerate for Rational"
-
-
--- | A (possibly infinite) list of interesting times
-newtype Clock = Clock { getClock :: [Time] }
-
--- | Merge two clocks, keeping them in ascending time order
-instance Semigroup Clock where
-  Clock [] <> Clock ys = Clock ys
-  Clock (x : xs) <> Clock [] = Clock (x : xs)
-  xx@(Clock (x : xs)) <> yy@(Clock (y : ys)) =
-    case compare x y of
-      LT -> Clock $ x : coerce (Clock xs <> yy)
-      GT -> Clock $ y : coerce (xx <> Clock ys)
-      EQ -> Clock $ x : coerce (Clock xs <> Clock ys)
-
-instance Monoid Clock where
-  mempty = Clock []
 
 newtype Event a = MkEvent
   { eventToMaybe :: Maybe a
@@ -71,38 +57,6 @@ instance Semigroup a => Semigroup (Event a) where
 instance Semigroup a => Monoid (Event a) where
   mempty = NoEvent
 
-data Signal a = UnsafeSignal
-  { clock  :: Clock
-  , sample :: Time -> a
-  }
-
-pattern Signal :: Clock -> (Time -> a) -> Signal a
-pattern Signal c f <- UnsafeSignal c f
-  where
-    Signal c f = UnsafeSignal c $ memo f
-{-# COMPLETE Signal #-}
-
-instance Functor Signal where
-  fmap f (Signal c g) = Signal c $ fmap f g
-
-instance Applicative Signal where
-  pure = Signal mempty . pure
-  liftA2 f (Signal c1 a) (Signal c2 b) =
-    Signal (c1 <> c2) $ liftA2 f a b
-
-newtype SF a b = SF { runSF :: Signal a -> Signal b }
-  deriving (Functor, Applicative) via WrappedArrow SF a
-  deriving (Semigroup, Monoid) via Ap (SF a) b
-
-instance Category (SF) where
-  id = SF id
-  SF g . SF f = SF (g . f)
-
-instance Arrow SF where
-  arr = SF . fmap
-  SF f *** SF g = SF $ \sg@(Signal{}) ->
-    liftA2 (,) (f $ fmap fst sg) (g $ fmap snd sg)
-
 
 data Observation a = Observation
   { o_time :: Time
@@ -112,9 +66,11 @@ data Observation a = Observation
 
 observe :: SF () a -> [Observation a]
 observe (SF f) = do
-  let Signal (Clock clk) s = f $ pure ()
-  t <- clk
-  pure $ Observation t $ s t
+  case f $ pure () of
+    Discrete k _ as -> do
+      (t, a) <- as
+      pure $ Observation t $ k t a
+    _ -> mempty
 
 
 newtype Notes a = Notes
@@ -124,18 +80,18 @@ newtype Notes a = Notes
 
 
 export :: (Ord a) => (Time, Time) -> SF () (Event (Notes a)) -> [(Interval Time, Set a)]
-export (lo, hi) s
+export (lo, hi)
   = concatMap (\o -> do
       let t = o_time o - lo
-      xs <- groupBy (on (==) fst) $ sortBy (on compare fst)$ S.toList $ getNotes $ o_output o
+      xs <- groupBy (on (==) fst) $ sortBy (on compare fst) $ S.toList $ getNotes $ o_output o
       let d = fst $ head xs
       pure (Interval t (t + d), S.fromList $ fmap snd xs)
         )
-  $ mapMaybe sequenceA
-  $ fmap (fmap eventToMaybe)
-  $ takeWhile ((< hi) . o_time)
-  $ dropWhile ((< lo) . o_time)
-  $ observe s
+  . mapMaybe sequenceA
+  . fmap (fmap eventToMaybe)
+  . takeWhile ((< hi) . o_time)
+  . dropWhile ((< lo) . o_time)
+  . observe
 
 
 data Beat = Beat
@@ -164,10 +120,105 @@ instance Monad Meter where
   Pulse a >>= f = f a
   Group as >>= f = Group $ fmap (>>= f) as
 
+
+data Signal a where
+  Const      :: a -> Signal a
+  Continuous :: (Time -> a) -> Signal a
+  Discrete   :: (Time -> b -> a) -> (Time -> a) -> [(Time, b)] -> Signal a
+  Stepwise   :: (Time -> b -> a) -> b -> [(Time, b)] -> Signal a
+
+deriving stock instance Functor Signal
+
+
+instance Applicative Signal where
+  pure = Const
+  liftA2 f (Const a) b = fmap (f a) b
+  liftA2 f a (Const b) = fmap (flip f b) a
+  liftA2 f (Continuous a) (Continuous b) = Continuous $ liftA2 f a b
+  liftA2 f (Discrete k a0 as) (Continuous b) = Discrete (const id) (liftA2 f a0 b) $ do
+    (t, a) <- as
+    pure (t, f (k t a) $ b t)
+  liftA2 f a@Continuous{} b@Discrete{} = liftA2 (flip f) b a
+
+  liftA2 f (Stepwise k a as) (Continuous b) = Stepwise (\t x -> f (k t x) (b t)) a as
+  liftA2 f a@Continuous{} b@Stepwise{} = liftA2 (flip f) b a
+
+  liftA2 f (Discrete ka a0 as) (Stepwise kb b0 bs) =
+    Discrete (const id) (\t -> f (a0 t) $ kb t b0) $
+      flip evalState b0 $
+        flip foldMap (merge as bs) $ uncurry $ \t -> \case
+          This a -> do
+            b <- get
+            pure $ pure (t, f (ka t a) (kb t b))
+          That b -> do
+            put b
+            pure mempty
+          These a b -> do
+            put b
+            pure $ pure (t, f (ka t a) (kb t b))
+  liftA2 f x@Stepwise{} y@Discrete{} = liftA2 (flip f) y x
+
+  liftA2 f (Discrete ka a0 as) (Discrete kb b0 bs) =
+    Discrete
+      ( \t -> \case
+          This a -> f (ka t a) (b0 t)
+          That b -> f (a0 t) (kb t b)
+          These a b -> f (ka t a) (kb t b)
+      )
+      (liftA2 f a0 b0)
+        $ merge as bs
+  liftA2 f (Stepwise ka a0 as) (Stepwise kb b0 bs) =
+    Stepwise (\t (a, b) -> f (ka t a) (kb t b)) (a0, b0) $
+      joining a0 b0 as bs
+
+
+newtype SF a b = SF
+  { runSF :: Signal a -> Signal b
+  }
+  deriving (Functor, Applicative) via WrappedArrow SF a
+  deriving (Semigroup, Monoid) via Ap (SF a) b
+
+instance Category SF where
+  id = SF id
+  SF g . SF f = SF (g . f)
+
+instance Arrow SF where
+  arr = SF . fmap
+  SF f *** SF g = SF $ \sg ->
+    liftA2 (,) (f $ fmap fst sg) (g $ fmap snd sg)
+
+ev2ev :: ([(Time, a)] -> [(Time, b)]) -> SF (Event a) (Event b)
+ev2ev f = SF $
+  \case
+    Discrete f' _ as -> Discrete (const Event) (const NoEvent) $ f $ mapMaybe (\(t, a) -> sequenceA (t, eventToMaybe $ f' t a)) as
+    Const{} -> Const NoEvent
+    Continuous{} -> Const NoEvent
+    Stepwise{} -> Const NoEvent
+
+
+deriving via Ap (State s) a instance Semigroup a => Semigroup (State s a)
+deriving via Ap (State s) a instance Monoid a => Monoid (State s a)
+
+
+merge :: Ord a => [(a, b)] -> [(a, c)] -> [(a, These b c)]
+merge [] ys       = fmap (fmap That) ys
+merge (x : xs) [] = fmap (fmap This) (x : xs)
+merge xx@((tx, x) : xs) yy@((ty, y) : ys) =
+  case compare tx ty of
+    LT -> (tx, This x) : merge xs yy
+    GT -> (ty, That y) : merge xx ys
+    EQ -> (tx, These x y) : merge xs ys
+
+joining :: Ord a => b -> c -> [(a, b)] -> [(a, c)] -> [(a, (b, c))]
+joining a0 b0 as bs =
+  drop 1 $ scanl
+    (\(_, (a, b)) (t, th) ->
+      case th of
+        This a' -> (t, (a', b))
+        That b' -> (t, (a, b'))
+        These a' b' -> (t, (a', b'))
+    ) (undefined, (a0, b0)) $ merge as bs
+
+
 makeBaseFunctor ''Meter
-
-
--- | Fold a 'Signal' into its event stream.
-signalEvs :: Signal (Event a) -> [(Time, Maybe a)]
-signalEvs (Signal (Clock ts) f) = zip ts $ fmap (eventToMaybe . f) ts
 

@@ -10,8 +10,8 @@ import FRP
 
 partitionBeats :: Priority -> SF (Event Beat) (Event Beat, Event Beat)
 partitionBeats p = proc b -> do
-  strong <- filterEvents ((<= p) . stress) -< b
-  weak   <- filterEvents ((> p) . stress)  -< b
+  strong <- filterE ((<= p) . stress) -< b
+  weak   <- filterE ((> p) . stress)  -< b
   returnA -< (strong, weak)
 
 
@@ -20,7 +20,7 @@ setDuration d (Beat _ p) = Beat d p
 
 line' :: ((Time, T xs) -> a) -> [T xs] -> SF (Event Beat) (Event a)
 line' f ts = proc e -> do
-  (e', _) <- replace ts -< e
+  e' <- replace ts -< e
   returnA -< fmap f $ fmap (first duration) e'
 
 
@@ -30,7 +30,7 @@ line
     -> [T (x ': y ': xs)]
     -> SF (Chord x (y ': xs), Event Beat) (Event a)
 line f ts = proc (ch, e) -> do
-  (e', _) <- replace ts -< e
+  e' <- replace ts -< e
   returnA -< fmap f $ fmap (duration *** chordTone ch) e'
 
 chord
