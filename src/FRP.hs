@@ -50,7 +50,7 @@ import System.Timeout (timeout)
 
 -- | The 'Time's must be monotonically increasing.
 discrete :: [(Time, a)] -> SF x (Event a)
-discrete = SF . const . Discrete Event
+discrete = SF . const . Discrete (const Event) (const NoEvent)
 
 every :: Time -> a -> SF x (Event a)
 every dur a = discrete $ zip (iterate (+ dur) 0) $ repeat a
@@ -58,6 +58,7 @@ every dur a = discrete $ zip (iterate (+ dur) 0) $ repeat a
 at :: Time -> a -> SF x (Event a)
 at t' a = discrete $ pure (t', a)
 
+-- TODO(sandy): do we need to update the continuations?
 invmapTime
     :: (Time -> Time)  -- ^ co
     -> (Time -> Time)  -- ^ contra
@@ -65,10 +66,8 @@ invmapTime
 invmapTime co contra = SF $ \case
   Const a -> Const a
   Continuous f -> Continuous $ f . contra
-  Discrete k as -> Discrete k $ fmap (first co) as
-  Stepwise k a as ->
-    -- TODO(sandy): do we need to update the continuation?
-    Stepwise (\t -> k (contra t)) a $ fmap (first co) as
+  Discrete k a0 as -> Discrete k a0 $ fmap (first co) as
+  Stepwise k a as ->  Stepwise k a $ fmap (first co) as
 
 -- | Stretch time by the given amount.
 stretch :: Rational -> SF a a
@@ -113,7 +112,7 @@ terminating a = unsafePerformIO $! timeout 10_000 $! evaluate a
 -- | Hold the value of the most recent value of an 'Event'.
 hold :: a -> SF (Event a) a
 hold a0 = SF $ \case
-  Discrete k as -> Stepwise (const id) a0 $ mapMaybe (traverse $ eventToMaybe . k) as
+  Discrete k _ as -> Stepwise (const id) a0 $ mapMaybe (\(t, a) -> sequenceA (t, eventToMaybe $ k t a)) as
   Const NoEvent -> Const a0
   Const (Event a) -> Const a
   Continuous _ -> error "hold on continuous"

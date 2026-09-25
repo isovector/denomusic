@@ -81,6 +81,6 @@ beatsOf m = do
       dur = sum $ fmap fst bs
       ts = init $ scanl (+) 0 $ fmap fst bs
       clk = ts <> fmap (+ dur) clk
-      ws = zip clk $ fmap (uncurry Beat) bs
-  SF . const $ Discrete Event ws
+      ws = zip clk $ cycle $ fmap (uncurry Beat) bs
+  SF . const $ Discrete (const Event) (const NoEvent) ws
 

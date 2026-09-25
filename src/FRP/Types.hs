@@ -65,9 +65,9 @@ data Observation a = Observation
 observe :: SF () a -> [Observation a]
 observe (SF f) = do
   case f $ pure () of
-    Discrete k as -> do
+    Discrete k _ as -> do
       (t, a) <- as
-      pure $ Observation t $ k a
+      pure $ Observation t $ k t a
     _ -> mempty
 
 
@@ -121,7 +121,7 @@ instance Monad Meter where
 data Signal a where
   Const      :: a -> Signal a
   Continuous :: (Time -> a) -> Signal a
-  Discrete   :: (b -> a) -> [(Time, b)] -> Signal a
+  Discrete   :: (Time -> b -> a) -> (Time -> a) -> [(Time, b)] -> Signal a
   Stepwise   :: (Time -> b -> a) -> b -> [(Time, b)] -> Signal a
 
 deriving stock instance Functor Signal
@@ -132,47 +132,41 @@ instance Applicative Signal where
   liftA2 f (Const a) b = fmap (f a) b
   liftA2 f a (Const b) = fmap (flip f b) a
   liftA2 f (Continuous a) (Continuous b) = Continuous $ liftA2 f a b
-  liftA2 f (Discrete k as) (Continuous b) = Discrete id $ do
+  liftA2 f (Discrete k a0 as) (Continuous b) = Discrete (const id) (liftA2 f a0 b) $ do
     (t, a) <- as
-    pure (t, f (k a) $ b t)
+    pure (t, f (k t a) $ b t)
   liftA2 f a@Continuous{} b@Discrete{} = liftA2 (flip f) b a
 
   liftA2 f (Stepwise k a as) (Continuous b) = Stepwise (\t x -> f (k t x) (b t)) a as
   liftA2 f a@Continuous{} b@Stepwise{} = liftA2 (flip f) b a
 
-  liftA2 f (Discrete ka as) (Stepwise kb b0 bs) =
-    Discrete id $
+  liftA2 f (Discrete ka a0 as) (Stepwise kb b0 bs) =
+    Discrete (const id) (\t -> f (a0 t) $ kb t b0) $
       flip evalState b0 $
         flip foldMap (merge as bs) $ uncurry $ \t -> \case
           This a -> do
             b <- get
-            pure $ pure (t, f (ka a) (kb t b))
+            pure $ pure (t, f (ka t a) (kb t b))
           That b -> do
             put b
             pure mempty
           These a b -> do
             put b
-            pure $ pure (t, f (ka a) (kb t b))
+            pure $ pure (t, f (ka t a) (kb t b))
   liftA2 f x@Stepwise{} y@Discrete{} = liftA2 (flip f) y x
 
-  liftA2 f (Discrete ka as) (Discrete kb bs) =
+  liftA2 f (Discrete ka a0 as) (Discrete kb b0 bs) =
     Discrete
-      ( \case
-          This a -> f (ka a) undefined
-          That b -> f undefined (kb b)
-          These a b -> f (ka a) (kb b)
-      ) $ merge as bs
-      -- (t, These a b) <-
-      -- pure (t, f (ka a) (kb b))
+      ( \t -> \case
+          This a -> f (ka t a) (b0 t)
+          That b -> f (a0 t) (kb t b)
+          These a b -> f (ka t a) (kb t b)
+      )
+      (liftA2 f a0 b0)
+        $ merge as bs
   liftA2 f (Stepwise ka a0 as) (Stepwise kb b0 bs) =
-    Stepwise (\t (a, b) -> f (ka t a) (kb t b)) (a0, b0) $ do
-      drop 1 $ scanl
-        (\(_, (a, b)) (t, th) ->
-          case th of
-            This a' -> (t, (a', b))
-            That b' -> (t, (a, b'))
-            These a' b' -> (t, (a', b'))
-        ) (undefined, (a0, b0)) $ merge as bs
+    Stepwise (\t (a, b) -> f (ka t a) (kb t b)) (a0, b0) $
+      joining a0 b0 as bs
 
 
 newtype SF a b = SF
@@ -193,10 +187,10 @@ instance Arrow SF where
 ev2ev :: ([(Time, a)] -> [(Time, b)]) -> SF (Event a) (Event b)
 ev2ev f = SF $
   \case
-    Discrete f' as -> Discrete Event $ f $ traceWith anythingToString $ mapMaybe (traverse eventToMaybe . fmap f') as
-    Const{} -> error "impossible"
-    Continuous{} -> error "impossible"
-    Stepwise{} -> error "impossible"
+    Discrete f' _ as -> Discrete (const Event) (const NoEvent) $ f $ mapMaybe (\(t, a) -> sequenceA (t, eventToMaybe $ f' t a)) as
+    Const{} -> Const NoEvent
+    Continuous{} -> Const NoEvent
+    Stepwise{} -> Const NoEvent
 
 
 deriving via Ap (State s) a instance Semigroup a => Semigroup (State s a)
@@ -211,6 +205,16 @@ merge xx@((tx, x) : xs) yy@((ty, y) : ys) =
     LT -> (tx, This x) : merge xs yy
     GT -> (ty, That y) : merge xx ys
     EQ -> (tx, These x y) : merge xs ys
+
+joining :: Ord a => b -> c -> [(a, b)] -> [(a, c)] -> [(a, (b, c))]
+joining a0 b0 as bs =
+  drop 1 $ scanl
+    (\(_, (a, b)) (t, th) ->
+      case th of
+        This a' -> (t, (a', b))
+        That b' -> (t, (a, b'))
+        These a' b' -> (t, (a', b'))
+    ) (undefined, (a0, b0)) $ merge as bs
 
 
 makeBaseFunctor ''Meter
