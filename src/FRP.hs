@@ -183,3 +183,9 @@ onlyEvery n = proc ev -> do
   x <- hold 0 <<< accum 0 -< (+1) <$ ev
   returnA -< bool NoEvent ev $ mod x n == 0
 
+subdiv :: Int -> SF (Event Beat) (Event Beat)
+subdiv n = ev2ev $ \bs -> do
+  (t, Beat d s) <- bs
+  let d' = d / fromIntegral n
+  take n $ zip (iterate (+ d') t) $ Beat d' s : repeat (Beat d' $ succ s)
+
