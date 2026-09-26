@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -Wno-x-partial #-}
 
 module FRP.Types
   ( module FRP.Types
@@ -5,53 +6,23 @@ module FRP.Types
   , Interval(..)
   ) where
 
-import FRP.Event
-import Control.Applicative (WrappedArrow(..), Alternative(..))
+import Control.Applicative (WrappedArrow(..))
 import Control.Arrow
 import Control.Category
-import Control.Monad.State (evalState, get, put, State)
 import Data.Function (on)
 import Data.Functor
-import Data.Functor.Foldable.TH
 import Data.IntervalMap.FingerTree (Interval(..))
 import Data.List (groupBy, sortBy)
-import Data.Maybe
 import Data.Monoid
 import Data.Ratio
 import Data.Set (Set)
 import Data.Set qualified as S
-import Data.These
+import FRP.Event
+import FRP.Types.Signal
 import Prelude hiding (id, (.))
 
 
 type Time = Rational
-
-data Observation a = Observation
-  { o_time :: Time
-  , o_output :: a
-  }
-  deriving stock (Eq, Ord, Show, Functor, Foldable, Traversable)
-
-observe :: SF () a -> [Observation a]
-observe (SF f) = observeSig $ f $ pure ()
-    -- Hybrid s ss -> mconcat
-    --   [ observe $ SF $ const s
-    --   , undefined
-    --   ]
-    -- _ -> mempty
-
-observeSig :: Signal a -> [Observation a]
-observeSig (Discrete k _ as) = do
-  (t, a) <- as
-  pure $ Observation t $ k t a
-observeSig (Hybrid s []) = observeSig s
-observeSig (Hybrid s ((t1, s1) : ss)) =
-  mconcat
-    [ takeWhile ((< t1) . o_time) $ observeSig s
-    , dropWhile ((< t1) . o_time) $ observeSig $ Hybrid s1 ss
-    ]
-observeSig Stepwise{} = mempty
-
 
 newtype Notes a = Notes
   { getNotes :: Set (Time, a)
@@ -59,86 +30,21 @@ newtype Notes a = Notes
   deriving newtype (Eq, Ord, Show, Semigroup, Monoid)
 
 
-export :: (Ord a) => (Time, Time) -> SF () (Event (Notes a)) -> [(Interval Time, Set a)]
+export
+    :: Ord a
+    => (Time, Time)
+    -> SF () (Event (Notes a))
+    -> [(Interval Time, Set a)]
 export (lo, hi)
   = concatMap (\o -> do
-      let t = o_time o - lo
-      xs <- groupBy (on (==) fst) $ sortBy (on compare fst) $ S.toList $ getNotes $ o_output o
+      let t = fst o - lo
+      xs <- groupBy (on (==) fst) $ sortBy (on compare fst) $ S.toList $ getNotes $ snd o
       let d = fst $ head xs
       pure (Interval t (t + d), S.fromList $ fmap snd xs)
         )
-  . mapMaybe sequenceA
-  . fmap (fmap eventToMaybe)
-  . takeWhile ((< hi) . o_time)
-  . dropWhile ((< lo) . o_time)
+  . takeWhile ((< hi) . fst)
+  . dropWhile ((< lo) . fst)
   . observe
-
-
-data Signal a where
-  Discrete :: (Time -> b -> a) -> (Time -> a) -> [(Time, b)] -> Signal a
-  Stepwise :: (Time -> b -> a) -> b -> [(Time, b)] -> Signal a
-  Hybrid :: Signal a -> [(Time, Signal a)] -> Signal a
-
-deriving stock instance Functor Signal
-
-
-instance Applicative Signal where
-  pure a = Stepwise (const id) a mempty
-  liftA2 f (Discrete ka a0 as) (Stepwise kb b0 bs) =
-    Discrete (const id) (\t -> f (a0 t) $ kb t b0) $
-      flip evalState b0 $
-        flip foldMap (merge as bs) $ uncurry $ \t -> \case
-          This a -> do
-            b <- get
-            pure $ pure (t, f (ka t a) (kb t b))
-          That b -> do
-            put b
-            pure mempty
-          These a b -> do
-            put b
-            pure $ pure (t, f (ka t a) (kb t b))
-  liftA2 f x@Stepwise{} y@Discrete{} = liftA2 (flip f) y x
-
-  liftA2 f (Discrete ka a0 as) (Discrete kb b0 bs) =
-    Discrete
-      ( \t -> \case
-          This a -> f (ka t a) (b0 t)
-          That b -> f (a0 t) (kb t b)
-          These a b -> f (ka t a) (kb t b)
-      )
-      (liftA2 f a0 b0)
-        $ merge as bs
-  liftA2 f (Stepwise ka a0 as) (Stepwise kb b0 bs) =
-    Stepwise (\t (a, b) -> f (ka t a) (kb t b)) (a0, b0) $
-      joining a0 b0 as bs
-
-  liftA2 f (Hybrid a as) (Hybrid b bs) =
-    mkHybrid (liftA2 f a b) $ fmap (fmap $ uncurry $ liftA2 f) $ joining a b as bs
-
-  liftA2 f (Hybrid a as) b = mkHybrid (liftA2 f a b) $ fmap (fmap $ flip (liftA2 f) b) as
-  liftA2 f a (Hybrid b bs) = mkHybrid (liftA2 f a b) $ fmap (fmap $ liftA2 f a) bs
-
--- | Invariant: none of the given signals are themselves 'Hybrid'
-mkHybrid :: Signal a -> [(Time, Signal a)] -> Signal a
-mkHybrid = Hybrid
-
--- mergeS :: Signal a -> Time -> Signal a -> Signal a
--- mergeS Hybrid{} _ _ = error "mergeS: hybrid"
--- mergeS _ _ Hybrid{} = error "mergeS: hybrid"
--- mergeS (Discrete ka a0 as) t0 (Discrete kb b0 bs) =
---   Discrete
---       (\t -> either (ka t) (kb t))
---       (\t -> bool (a0 t) (b0 t) $ t0 <= t) $ mconcat
---     [ fmap (fmap Left) $ takeWhile ((< t0) . fst) as
---     , fmap (fmap Right) $ dropWhile ((< t0) . fst) bs
---     ]
--- mergeS (Stepwise ka a0 as) t0 (Stepwise kb b0 bs) =
---   Stepwise
---       (\t -> either (ka t) (kb t))
---       (Left a0) $ mconcat
---     [ fmap (fmap Left) $ takeWhile ((< t0) . fst) as
---     , fmap (fmap Right) $ dropWhile ((< t0) . fst) bs
---     ]
 
 
 newtype SF a b = SF
@@ -156,36 +62,31 @@ instance Arrow SF where
   SF f *** SF g = SF $ \sg ->
     liftA2 (,) (f $ fmap fst sg) (g $ fmap snd sg)
 
+
+discrete :: [(Time, a)] -> SF x (Event a)
+discrete = SF . const . mkDiscrete
+
+
+steps :: a -> [(Time, a)] -> SF x a
+steps a = SF . const . mkSteps a
+
+
 ev2ev :: ([(Time, a)] -> [(Time, b)]) -> SF (Event a) (Event b)
-ev2ev f = SF $
-  \case
-    Discrete f' _ as -> Discrete (const Event) (const NoEvent) $ f $ mapMaybe (\(t, a) -> sequenceA (t, eventToMaybe $ f' t a)) as
-    Stepwise{} -> pure NoEvent
-    Hybrid a as -> Hybrid (runSF (ev2ev f) a) $ fmap (fmap $ runSF $ ev2ev f) as
+ev2ev f = SF $ mkDiscrete . f . events
 
 
-deriving via Ap (State s) a instance Semigroup a => Semigroup (State s a)
-deriving via Ap (State s) a instance Monoid a => Monoid (State s a)
+observe :: SF () (Event a) -> [(Time, a)]
+observe sf = events $ runSF sf (pure ())
 
 
-merge :: Ord a => [(a, b)] -> [(a, c)] -> [(a, These b c)]
-merge [] ys       = fmap (fmap That) ys
-merge (x : xs) [] = fmap (fmap This) (x : xs)
-merge xx@((tx, x) : xs) yy@((ty, y) : ys) =
-  case compare tx ty of
-    LT -> (tx, This x) : merge xs yy
-    GT -> (ty, That y) : merge xx ys
-    EQ -> (tx, These x y) : merge xs ys
-
-joining :: Ord a => b -> c -> [(a, b)] -> [(a, c)] -> [(a, (b, c))]
-joining a0 b0 as bs =
-  drop 1 $ scanl
-    (\(_, (a, b)) (t, th) ->
-      case th of
-        This a' -> (t, (a', b))
-        That b' -> (t, (a, b'))
-        These a' b' -> (t, (a', b'))
-    ) (undefined, (a0, b0)) $ merge as bs
+hold :: a -> SF (Event a) a
+hold a0 = SF $ mkSteps a0 . events
 
 
+fhold :: a -> SF (Event a) a
+fhold a0 = SF $ \s -> do
+  case events s of
+    [] -> Signal (const a0) mempty
+    ((t, a) : as) ->
+      mkSteps a $ zip (t : fmap fst as) $ fmap snd as <> [a]
 
