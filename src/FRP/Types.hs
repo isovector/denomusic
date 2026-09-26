@@ -1,12 +1,11 @@
-{-# LANGUAGE TemplateHaskell   #-}
-{-# OPTIONS_GHC -Wno-orphans   #-}
-{-# OPTIONS_GHC -Wno-x-partial #-}
 
 module FRP.Types
   ( module FRP.Types
+  , module FRP.Event
   , Interval(..)
   ) where
 
+import FRP.Event
 import Control.Applicative (WrappedArrow(..), Alternative(..))
 import Control.Arrow
 import Control.Category
@@ -17,7 +16,6 @@ import Data.Functor.Foldable.TH
 import Data.IntervalMap.FingerTree (Interval(..))
 import Data.List (groupBy, sortBy)
 import Data.Maybe
-import Data.MemoTrie
 import Data.Monoid
 import Data.Ratio
 import Data.Set (Set)
@@ -27,34 +25,6 @@ import Prelude hiding (id, (.))
 
 
 type Time = Rational
-
-instance HasTrie Rational where
-  data Rational :->: x = RationalTrie (Integer :->: (Integer :->: x))
-  trie f = RationalTrie $ trie $ trie . \n d -> f (n % d)
-  untrie (RationalTrie x) = (\f r -> f (numerator r) (denominator r)) (untrie . untrie x)
-  enumerate = error "no enumerate for Rational"
-
-newtype Event a = MkEvent
-  { eventToMaybe :: Maybe a
-  }
-  deriving stock (Foldable, Traversable)
-  deriving newtype (Functor, Applicative, Monad, Eq, Ord, Show, Alternative)
-
-{-# COMPLETE Event, NoEvent #-}
-pattern Event :: a -> Event a
-pattern Event a = MkEvent (Just a)
-
-pattern NoEvent :: Event a
-pattern NoEvent = MkEvent Nothing
-
-instance Semigroup a => Semigroup (Event a) where
-  NoEvent <> a = a
-  Event a <> NoEvent = Event a
-  Event a <> Event b = Event (a <> b)
-
-instance Semigroup a => Monoid (Event a) where
-  mempty = NoEvent
-
 
 data Observation a = Observation
   { o_time :: Time
@@ -102,33 +72,6 @@ export (lo, hi)
   . takeWhile ((< hi) . o_time)
   . dropWhile ((< lo) . o_time)
   . observe
-
-
-data Beat = Beat
-  { duration :: Time
-  , stress :: Priority
-  }
-  deriving stock (Eq, Ord, Show)
-
-newtype Priority = P Int
-  deriving stock (Show)
-  deriving newtype (Eq, Ord, Enum)
-
-data Meter a
-  = Pulse a
-  | Group [Meter a]
-  deriving stock (Eq, Ord, Show, Functor, Foldable, Traversable)
-
-instance Applicative Meter where
-  pure = Pulse
-  liftA2 f (Pulse a) (Pulse b) = Pulse $ f a b
-  liftA2 f (Group a) (Pulse b) = Group $ fmap (fmap $ flip f b) a
-  liftA2 f (Pulse a) (Group b) = Group $ fmap (fmap $ f a) b
-  liftA2 f (Group a) (Group b) = Group $ liftA2 (liftA2 f) a b
-
-instance Monad Meter where
-  Pulse a >>= f = f a
-  Group as >>= f = Group $ fmap (>>= f) as
 
 
 data Signal a where
@@ -245,5 +188,4 @@ joining a0 b0 as bs =
     ) (undefined, (a0, b0)) $ merge as bs
 
 
-makeBaseFunctor ''Meter
 
