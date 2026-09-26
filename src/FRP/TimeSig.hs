@@ -15,12 +15,12 @@ module FRP.TimeSig
   ) where
 
 import Control.Monad (join)
-import Data.Maybe (mapMaybe)
 import Data.Coerce
 import Data.Foldable
 import Data.Functor.Foldable
+import Data.Maybe (mapMaybe)
+import FRP.Beat
 import FRP.Types
-import FRP.Beat hiding (Time)
 
 
 subdivide :: Int -> Time -> Meter Time

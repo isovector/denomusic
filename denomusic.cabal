@@ -33,9 +33,13 @@ library
       DenoMusic.Play
       DenoMusic.Types
       FRP
+      FRP.Beat
+      FRP.Event
       FRP.Extra
+      FRP.Time
       FRP.TimeSig
       FRP.Types
+      FRP.Types.Signal
       Galant
       Test
       Test2

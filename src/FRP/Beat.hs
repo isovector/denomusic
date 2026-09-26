@@ -2,10 +2,8 @@
 
 module FRP.Beat where
 
+import FRP.Time
 import Data.Functor.Foldable.TH
-
-
-type Time = Rational
 
 
 data Beat = Beat

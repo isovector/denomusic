@@ -12,7 +12,6 @@ import DenoMusic.Play qualified as Play
 import DenoMusic.Types
 import FRP
 import FRP.TimeSig
-import FRP.Beat hiding (Time)
 
 --------------------------------------------------------------------------------
 

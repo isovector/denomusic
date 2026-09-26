@@ -2,23 +2,24 @@
 
 module FRP
   ( module Control.Arrow
-  , Alternative (..)
   , module FRP
   , module FRP.Types
+  , module FRP.Beat
+  , Alternative (..)
   , Interval(..)
   ) where
 
-import FRP.Beat hiding (Time)
-import Control.Monad
-import Control.Monad.Cont
 import Control.Applicative
 import Control.Arrow
 import Control.Category
 import Control.Exception (evaluate)
+import Control.Monad
+import Control.Monad.Cont
 import Data.Bool
 import Data.Maybe
 import Data.Monoid
 import Data.Ratio
+import FRP.Beat
 import FRP.Types
 import Prelude hiding (id, (.))
 import System.IO.Unsafe (unsafePerformIO)

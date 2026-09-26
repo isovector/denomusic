@@ -4,6 +4,7 @@ module FRP.Types
   ( module FRP.Types
   , module FRP.Types.Signal
   , module FRP.Event
+  , Time
   , Interval(..)
   ) where
 
@@ -19,11 +20,9 @@ import Data.Ratio
 import Data.Set (Set)
 import Data.Set qualified as S
 import FRP.Event
+import FRP.Time
 import FRP.Types.Signal
 import Prelude hiding (id, (.))
-
-
-type Time = Rational
 
 newtype Notes a = Notes
   { getNotes :: Set (Time, a)

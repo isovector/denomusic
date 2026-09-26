@@ -13,10 +13,9 @@ import Control.Lens (set, ix, _1)
 import Control.Arrow
 import Data.Maybe
 import FRP.Event
+import FRP.Time
 import Data.These
 import Control.Applicative
-
-type Time = Rational
 
 
 -- | An interval of the real line. When 'stepVal' is 'Just', this interval has

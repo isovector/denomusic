@@ -3,17 +3,13 @@
 module Test2 where
 
 import Data.Semigroup
-import Data.Coerce
-import Data.Functor
-import Data.Set qualified as S
 import DenoMusic.Harmony
-import DenoMusic.Modes
 import DenoMusic.Notation
 import DenoMusic.Play qualified as Play
 import DenoMusic.Types
 import FRP
-import FRP.TimeSig
 import FRP.Extra
+import FRP.TimeSig
 
 -- need a way to duplicate 'discrete' over time
 -- need better ways of describing non-regular rhythm
