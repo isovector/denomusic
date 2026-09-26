@@ -60,16 +60,18 @@ merge xx@((tx, x) : xs) yy@((ty, y) : ys) =
 
 
 -- | Overlay two lists of sorted pairs.
-joining :: Ord a => b -> c -> [(a, b)] -> [(a, c)] -> [(a, (b, c))]
+joining :: Ord a => Step b -> Step c -> [(a, Step b)] -> [(a, Step c)] -> [(a, (Step b, Step c))]
 joining a0 b0 as bs =
   drop 1 $ scanl
     (\(_, (a, b)) (t, th) ->
       case th of
-        This a' -> (t, (a', b))
-        That b' -> (t, (a, b'))
+        This a' -> (t, (a', open b))
+        That b' -> (t, (open a, b'))
         These a' b' -> (t, (a', b'))
     ) (undefined, (a0, b0)) $ merge as bs
 
+open :: Step a -> Step a
+open (Step _ a) = Step Nothing a
 
 -- | Get the discrete (closed-endpoint) values of a 'Signal'.
 values :: Signal a -> [(Time, a)]
