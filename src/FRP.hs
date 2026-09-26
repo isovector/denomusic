@@ -8,9 +8,9 @@ module FRP
   , Interval(..)
   ) where
 
+import FRP.Beat hiding (Time)
 import Control.Monad
 import Control.Monad.Cont
-import Data.Void
 import Control.Applicative
 import Control.Arrow
 import Control.Category
@@ -25,34 +25,15 @@ import System.IO.Unsafe (unsafePerformIO)
 import System.Timeout (timeout)
 
 
--- | The 'Time's must be monotonically increasing.
-discrete :: [(Time, a)] -> SF x (Event a)
-discrete = SF . const . Discrete (const Event) (const NoEvent)
-
 every :: Time -> a -> SF x (Event a)
 every dur a = discrete $ zip (iterate (+ dur) 0) $ repeat a
 
 at :: Time -> a -> SF x (Event a)
 at t' a = discrete $ pure (t', a)
 
-invmapTime
-    :: (Time -> Time)  -- ^ co
-    -> (Time -> Time)  -- ^ contra
-    -> SF a a
-invmapTime co contra = SF $ \case
-  Discrete k a0 as ->
-    Discrete (k . contra) (a0 . contra) $
-      fmap (first co) as
-  Stepwise k a as ->
-    Stepwise (k . contra) a $
-      fmap (first co) as
-  Hybrid a as ->
-    Hybrid (runSF (invmapTime co contra) a) $
-      fmap (co *** runSF (invmapTime co contra)) as
-
 -- | Stretch time by the given amount.
 stretch :: Rational -> SF a a
-stretch r = invmapTime (* r) (/ r)
+stretch r = SF $ invmapTime (* r) (/ r)
 
 now :: a -> SF x (Event a)
 now = at 0
@@ -69,39 +50,17 @@ switch :: SF a (b, Event c) -> (c -> SF a b) -> SF a b
 switch (SF f) k = SF $ \sig -> do
   let sig' = f sig
       sig'1 = fmap fst sig'
-  case sig' of
-    Discrete ka _ as -> do
-      case terminating $! listToMaybe $! mapMaybe (\(t, a) -> sequenceA (t, eventToMaybe $ snd $ ka t a)) as of
-        Just (Just (t0, a)) ->
-          mkHybrid sig'1 $ pure (t0, runSF (offset t0 <<< k a <<< offset (- t0)) sig)
-        _ -> sig'1
-    Stepwise{} -> sig'1
-
-
--- | Hold the value of the most recent value of an 'Event'.
-hold :: a -> SF (Event a) a
-hold a0 = SF $ \case
-  Discrete k _ as -> Stepwise (const id) a0 $ mapMaybe (\(t, a) -> sequenceA (t, eventToMaybe $ k t a)) as
-  Stepwise{} -> error "hold on stepwise"
-  Hybrid{} -> error "hold on hybrid"
-
--- -- | Hold the value of the next (not yet occurred!) value of an 'Event'.
-fhold :: a -> SF (Event a) a
-fhold a0 = SF $ \case
-  Discrete k _ as -> do
-    let as' = mapMaybe (\(t, a) -> sequenceA (t, eventToMaybe $ k t a)) as
-    case terminating $! as' of
-      Just ((_, a) : as'') ->
-        Stepwise (const id) a $ zip (fmap fst as) (fmap snd as'' <> [a0])
-      _ -> pure a0
-  Stepwise{} -> error "fhold on stepwise"
-  Hybrid{} -> error "hold on hybrid"
+  case terminating $! listToMaybe $! events (fmap snd sig') of
+    Just (Just (t0, a)) ->
+      spliceAt sig'1 t0 $ runSF (k a) sig
+    Just Nothing -> sig'1
+    Nothing -> sig'1
 
 offset :: Time -> SF a a
-offset dt = invmapTime (+ dt) (subtract dt)
+offset dt = SF $ invmapTime (+ dt) (subtract dt)
 
 localTime :: SF x Time
-localTime = SF $ const $ Discrete @Void (const absurd) id mempty
+localTime = SF $ const $ Signal id mempty
 
 replace :: [a] -> SF (Event b) (Event (b, a))
 replace as = ev2ev $ \bs -> zipWith (\(t, b) a -> (t, (b, a))) bs as
@@ -183,9 +142,9 @@ beat :: Time -> Priority -> Seq i (Event Beat) ()
 beat t p = hit t $ Beat t p
 
 
--- test :: SF i (Event Char)
--- test =
---   switch
---     (liftA2 (,) (getSeq $ replicateM 4 $ hit 0.25 'a') (at 0.55 ()))
---     $ const $ getSeq $ replicateM 4 $ hit 0.05 'b'
+test :: SF i (Event Char)
+test =
+  switch
+    (liftA2 (,) (getSeq $ replicateM 4 $ hit 0.25 'a') (at 0.5 ()))
+    $ const $ getSeq $ replicateM 4 $ hit 1 'b'
 

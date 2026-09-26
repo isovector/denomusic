@@ -20,6 +20,7 @@ import Data.Coerce
 import Data.Foldable
 import Data.Functor.Foldable
 import FRP.Types
+import FRP.Beat hiding (Time)
 
 
 subdivide :: Int -> Time -> Meter Time
@@ -84,7 +85,7 @@ beatsOf m = do
       ts = init $ scanl (+) 0 $ fmap fst bs
       clk = ts <> fmap (+ dur) clk
       ws = zip clk $ cycle $ fmap (uncurry Beat) bs
-  SF . const $ Discrete (const Event) (const NoEvent) ws
+  discrete ws
 
 
 -- beating :: (Time -> Meter Time) -> SF (Event Beat) (Event Beat)

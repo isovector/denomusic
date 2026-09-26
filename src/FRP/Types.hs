@@ -2,6 +2,7 @@
 
 module FRP.Types
   ( module FRP.Types
+  , module FRP.Types.Signal
   , module FRP.Event
   , Interval(..)
   ) where

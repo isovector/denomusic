@@ -6,6 +6,7 @@ import DenoMusic.Harmony
 import DenoMusic.Types
 import Data.Set qualified as S
 import FRP
+import FRP.Beat hiding (Time)
 
 
 partitionBeats :: Priority -> SF (Event Beat) (Event Beat, Event Beat)

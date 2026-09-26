@@ -12,6 +12,7 @@ import DenoMusic.Play qualified as Play
 import DenoMusic.Types
 import FRP
 import FRP.TimeSig
+import FRP.Beat hiding (Time)
 
 --------------------------------------------------------------------------------
 
@@ -55,8 +56,8 @@ song = proc _ -> do
   sb <- filterE ((<= P 2) . stress) -< b
   wb <- filterE ((>  P 2) . stress) -< b
 
-  (m1) <- replace (cycle motif1) -< wb
-  (b1) <- replace (cycle bassline) -< sb
+  m1 <- replace (cycle motif1) -< wb
+  b1 <- replace (cycle bassline) -< sb
 
   m1' <- chordTone -< (ch, fmap (first duration) m1)
   b1' <- chordTone -< (ch, fmap (first $ const (1/4)) b1)

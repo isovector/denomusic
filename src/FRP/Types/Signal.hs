@@ -5,8 +5,12 @@ module FRP.Types.Signal
   , events
   , mkDiscrete
   , mkSteps
+  , invmapTime
+  , spliceAt
   ) where
 
+import Control.Lens (set, ix, _1)
+import Control.Arrow
 import Data.Maybe
 import FRP.Event
 import Data.These
@@ -85,10 +89,48 @@ events = mapMaybe (traverse eventToMaybe) . values
 
 -- | Build a 'Signal' out of discrete values.
 mkDiscrete :: [(Time, a)] -> Signal (Event a)
-mkDiscrete = Signal (const NoEvent) . fmap (fmap $ \a -> Step (Just (Event a)) (pure NoEvent))
+mkDiscrete = Signal (const NoEvent) . fmap (fmap $ \a -> Step (Just $ Event a) $ pure NoEvent)
 
 
 -- | Build a 'Signal' as a stepwise function.
 mkSteps :: a -> [(Time, a)] -> Signal a
 mkSteps a = Signal (const a) . fmap (fmap $ Step Nothing . const)
+
+
+-- | Map a function over time. Since time is represented both co- and
+-- contravariantly inside of 'Signal's, we must take both directions of the
+-- function. This function must be monotonic.
+invmapTime
+  :: (Time -> Time)  -- ^ covariant
+  -> (Time -> Time)  -- ^ contravariant
+  -> Signal a
+  -> Signal a
+invmapTime co contra (Signal a as) =
+  Signal (a . contra) $ fmap (co *** \m -> m { step = step m . contra }) as
+
+
+-- | @'spliceAt' s1 t s2@ replaces the portion of @s1@ that occurs after @t@
+-- with the portion of @s2@ that begins after @t=0@.
+spliceAt :: Signal a -> Time -> Signal a -> Signal a
+spliceAt (Signal a as) t0 bs =
+  Signal a $ mconcat
+    [ takeWhile ((< t0) . fst) as
+    , fmap ((+ t0) *** \m -> m { step = step m . (subtract t0)}) $ fromZero bs
+    ]
+
+
+-- | Keep only the stepwise components of a 'Signal' that begin at 0.
+fromZero :: Signal a -> [(Time, Step a)]
+fromZero (Signal a0 as) =
+  case as of
+    [] -> [(0, Step Nothing a0)]
+    ((t, a) : as') ->
+      case compare t 0 of
+        LT ->
+          set (ix 0 . _1) 0
+            $ fmap snd
+            $ dropWhile ((< 0) . fst . fst)
+            $ zip (cycle as') as
+        EQ -> as
+        GT -> (0, a) : as
 
