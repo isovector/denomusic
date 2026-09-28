@@ -15,6 +15,7 @@ import Control.Category
 import Control.Monad
 import Control.Monad.Cont
 import Data.Bool
+import Data.Functor
 import Data.Maybe
 import Data.Monoid
 import Data.Ratio
@@ -130,10 +131,40 @@ hit t a = toSeq $ proc i -> do
 beat :: Time -> Priority -> Seq i (Event Beat) ()
 beat t p = hit t $ Beat t p
 
+epsilon :: Time
+epsilon = 0.0000000000001
 
-test :: SF i (Event Char)
-test =
-  switch
-    (liftA2 (,) (getSeq $ replicateM 4 $ hit 0.25 'a') (at 0.5 ()))
-    $ const $ getSeq $ replicateM 4 $ hit 1 'b'
+diffs :: Num a => SF (Event a) (Event (a -> a))
+diffs = proc e -> do
+  aprev <- hold 0 <<< offset epsilon -< e
+  returnA -< fmap (\x anew -> anew + (x - aprev)) e
+
+
+attractor :: Fractional a => SF (Event a, Event a) (Event a)
+attractor = proc (ea, eatt) -> do
+  t <- localTime -< ()
+  (t_at, a_attr) <- fhold (99999, 0) <<< offset epsilon -< fmap (t, ) eatt
+  let dt = t_at - t
+      dur = 2
+  eda <- diffs -< ea
+  accum 0 -< eda <&> \da ->
+    case dt >= 0 && dt <= dur of
+      True -> lerp (fromRational $ dt / dur) a_attr
+      False -> da
+
+lerp :: Fractional a => a -> a -> a -> a
+lerp x lo hi = (1 - x) * lo + x * hi
+
+
+discreteTime :: Time -> SF x (Event Time)
+discreteTime rate = proc _ -> do
+  t <- localTime -< ()
+  e <- every rate () -< ()
+  returnA -< t <$ e
+
+test :: SF i (Event Double)
+test = proc _ -> do
+  ea <- discreteTime 0.5 -< ()
+  eatt <- at 5 3 -< ()
+  arr (fmap fromRational) <<< attractor -< (ea, eatt)
 
