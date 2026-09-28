@@ -13,9 +13,6 @@ module DenoMusic.Harmony (
   MetaScale (..),
 
   -- * Chord Name
-  ChordType(..),
-  TriadQuality(..),
-  chordName,
   VoiceLeading(..),
   toT,
 
@@ -32,10 +29,9 @@ module DenoMusic.Harmony (
   harmonicMinor,
   spelledFlat,
   spelledSharp,
-  vl3in7,
-  vl7in12,
 ) where
 
+import Data.Monoid
 import Data.Bool
 import Data.Ratio
 import Data.Group
@@ -46,52 +42,70 @@ import Data.Set qualified as S
 import DenoMusic.Types (PitchClass (..), Reg (..))
 import GHC.Exts
 import GHC.TypeLits
-import Text.PrettyPrint.HughesPJClass hiding ((<>))
 
 
 -- | A coordinate inside of a 'MetaScales'. 'T's are little-endian cons lists.
 -- For example, given the 'standard' 'MetaScale', @1 :> (-2) :> 3 :> Nil@ means
 -- to transpose up by one chord tone, down by two scale tones, and up by three
 -- chromatic tones.
-type T :: [Nat] -> Type
-data T sizes where
-  Nil :: T '[]
-  (:>) :: Int -> !(T ns) -> T (n ': ns)
+type T :: [Nat] -> Type -> Type
+data T sizes a where
+  Nil :: T '[] a
+  (:>) :: a -> !(T ns a) -> T (n ': ns) a
 
 infixr 6 :>
 
-deriving stock instance Eq (T ns)
-deriving stock instance Ord (T ns)
-deriving stock instance Show (T ns)
+deriving stock instance Eq a => Eq (T ns a)
+deriving stock instance Ord a => Ord (T ns a)
+deriving stock instance Show a => Show (T ns a)
 
-instance IsList (T '[]) where
-  type Item (T '[]) = Int
+instance Functor (T ns) where
+  fmap _ Nil = Nil
+  fmap f (a :> as) = f a :> fmap f as
+
+instance Applicative (T '[]) where
+  pure _ = Nil
+  liftA2 _ Nil Nil = Nil
+
+instance Applicative (T ns) => Applicative (T (n ': ns)) where
+  pure a = a :> pure a
+  liftA2 f (a :> as) (b :> bs) = f a b :> liftA2 f as bs
+
+deriving via (Ap (T ns) a) instance (Num a, Applicative (T ns)) => Num (T ns a)
+
+instance (Fractional a, Applicative (T ns)) => Fractional (T ns a) where
+  fromRational = fmap fromRational . pure
+  recip = fmap recip
+
+
+instance Show a => IsList (T '[] a) where
+  type Item (T '[] a) = a
   fromList [] = Nil
   fromList e = error $ "Extra items remaining in IsList (T '[]): " <> show e
   toList Nil = []
 
-instance (IsList (T ns), Item (T ns) ~ Int) => IsList (T (n ': ns)) where
-  type Item (T (n ': ns)) = Int
+instance (IsList (T ns a), Item (T ns a) ~ a) => IsList (T (n ': ns) a) where
+  type Item (T (n ': ns) a) = a
   fromList [] = error "Not enough items in IsList (T (n ': ns)): "
   fromList (x : xs) = x :> fromList xs
   toList (x :> xs) = x : toList xs
 
-instance Semigroup (T '[]) where
+instance Semigroup (T '[] a) where
   _ <> _ = Nil
 
-instance Semigroup (T ns) => Semigroup (T (n ': ns)) where
+instance (Semigroup (T ns a), Num a) => Semigroup (T (n ': ns) a) where
   (i :> is) <> (j :> js) = (i + j) :> (is <> js)
 
-instance Monoid (T '[]) where
+instance Monoid (T '[] a) where
   mempty = Nil
 
-instance Monoid (T ns) => Monoid (T (n ': ns)) where
+instance (Num a, Monoid (T ns a)) => Monoid (T (n ': ns) a) where
   mempty = 0 :> mempty
 
-instance Group (T '[]) where
+instance Group (T '[] a) where
   invert _ = Nil
 
-instance Group (T ns) => Group (T (n ': ns)) where
+instance (Group (T ns a), Num a) => Group (T (n ': ns) a) where
   invert (i :> is) = negate i :> invert is
 
 -- | 'MetaScales' provide consistent vertical musical constraints (harmony), as
@@ -160,13 +174,13 @@ sus4 = UnsafeMetaScale $ S.fromList [0, 3, 4]
 -- elim ms mempty     = id
 -- elim ms (t1 <> t2) = elim ms t2 . elim ms t1
 -- @
-elim :: Ord a => MetaScales ns a -> Reg a -> T ns -> Reg a
+elim :: Ord a => MetaScales ns a -> Reg a -> T ns Int -> Reg a
 elim (Base sc) r (i :> Nil) = metaMove sc i r
 elim (MSCons ms scs) r (i :> j :> js) = do
   dj <- metaMove (getMetaScale ms) i (Reg 0 0)
   elim scs r ((dj + j) :> js)
 
-kill :: forall n m ns. KnownNat m => MetaScale n -> T (n ': m ': ns) -> T (m ': ns)
+kill :: forall n m ns. KnownNat m => MetaScale n -> T (n ': m ': ns) Int -> T (m ': ns) Int
 kill ms (i :> j :> js) =
   let (Reg z dj) = metaMove (getMetaScale ms) i (Reg 0 0)
    in ((dj + j + z * fromIntegral (natVal (Proxy @m))) :> js)
@@ -181,27 +195,17 @@ spelledFlat :: MetaScales '[12] PitchClass
 spelledFlat = Base (S.fromList [A, Af, B, Bf, C, D, Df, E, Ef, F, G, Gf])
 
 
--- | A smooth downwards voice-leading of triads-in-diatonic. Use 'invert' to
--- instead get an upwards voice-leading.
-vl3in7 :: T '[3, 7]
-vl3in7 = (-2) :> 5 :> mempty
-
--- | A smooth downwards voice-leading of diatonics-in-chromatics. Use 'invert'
--- to instead get an upwards voice-leading.
-vl7in12 :: T '[7, 12]
-vl7in12 = (-4) :> 7 :> mempty
-
 type family (++) xs ys where
   '[] ++ ys = ys
   (x ': xs) ++ ys = x ': (xs ++ ys)
 
 -- | Extend the end of a 'T' with zeroes.
-extend :: forall ns ms. Monoid (T ns) => T ms -> T (ms ++ ns)
+extend :: forall ns ms a. Monoid (T ns a) => T ms a -> T (ms ++ ns) a
 extend (x :> xs) = x :> extend @ns xs
 extend Nil = mempty
 
 -- | Extend the front of a 'T' with a zero.
-sink :: T ns -> T (n ': ns)
+sink :: Num a => T ns a -> T (n ': ns) a
 sink t = 0 :> t
 
 -- | Like 'pred', but over the metascale distance metric.
@@ -231,7 +235,7 @@ newtype VoiceLeading x y = VoiceLeading
   deriving stock (Eq, Ord, Show)
   deriving newtype Num
 
-toT :: forall x y. (KnownNat x, KnownNat y) => VoiceLeading x y -> T '[x, y]
+toT :: forall x y. (KnownNat x, KnownNat y) => VoiceLeading x y -> T '[x, y] Int
 toT (VoiceLeading i) =
   let x = natVal (Proxy @x)
       y = natVal (Proxy @y)
@@ -255,53 +259,3 @@ toT (VoiceLeading i) =
       sTrans = negate $ round (fromIntegral tLevel * angle_offset)
    in sTrans :> fromIntegral tLevel :> Nil
 
-data ChordType q = ChordType
-  { ct_root :: PitchClass
-  , ct_quality :: q
-  , ct_bass :: PitchClass
-  }
-  deriving stock (Eq, Ord, Show)
-
-data TriadQuality = Major | Minor | Augmented | Diminished
-  deriving stock (Eq, Ord, Show)
-
-instance Pretty TriadQuality where
-  pPrint = text . \case
-    Major -> "M"
-    Minor -> "m"
-    Augmented -> "+"
-    Diminished -> "°"
-
-data TertianQuality = Major7 | Minor7 | Augmented7 | Diminished7 | HalfDiminished7 | Dominant7
-  deriving stock (Eq, Ord, Show)
-
-instance Pretty TertianQuality where
-  pPrint = text . \case
-    Major7 -> "△7"
-    Minor7 -> "m7"
-    Augmented7 -> "+7"
-    Diminished7 -> "°7"
-    HalfDiminished7 -> "ø7"
-    Dominant7 -> "7"
-
-instance Pretty q => Pretty (ChordType q) where
-  pPrint (ChordType r q b)
-    | r == b = pPrint r <> pPrint q
-    | otherwise = pPrint r <> pPrint q <> text "/" <> pPrint b
-
--- TODO(sandy): generalize me
-chordName :: MetaScales '[3, 7, 12] PitchClass -> PitchClass -> T '[3, 7, 12] -> ChordType TriadQuality
-chordName ms pc t@(_ :> s :> c :> Nil) =
-  let root = unReg $ elim ms (Reg 4 pc) (0 :> s :> c :> Nil)
-      bass = unReg $ elim ms (Reg 4 pc) t
-      sym =
-        case mod s 7 of
-          0 -> Major
-          1 -> Minor
-          2 -> Minor
-          3 -> Major
-          4 -> Major
-          5 -> Minor
-          6 -> Diminished
-          _ -> error "impossible"
-   in ChordType root sym bass

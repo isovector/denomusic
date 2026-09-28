@@ -28,7 +28,7 @@ pat = scanl (<>) mempty . cycle
 innerVoice :: [C]
 innerVoice = pat $ fmap (\x -> [x, 0, 0]) [1, -1, 1, 1]
 
-note :: (Time, T [7, 12]) -> Notes (Reg PitchClass)
+note :: (Time, T [7, 12] Int) -> Notes (Reg PitchClass)
 note = toNote (MSCons diatonic spelledSharp) mempty
 
 -- ludwig :: SF Time (Chord 4 [7, 12])
@@ -81,7 +81,7 @@ song = proc _ -> do
 -- --------------------------------------------------------------------------------
 
 
-type C = T [4, 7, 12]
+type C = T [4, 7, 12] Int
 
 
 

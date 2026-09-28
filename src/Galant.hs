@@ -14,7 +14,7 @@ data Voice = Top | Middle | Bottom
   deriving stock (Eq, Ord, Show, Enum, Bounded)
 
 
-romanesca :: SF (MetaScales [s, c] a) (Event (MonoidalMap Voice (Set (T [s, c]))))
+romanesca :: SF (MetaScales [s, c] a) (Event (MonoidalMap Voice (Set (T [s, c] Int))))
 romanesca = proc _ -> do
   t <- fmap round $ localTime -< ()
   ev <- takeE 6 <<< every 1 () -< ()

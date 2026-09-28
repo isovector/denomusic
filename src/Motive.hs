@@ -5,7 +5,6 @@ module Motive where
 import DenoMusic.Play qualified as Play
 import Control.Monad
 import Data.Set qualified as S
-import Data.Set (Set)
 import FRP
 import DenoMusic.Harmony
 import DenoMusic.Types
@@ -16,7 +15,7 @@ hhit t a = hit t $ Notes $ S.singleton (t, a)
 nmap :: Ord b => (a -> b) -> Notes a -> Notes b
 nmap f (Notes n) = Notes $ S.map (fmap f) n
 
-m1 :: Seq i (Event (Notes (T [x, 7, 12]))) ()
+m1 :: Seq i (Event (Notes (T [x, 7, 12] Int))) ()
 m1 = do
   hhit (6/8) [0, 0, 0]
   hhit (1/8) [-1, 0, 0]
@@ -26,7 +25,7 @@ m1 = do
   rest (2/8)
 
 
-m2 :: Seq i (Event (Notes (T [x, 7, 12]))) ()
+m2 :: Seq i (Event (Notes (T [x, 7, 12] Int))) ()
 m2 = do
   hhit (6/8) [0, 0, 0]
   hhit (1/8) [-2, 2, 0]
@@ -35,7 +34,7 @@ m2 = do
   rest (2/8)
 
 
-m3 :: Seq i (Event (Notes (T [x, 7, 12]))) ()
+m3 :: Seq i (Event (Notes (T [x, 7, 12] Int))) ()
 m3 = do
   -- V
   hhit (1/8) [2, 0, 0]
@@ -47,7 +46,7 @@ m3 = do
   rest (2/8)
 
 
-a1 :: Seq i (Event (Notes (T [x, 7, 12]))) ()
+a1 :: Seq i (Event (Notes (T [x, 7, 12] Int))) ()
 a1 = do
   let h = hhit (1/8)
   h [0, 0, 0]
@@ -60,7 +59,7 @@ a1 = do
   h [1, 0, 0]
 
 
-mm1 :: SF i (Event (Notes (T [x, 7, 12])))
+mm1 :: SF i (Event (Notes (T [x, 7, 12] Int)))
 mm1 = proc i -> do
   lh <- fmap (fmap $ nmap (<> [0, 0, -12])) $ getSeq (replicateM 6 a1) -< i
   rh <- fmap (fmap $ nmap (<> [0, 0, 12]))  $ getSeq (m1 >> m2 >> m3)  -< i

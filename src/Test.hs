@@ -69,11 +69,11 @@ song = proc _ -> do
 --------------------------------------------------------------------------------
 
 
-type C = T [4, 7, 12]
+type C = T [4, 7, 12] Int
 type Chord = (MetaScale 4, C)
 
 
-note :: SF (Event (Time, T [7, 12])) (Event (Notes (Reg PitchClass)))
+note :: SF (Event (Time, T [7, 12] Int)) (Event (Notes (Reg PitchClass)))
 note
   = arr
       (fmap $ \(t, x) -> Notes $ S.singleton (t, elim
