@@ -9,6 +9,8 @@ module FRP.Types
   , Interval(..)
   ) where
 
+import Data.Map.Monoidal (MonoidalMap)
+import Data.Map.Monoidal qualified as MM
 import Data.MemoTrie
 import Control.Applicative (WrappedArrow(..))
 import Control.Arrow
@@ -116,4 +118,14 @@ fhold a0 = SF $ \s -> do
     [] -> Signal (const a0) mempty
     ((t, a) : as) ->
       mkSteps a $ zip (t : fmap fst as) $ fmap snd as <> [a]
+
+
+newtype Voiced v a = Voiced
+  { unVoiced :: MonoidalMap v a
+  }
+  deriving stock (Functor, Foldable, Traversable)
+  deriving newtype (Eq, Ord, Show, Semigroup, Monoid)
+
+voiced :: v -> a -> Voiced v a
+voiced v = Voiced . MM.singleton v
 
