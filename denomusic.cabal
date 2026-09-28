@@ -41,6 +41,7 @@ library
       FRP.Types
       FRP.Types.Signal
       Galant
+      Motive
       Test
       Test2
   other-modules:
@@ -77,7 +78,6 @@ library
     , pretty
     , process
     , profunctors
-    , recover-rtti
     , recursion-schemes
     , semialign
     , step-function

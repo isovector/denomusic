@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -Wno-orphans   #-}
 {-# OPTIONS_GHC -Wno-x-partial #-}
 
 module FRP.Types
@@ -8,6 +9,7 @@ module FRP.Types
   , Interval(..)
   ) where
 
+import Data.MemoTrie
 import Control.Applicative (WrappedArrow(..))
 import Control.Arrow
 import Control.Category
@@ -23,6 +25,14 @@ import FRP.Event
 import FRP.Time
 import FRP.Types.Signal
 import Prelude hiding (id, (.))
+
+
+instance HasTrie Rational where
+  data Rational :->: x = RationalTrie (Integer :->: (Integer :->: x))
+  trie f = RationalTrie $ trie $ trie . \n d -> f (n % d)
+  untrie (RationalTrie x) = (\f r -> f (numerator r) (denominator r)) (untrie . untrie x)
+  enumerate = error "no enumerate for Rational"
+
 
 newtype Notes a = Notes
   { getNotes :: Set (Time, a)
@@ -61,6 +71,23 @@ instance Arrow SF where
   arr = SF . fmap
   SF f *** SF g = SF $ \sg ->
     liftA2 (,) (f $ fmap fst sg) (g $ fmap snd sg)
+
+instance ArrowLoop SF where
+  loop (SF f) = SF $ \a -> do
+    let b = Signal (memo $ \t -> snd $ sample out t) []
+        out = f $ liftA2 (,) a b
+    fmap fst out
+
+sample :: Signal a -> Time -> a
+sample (Signal fa []) t = fa t
+sample (Signal fa ((t0, sa) : as)) t =
+  case compare t t0 of
+    LT -> fa t
+    EQ ->
+      case sa of
+        Step Nothing f -> f t
+        Step (Just a) _ -> a
+    GT -> sample (Signal (step sa) as) t
 
 
 discrete :: [(Time, a)] -> SF x (Event a)
