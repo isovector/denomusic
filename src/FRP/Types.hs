@@ -9,9 +9,6 @@ module FRP.Types
   , Interval(..)
   ) where
 
-import Data.Map.Monoidal (MonoidalMap)
-import Data.Map.Monoidal qualified as MM
-import Data.MemoTrie
 import Control.Applicative (WrappedArrow(..))
 import Control.Arrow
 import Control.Category
@@ -19,6 +16,9 @@ import Data.Function (on)
 import Data.Functor
 import Data.IntervalMap.FingerTree (Interval(..))
 import Data.List (groupBy, sortBy)
+import Data.Map.Monoidal (MonoidalMap)
+import Data.Map.Monoidal qualified as MM
+import Data.MemoTrie
 import Data.Monoid
 import Data.Ratio
 import Data.Set (Set)
@@ -114,10 +114,10 @@ hold a0 = SF $ mkSteps a0 . events
 
 fhold :: a -> SF (Event a) a
 fhold a0 = SF $ \s -> do
-  case events s of
+  case eventsTerminating s of
     [] -> Signal (const a0) mempty
     ((t, a) : as) ->
-      mkSteps a $ zip (t : fmap fst as) $ fmap snd as <> [a]
+      mkSteps a $ zip (t : fmap fst as) $ fmap snd as <> [a0]
 
 
 newtype Voiced v a = Voiced

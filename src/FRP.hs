@@ -12,7 +12,6 @@ module FRP
 import Control.Applicative
 import Control.Arrow
 import Control.Category
-import Control.Exception (evaluate)
 import Control.Monad
 import Control.Monad.Cont
 import Data.Bool
@@ -22,8 +21,6 @@ import Data.Ratio
 import FRP.Beat
 import FRP.Types
 import Prelude hiding (id, (.))
-import System.IO.Unsafe (unsafePerformIO)
-import System.Timeout (timeout)
 
 
 every :: Time -> a -> SF x (Event a)
@@ -39,22 +36,13 @@ stretch r = SF $ invmapTime (* r) (/ r)
 now :: a -> SF x (Event a)
 now = at 0
 
--- | Observe whether a computation would diverge, and if so, return 'Nothing'
--- instead. This can be used to guard otherwise-sketchy combinators which need
--- to fold over infinite event streams.
---
--- This is impolemented by terminating after 10ms of trying.
-terminating :: a -> Maybe a
-terminating a = unsafePerformIO $! timeout 10_000 $! evaluate a
-
 switch :: SF a (b, Event c) -> (c -> SF a b) -> SF a b
 switch (SF f) k = SF $ \sig -> do
   let sig' = f sig
       sig'1 = fmap fst sig'
-  case terminating $! listToMaybe $! events (fmap snd sig') of
-    Just (Just (t0, a)) ->
+  case listToMaybe $ eventsTerminating $ fmap snd sig' of
+    Just (t0, a) ->
       spliceAt sig'1 t0 $ runSF (k a) sig
-    Just Nothing -> sig'1
     Nothing -> sig'1
 
 offset :: Time -> SF a a

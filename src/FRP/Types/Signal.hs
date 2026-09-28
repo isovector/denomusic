@@ -3,19 +3,23 @@ module FRP.Types.Signal
   , Signal(..)
   , values
   , events
+  , eventsTerminating
   , mkDiscrete
   , mkSteps
   , invmapTime
   , spliceAt
   ) where
 
-import Control.Lens (set, ix, _1)
+import Control.Applicative
 import Control.Arrow
+import Control.Exception (evaluate)
+import Control.Lens (set, ix, _1)
+import Data.These
 import Data.Maybe
 import FRP.Event
 import FRP.Time
-import Data.These
-import Control.Applicative
+import System.IO.Unsafe (unsafePerformIO)
+import System.Timeout (timeout)
 
 
 -- | An interval of the real line. When 'stepVal' is 'Just', this interval has
@@ -76,6 +80,20 @@ joining a0 b0 as bs =
 open :: Step a -> Step a
 open (Step _ a) = Step Nothing a
 
+mapMaybeTerminating :: (a -> Maybe b) -> [a] -> [b]
+mapMaybeTerminating f = go
+  where
+    go as =
+      case terminating (findNext as) of
+        Just (Just (b, rest)) -> b : go rest
+        _ -> []
+
+    findNext [] = Nothing
+    findNext (a : as') =
+      case f a of
+        Just b  -> Just (b, as')
+        Nothing -> findNext as'
+
 -- | Get the discrete (closed-endpoint) values of a 'Signal'.
 values :: Signal a -> [(Time, a)]
 values (Signal _ as) = mapMaybe (traverse stepVal) as
@@ -84,6 +102,11 @@ values (Signal _ as) = mapMaybe (traverse stepVal) as
 -- | Get the eventful values out of a 'Signal'.
 events :: Signal (Event a) -> [(Time, a)]
 events = mapMaybe (traverse eventToMaybe) . values
+
+
+-- | Like 'events', but catches divergence and terminates with an empty list.
+eventsTerminating :: Signal (Event a) -> [(Time, a)]
+eventsTerminating = mapMaybeTerminating (traverse eventToMaybe) . values
 
 
 -- | Build a 'Signal' out of discrete values.
@@ -132,4 +155,13 @@ fromZero (Signal a0 as) =
             $ zip (cycle as') as
         EQ -> as
         GT -> (0, a) : as
+
+
+-- | Observe whether a computation would diverge, and if so, return 'Nothing'
+-- instead. This can be used to guard otherwise-sketchy combinators which need
+-- to fold over infinite event streams.
+--
+-- This is implemented by terminating after 10ms of trying.
+terminating :: a -> Maybe a
+terminating a = unsafePerformIO $! timeout 10_000 $! evaluate a
 
