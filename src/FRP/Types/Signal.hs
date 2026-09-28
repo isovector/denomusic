@@ -163,5 +163,5 @@ fromZero (Signal a0 as) =
 --
 -- This is implemented by terminating after 10ms of trying.
 terminating :: a -> Maybe a
-terminating a = unsafePerformIO $! timeout 10_000 $! evaluate a
+terminating a = unsafePerformIO (timeout 10_000 (evaluate a))
 
