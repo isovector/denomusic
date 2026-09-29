@@ -141,12 +141,11 @@ diffs = proc e -> do
   returnA -< fmap (\x anew -> anew + (x - aprev)) e
 
 
-attractor :: Fractional a => SF (Event a, Event a) (Event a)
-attractor = proc (ea, eatt) -> do
+attractor :: Fractional a => Time -> SF (Event a, Event a) (Event a)
+attractor dur = proc (ea, eatt) -> do
   t <- localTime -< ()
   (t_at, a_attr) <- fhold (99999, 0) <<< offset epsilon -< fmap (t, ) eatt
   let dt = t_at - t
-      dur = 2
   eda <- diffs -< ea
   accum 0 -< eda <&> \da ->
     case dt >= 0 && dt <= dur of
@@ -167,7 +166,7 @@ test :: SF i (Event Double)
 test = proc _ -> do
   ea <- discreteTime 0.5 -< ()
   eatt <- at 5 3 -< ()
-  arr (fmap fromRational) <<< attractor -< (ea, eatt)
+  arr (fmap fromRational) <<< attractor 2 -< (ea, eatt)
 
 getVoice :: Ord v => v -> SF (Event (Voiced v a)) (Event a)
 getVoice v = mapMaybeE $ MM.lookup v . unVoiced
