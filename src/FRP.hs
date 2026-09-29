@@ -16,6 +16,7 @@ import Control.Monad
 import Control.Monad.Cont
 import Data.Bool
 import Data.Functor
+import Data.Map.Monoidal qualified as MM
 import Data.Maybe
 import Data.Monoid
 import Data.Ratio
@@ -167,4 +168,7 @@ test = proc _ -> do
   ea <- discreteTime 0.5 -< ()
   eatt <- at 5 3 -< ()
   arr (fmap fromRational) <<< attractor -< (ea, eatt)
+
+getVoice :: Ord v => v -> SF (Event (Voiced v a)) (Event a)
+getVoice v = mapMaybeE $ MM.lookup v . unVoiced
 
