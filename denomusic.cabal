@@ -27,6 +27,7 @@ library
   exposed-modules:
       Data.Lilypond
       DenoMusic.Harmony
+      DenoMusic.Harmony2
       DenoMusic.Modes
       DenoMusic.Notation
       DenoMusic.NotationBackend
