@@ -3,6 +3,7 @@
 
 module DenoMusic.Harmony2 where
 
+import GHC.Generics (Generic)
 import Control.Category
 import Prelude hiding (id, (.))
 import Data.Align
@@ -16,12 +17,14 @@ import GHC.TypeLits
 
 type Note :: Nat -> Type
 data Note n = MkNote (Deg n) [Int]
+  deriving stock Generic
 
 
 type Deg :: Nat -> Type
 newtype Deg n = Deg
   { getDeg :: Int
   }
+  deriving stock Generic
   deriving newtype (Eq, Ord, Show, Num)
 
 scaleSize :: forall n. KnownNat n => Int

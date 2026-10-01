@@ -1,10 +1,28 @@
+{-# LANGUAGE DeriveAnyClass  #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
+
 module DenoMusic.Play (play) where
 
-import Control.Arrow
 import Data.Set (Set)
 import Data.Set qualified as S
 import DenoMusic.Types
 import Euterpea qualified as E
+import DenoMusic.Harmony2
+import Control.DeepSeq (NFData)
+
+instance E.ToMusic1 (Deg 0) where
+  toMusic1 = E.toMusic1 . E.mMap (\(Deg n) -> n)
+
+instance E.ToMusic1 (Note 0) where
+  toMusic1 = E.toMusic1 . E.mMap (\(Note n _) -> n)
+
+instance E.ToMusic1 (Reg PitchClass) where
+  toMusic1 = E.toMusic1 . E.mMap (fromReg . fmap toStupidEuterpeaPitchClass)
+
+deriving anyclass instance NFData PitchClass
+deriving anyclass instance NFData (Reg PitchClass)
+deriving anyclass instance NFData (Deg n)
+deriving anyclass instance NFData (Note n)
 
 
 toStupidEuterpeaPitchClass :: PitchClass -> E.PitchClass
@@ -28,14 +46,13 @@ toStupidEuterpeaPitchClass Gs = E.Gs
 
 
 -- | Play a piece of music by converting it to MIDI.
-play :: [(Interval Rational, Set (Reg PitchClass))] -> IO ()
+play :: (E.ToMusic1 a, NFData a) => [(Interval Rational, Set a)] -> IO ()
 play z
   = E.playDev 2
-  . fmap (first toStupidEuterpeaPitchClass)
   $ foldr (E.:=:) (E.rest 0)
   $ do
     (Interval lo hi, as) <- z
     pure $ foldr (E.:=:) (E.rest 0) $ do
       a <- S.toList as
-      pure $ E.rest lo E.:+: E.note (hi - lo) (fromReg a)
+      pure $ E.rest lo E.:+: E.note (hi - lo) a
 

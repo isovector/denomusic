@@ -22,7 +22,7 @@ data Reg a = Reg
   { getReg :: Int
   , unReg :: a
   }
-  deriving stock (Eq, Ord, Show, Functor)
+  deriving stock (Eq, Ord, Show, Functor, Generic)
 
 instance Applicative Reg where
   pure = Reg 0
@@ -48,7 +48,7 @@ data PitchClass
   | Gf | G | Gs
   | Af | A | As
   | Bf | B
-  deriving stock (Show, Eq, Ord, Read, Enum, Bounded)
+  deriving stock (Show, Eq, Ord, Read, Enum, Bounded, Generic)
 
 instance Pretty PitchClass where
   pPrint = text . \case
