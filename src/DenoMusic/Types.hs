@@ -3,17 +3,9 @@ module DenoMusic.Types
   , Interval (..)
   ) where
 
-import Control.Applicative
 import Control.Monad
-import Data.Function.Step.Discrete.Open
-import Data.Functor.Compose
 import Data.IntervalMap.FingerTree (Interval(..))
-import Data.Map qualified as M
-import Data.Maybe hiding (catMaybes)
 import GHC.Generics
-import Witherable hiding (filter)
-import Data.Map.Monoidal (MonoidalMap)
-import Data.Map.Monoidal qualified as MM
 import Text.PrettyPrint.HughesPJClass hiding ((<>))
 
 
@@ -69,14 +61,4 @@ instance Pretty PitchClass where
     As -> "A♯"
     Bf -> "B♭"
     B  -> "B"
-
-
--- -- | Fold a 'Voice' down into its underlying intervals of sound.
--- flatten :: Voice a -> [(Interval Rational, a)]
--- flatten (Voice (SF m _)) = do
---   let m' = filter ((>= 0) . fst) $ M.toList m
---   ((lo, _), (hi, ma)) <- zip ((0, error "bad") : m') m'
---   guard $ lo /= hi
---   a <- maybeToList ma
---   pure (Interval lo hi, a)
 

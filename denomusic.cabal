@@ -27,8 +27,6 @@ library
   exposed-modules:
       Data.Lilypond
       DenoMusic.Harmony
-      DenoMusic.Harmony2
-      DenoMusic.Modes
       DenoMusic.Notation
       DenoMusic.NotationBackend
       DenoMusic.Play
@@ -41,10 +39,6 @@ library
       FRP.TimeSig
       FRP.Types
       FRP.Types.Signal
-      Galant
-      Motive
-      Test
-      Test2
   other-modules:
       Paths_denomusic
   autogen-modules:

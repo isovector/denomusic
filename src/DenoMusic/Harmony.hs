@@ -1,249 +1,157 @@
-{-# LANGUAGE AllowAmbiguousTypes  #-}
-{-# LANGUAGE DataKinds            #-}
-{-# LANGUAGE UndecidableInstances #-}
-{-# OPTIONS_GHC -Wtype-defaults   #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE ViewPatterns        #-}
 
-module DenoMusic.Harmony (
-  T (..),
-  extend,
-  sink,
-  kill,
-  elim,
-  MetaScales (..),
-  MetaScale (..),
+module DenoMusic.Harmony where
 
-  -- * Chord Name
-  VoiceLeading(..),
-  toT,
-
-  metaMove,
-
-  -- * Familiar objects
-  triad,
-  add7,
-  add9,
-  add11,
-  sus2,
-  sus4,
-  diatonic,
-  harmonicMinor,
-  spelledFlat,
-  spelledSharp,
-) where
-
-import Data.Monoid
+import Control.Category
+import Data.Align
 import Data.Bool
-import Data.Ratio
-import Data.Group
 import Data.Kind
+import Data.List (dropWhileEnd, sort, nub)
 import Data.Proxy
-import Data.Set (Set)
-import Data.Set qualified as S
-import DenoMusic.Types (PitchClass (..), Reg (..))
-import GHC.Exts
+import Data.Ratio
+import Data.These
+import GHC.Generics (Generic)
 import GHC.TypeLits
+import Prelude hiding (id, (.))
+
+type Note :: Nat -> Type
+data Note n = MkNote (Deg n) [Int]
+  deriving stock Generic
 
 
--- | A coordinate inside of a 'MetaScales'. 'T's are little-endian cons lists.
--- For example, given the 'standard' 'MetaScale', @1 :> (-2) :> 3 :> Nil@ means
--- to transpose up by one chord tone, down by two scale tones, and up by three
--- chromatic tones.
-type T :: [Nat] -> Type -> Type
-data T sizes a where
-  Nil :: T '[] a
-  (:>) :: a -> !(T ns a) -> T (n ': ns) a
-
-infixr 6 :>
-
-deriving stock instance Eq a => Eq (T ns a)
-deriving stock instance Ord a => Ord (T ns a)
-deriving stock instance Show a => Show (T ns a)
-
-instance Functor (T ns) where
-  fmap _ Nil = Nil
-  fmap f (a :> as) = f a :> fmap f as
-
-instance Applicative (T '[]) where
-  pure _ = Nil
-  liftA2 _ Nil Nil = Nil
-
-instance Applicative (T ns) => Applicative (T (n ': ns)) where
-  pure a = a :> pure a
-  liftA2 f (a :> as) (b :> bs) = f a b :> liftA2 f as bs
-
-deriving via (Ap (T ns) a) instance (Num a, Applicative (T ns)) => Num (T ns a)
-
-instance (Fractional a, Applicative (T ns)) => Fractional (T ns a) where
-  fromRational = fmap fromRational . pure
-  recip = fmap recip
-
-
-instance Show a => IsList (T '[] a) where
-  type Item (T '[] a) = a
-  fromList [] = Nil
-  fromList e = error $ "Extra items remaining in IsList (T '[]): " <> show e
-  toList Nil = []
-
-instance (IsList (T ns a), Item (T ns a) ~ a) => IsList (T (n ': ns) a) where
-  type Item (T (n ': ns) a) = a
-  fromList [] = error "Not enough items in IsList (T (n ': ns)): "
-  fromList (x : xs) = x :> fromList xs
-  toList (x :> xs) = x : toList xs
-
-instance Semigroup (T '[] a) where
-  _ <> _ = Nil
-
-instance (Semigroup (T ns a), Num a) => Semigroup (T (n ': ns) a) where
-  (i :> is) <> (j :> js) = (i + j) :> (is <> js)
-
-instance Monoid (T '[] a) where
-  mempty = Nil
-
-instance (Num a, Monoid (T ns a)) => Monoid (T (n ': ns) a) where
-  mempty = 0 :> mempty
-
-instance Group (T '[] a) where
-  invert _ = Nil
-
-instance (Group (T ns a), Num a) => Group (T (n ': ns) a) where
-  invert (i :> is) = negate i :> invert is
-
--- | 'MetaScales' provide consistent vertical musical constraints (harmony), as
--- well as give means for efficient voice leading in order to evolve that
--- harmony over time.
---
--- Musically, a 'MetaScales' is a hierarchy of scale-like things which move
--- relative to one another. Think chord-inside-scale-inside-modulation. The
--- @sizes@ type index describes how many elements is in each of these
--- scale-like things, in little-endian.
---
--- You can index into a 'MetaScales' by way of a 'T'.
-type MetaScales :: [Nat] -> Type -> Type
-data MetaScales sizes a where
-  -- | The base collection of objects being permuted.
-  Base :: Set a -> MetaScales '[n] a
-  -- | Transform a 'MetaScales' by permuting it via a single 'MetaScale'.
-  MSCons :: MetaScale n -> !(MetaScales ns a) -> MetaScales (n ': ns) a
-
-deriving stock instance Show a => Show (MetaScales ns a)
-
--- | A 'MetaScale' is a collection of generalized scale-steps, relative to
--- a parent 'MetaScale'. It can be used to describe voices-within-chords, or
--- chords-within-scales, or scales-within-chroma, or other things of this
--- nature. A 'MetaScale' is mapped to concrete values when embedded within
--- a 'MetaScales' (notice the plural.)
-type MetaScale :: Nat -> Type
-newtype MetaScale size = UnsafeMetaScale
-  { getMetaScale :: Set Int
+type Deg :: Nat -> Type
+newtype Deg n = Deg
+  { getDeg :: Int
   }
-  deriving newtype (Show)
+  deriving stock Generic
+  deriving newtype (Eq, Ord, Show, Num)
 
--- | The diatonic scale. This will take on different modes depending on the
--- background scalar transposition applied to it.
-diatonic :: MetaScale 7
-diatonic = UnsafeMetaScale $ S.fromList [0, 2, 4, 5, 7, 9, 11]
-
-harmonicMinor :: MetaScale 7
-harmonicMinor = UnsafeMetaScale $ S.fromList [0, 2, 3, 5, 7, 8, 11]
-
--- | A metascale corresponding to the 1-3-5 triad. This will take on
--- major/minor/diminished/augmented characteristics depending on where in the
--- scale it is transposed to.
-triad :: MetaScale 3
-triad = UnsafeMetaScale $ S.fromList [0, 2, 4]
-
-add7 :: MetaScale n -> MetaScale (n + 1)
-add7 (UnsafeMetaScale s) = UnsafeMetaScale $ S.insert 6 s
-
-add9 :: MetaScale n -> MetaScale (n + 1)
-add9 (UnsafeMetaScale s) = UnsafeMetaScale $ S.insert 1 s
-
-add11 :: MetaScale n -> MetaScale (n + 1)
-add11 (UnsafeMetaScale s) = UnsafeMetaScale $ S.insert 3 s
-
-sus2 :: MetaScale 3
-sus2 = UnsafeMetaScale $ S.fromList [0, 1, 4]
-
-sus4 :: MetaScale 3
-sus4 = UnsafeMetaScale $ S.fromList [0, 3, 4]
-
--- | Transform a note along a 'MetaScales' by moving it along each scale
--- dimension. This function forms monoid actions:
---
--- @
--- elim ms mempty     = id
--- elim ms (t1 <> t2) = elim ms t2 . elim ms t1
--- @
-elim :: Ord a => MetaScales ns a -> Reg a -> T ns Int -> Reg a
-elim (Base sc) r (i :> Nil) = metaMove sc i r
-elim (MSCons ms scs) r (i :> j :> js) = do
-  dj <- metaMove (getMetaScale ms) i (Reg 0 0)
-  elim scs r ((dj + j) :> js)
-
-kill :: forall n m ns. KnownNat m => MetaScale n -> T (n ': m ': ns) Int -> T (m ': ns) Int
-kill ms (i :> j :> js) =
-  let (Reg z dj) = metaMove (getMetaScale ms) i (Reg 0 0)
-   in ((dj + j + z * fromIntegral (natVal (Proxy @m))) :> js)
+scaleSize :: forall n. KnownNat n => Int
+scaleSize = fromInteger $ natVal $ Proxy @n
 
 
--- | A chromatic 'MetaScales' that spells its enharmonic black notes as sharps.
-spelledSharp :: MetaScales '[12] PitchClass
-spelledSharp = Base (S.fromList [A, As, B, C, Cs, D, Ds, E, F, Fs, G, Gs])
+pattern Note :: Deg n -> [Int] -> Note n
+pattern Note a as <- MkNote a (dropWhileEnd (== 0) -> as)
+  where
+    Note a = MkNote a . dropWhileEnd (== 0)
+{-# COMPLETE Note #-}
 
--- | A chromatic 'MetaScales' that spells its enharmonic black notes as flats.
-spelledFlat :: MetaScales '[12] PitchClass
-spelledFlat = Base (S.fromList [A, Af, B, Bf, C, D, Df, E, Ef, F, G, Gf])
+infixl 6 /:
+(/:) :: Deg n -> [Int] -> Note n
+(/:) = MkNote
 
+infixl 6 /+
+(/+) :: Note n -> Int -> Note n
+a /+ b = a + Note 0 [b]
 
-type family (++) xs ys where
-  '[] ++ ys = ys
-  (x ': xs) ++ ys = x ': (xs ++ ys)
+infixl 6 //+
+(//+) :: Note n -> Int -> Note n
+a //+ b = a + Note 0 [0, b]
 
--- | Extend the end of a 'T' with zeroes.
-extend :: forall ns ms a. Monoid (T ns a) => T ms a -> T (ms ++ ns) a
-extend (x :> xs) = x :> extend @ns xs
-extend Nil = mempty
+infixl 6 /-
+(/-) :: Note n -> Int -> Note n
+a /- b = a - Note 0 [b]
 
--- | Extend the front of a 'T' with a zero.
-sink :: Num a => T ns a -> T (n ': ns) a
-sink t = 0 :> t
-
--- | Like 'pred', but over the metascale distance metric.
-metaPred :: Ord a => Set a -> Reg a -> Reg a
-metaPred sc (Reg r a)
-  | a == S.findMin sc = Reg (r - 1) $ S.findMax sc
-  | otherwise = Reg r $ S.findMax $ snd $ S.partition (>= a) sc
-
--- | Like 'succ', but over the metascale distance metric.
-metaSucc :: Ord a => Set a -> Reg a -> Reg a
-metaSucc sc (Reg r a)
-  | a == S.findMax sc = Reg (r + 1) $ S.findMin sc
-  | otherwise = Reg r $ S.findMin $ snd $ S.partition (<= a) sc
-
--- | Iterated 'pred' or 'succ' over the metascale distance metric.
-metaMove :: Ord a => Set a -> Int -> Reg a -> Reg a
-metaMove sc n r =
-  case compare n 0 of
-    LT -> iterate (metaPred sc) r !! abs n
-    EQ -> r
-    GT -> iterate (metaSucc sc) r !! abs n
+infixl 6 //-
+(//-) :: Note n -> Int -> Note n
+a //- b = a - Note 0 [0, b]
 
 
-newtype VoiceLeading x y = VoiceLeading
-  { unVoiceLeading :: Int
+normalizeNote :: forall n. KnownNat n => Note n -> Note n
+normalizeNote (Note (Deg a) as) = Note (Deg $ mod a $ scaleSize @n) as
+
+
+instance Eq (Note n) where
+  Note a as == Note b bs = a == b && as == bs
+
+instance Ord (Note n) where
+  compare (Note (Deg a) as) (Note (Deg b) bs)
+    = foldMap
+        (these (flip compare 0) (compare 0) compare)
+    $ align (a : as) (b : bs)
+
+instance Num (Note n) where
+  fromInteger n = Note (fromInteger n) []
+  Note a as + Note b bs = Note (a + b) $ alignWith (these id        id        (+)) as bs
+  Note a as - Note b bs = Note (a - b) $ alignWith (these id        negate    (-)) as bs
+  Note a as * Note b bs = Note (a * b) $ alignWith (these (const 0) (const 0) (*)) as bs
+  abs    (Note a as) = Note (abs a)    $ fmap abs    as
+  signum (Note a as) = Note (signum a) $ fmap signum as
+
+instance Show (Note n) where
+  showsPrec p (Note n []) = showsPrec p n
+  showsPrec p (Note n [a]) = showParen (p >= 11) $ showsPrec 11 n . showString (bool ("/-") ("/+") (a >= 0)) . showsPrec 11 (abs a)
+  showsPrec p (Note n [0, a]) = showParen (p >= 11) $ showsPrec 11 n . showString (bool ("//-") ("//+") (a >= 0)) . showsPrec 11 (abs a)
+  showsPrec p (Note n ns) = showParen (p >= 11) $ showsPrec 11 n . showString "/:" . showsPrec 11 ns
+
+data Scale a b = Scale
+  { applyScale :: Note a -> Note b
+  }
+
+instance Category Scale where
+  id = Scale id
+  Scale g . Scale f = Scale $ g . f
+
+elim :: (Deg a -> Note b) -> Note a -> Note b
+elim f (Note a []) = f a
+elim f (Note a (j : js)) = f a + Note (Deg j) js
+
+mkScale :: forall c s. (KnownNat c, KnownNat s) => [Note s] -> Scale c s
+mkScale ds = do
+  let ds' = nub $ sort $ fmap normalizeNote ds
+      o = scaleSize @s
+      n = length ds'
+  case n == scaleSize @c of
+    True ->
+      Scale $ elim $ \(Deg i) -> do
+        let (q, r) = divMod i n
+        (ds' !! r) + fromIntegral (q * o)
+    False -> error $ unwords
+      [ "mkScale: declared as chord size"
+      , show $ scaleSize @c
+      , "but given"
+      , show n
+      , "notes."
+      ]
+
+triad :: Scale 3 7
+triad = mkScale [0, 2, 4]
+
+diatonic :: Scale 7 12
+diatonic = mkScale [0, 2, 4, 5, 7, 9, 11]
+
+
+data T c s = T
+  { intrinsic :: Deg c
+  , extrinsic :: Deg s
   }
   deriving stock (Eq, Ord, Show)
-  deriving newtype Num
 
-toT :: forall x y. (KnownNat x, KnownNat y) => VoiceLeading x y -> T '[x, y] Int
-toT (VoiceLeading i) =
-  let x = natVal (Proxy @x)
-      y = natVal (Proxy @y)
+instance Semigroup (T c s) where
+  T a1 b1 <> T a2 b2 = T (a1 + a2) (b1 + b2)
 
-      angle_offset = x % y
+instance Monoid (T c s) where
+  mempty = T 0 0
 
-      -- First wrap i to [0, y)
-      i_wrapped = fromIntegral $ mod (fromIntegral i) y
+instance Num (T c s) where
+  T a1 b1 + T a2 b2 = T (a1 + a2) (b1 + b2)
+  T a1 b1 - T a2 b2 = T (a1 - a2) (b1 - b2)
+  T a1 b1 * T a2 b2 = T (a1 * a2) (b1 * b2)
+  abs    (T a b) = T (abs a)    (abs b)
+  signum (T a b) = T (signum a) (signum b)
+  fromInteger n = T (fromInteger n) (fromInteger n)
+
+lead :: forall c s. (KnownNat c, KnownNat s) => Deg s -> Deg s -> T c s
+lead (Deg from) (Deg to) =
+  let i = to - from
+      c = scaleSize @c
+      s = scaleSize @s
+
+      angle_offset = c % s
+
+      -- First wrap i to [0, s)
+      i_wrapped = mod i s
 
       -- Calculate angular position as fraction of full rotation
       angle = fromIntegral i_wrapped * angle_offset
@@ -253,9 +161,12 @@ toT (VoiceLeading i) =
       wrapped = bool id (subtract 1) (fractional > 0.5) fractional
 
       -- If moving counterclockwise (wrapped < 0), subtract scaleSize
-      tLevel = bool id (subtract y) (wrapped < 0) i_wrapped
+      tLevel = bool id (subtract s) (wrapped < 0) i_wrapped
 
       -- Solve for sTrans to minimize voice leading
       sTrans = negate $ round (fromIntegral tLevel * angle_offset)
-   in sTrans :> fromIntegral tLevel :> Nil
+   in T (fromIntegral sTrans) $ fromIntegral tLevel
+
+apply :: T c s -> Scale c s -> Scale c s
+apply (T i o) (Scale f) = Scale $ (+ MkNote o []) . f . (+ MkNote i [])
 

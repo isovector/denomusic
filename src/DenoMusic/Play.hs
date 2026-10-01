@@ -3,12 +3,12 @@
 
 module DenoMusic.Play (play) where
 
+import Control.DeepSeq (NFData)
 import Data.Set (Set)
 import Data.Set qualified as S
+import DenoMusic.Harmony
 import DenoMusic.Types
 import Euterpea qualified as E
-import DenoMusic.Harmony2
-import Control.DeepSeq (NFData)
 
 instance E.ToMusic1 (Deg 0) where
   toMusic1 = E.toMusic1 . E.mMap (\(Deg n) -> n)
