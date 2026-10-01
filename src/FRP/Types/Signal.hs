@@ -16,8 +16,8 @@ import Control.Exception (evaluate)
 import Control.Lens (set, ix, _1)
 import Data.These
 import Data.Maybe
-import FRP.Event
-import FRP.Time
+import FRP.Types.Event
+import FRP.Types.Time
 import System.IO.Unsafe (unsafePerformIO)
 import System.Timeout (timeout)
 

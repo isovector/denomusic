@@ -4,7 +4,7 @@ module FRP
   ( module Control.Arrow
   , module FRP
   , module FRP.Types
-  , module FRP.Beat
+  , module FRP.Primitives
   , Alternative (..)
   , Interval(..)
   ) where
@@ -16,13 +16,24 @@ import Control.Monad
 import Control.Monad.Cont
 import Data.Bool
 import Data.Functor
-import Data.Map.Monoidal qualified as MM
 import Data.Maybe
 import Data.Monoid
 import Data.Ratio
-import FRP.Beat
+import FRP.Primitives
 import FRP.Types
 import Prelude hiding (id, (.))
+
+
+hold :: a -> SF (Event a) a
+hold a0 = SF $ mkSteps a0 . events
+
+
+fhold :: a -> SF (Event a) a
+fhold a0 = SF $ \s -> do
+  case eventsTerminating s of
+    [] -> Signal (const a0) mempty
+    ((t, a) : as) ->
+      mkSteps a $ zip (t : fmap fst as) $ fmap snd as <> [a0]
 
 
 every :: Time -> a -> SF x (Event a)
@@ -37,15 +48,6 @@ stretch r = SF $ invmapTime (* r) (/ r)
 
 now :: a -> SF x (Event a)
 now = at 0
-
-switch :: SF a (b, Event c) -> (c -> SF a b) -> SF a b
-switch (SF f) k = SF $ \sig -> do
-  let sig' = f sig
-      sig'1 = fmap fst sig'
-  case listToMaybe $ eventsTerminating $ fmap snd sig' of
-    Just (t0, a) ->
-      spliceAt sig'1 t0 $ runSF (k a) sig
-    Nothing -> sig'1
 
 offset :: Time -> SF a a
 offset dt = SF $ invmapTime (+ dt) (subtract dt)
@@ -97,12 +99,6 @@ onlyEvery n = proc ev -> do
   x <- hold 0 <<< accum 0 -< (+1) <$ ev
   returnA -< bool NoEvent ev $ mod x n == 0
 
-subdiv :: Int -> SF (Event Beat) (Event Beat)
-subdiv n = ev2ev $ \bs -> do
-  (t, Beat d s) <- bs
-  let d' = d / fromIntegral n
-  take n $ zip (iterate (+ d') t) $ Beat d' s : repeat (Beat d' $ succ s)
-
 newtype Seq i o a = Seq
   { unSeq :: Cont (SF i o) a
   }
@@ -128,9 +124,6 @@ hit t a = toSeq $ proc i -> do
   n <- now a -< i
   e <- at t () -< i
   returnA -< (n, e)
-
-beat :: Time -> Priority -> Seq i (Event Beat) ()
-beat t p = hit t $ Beat t p
 
 epsilon :: Time
 epsilon = 0.0000000000001
@@ -161,13 +154,4 @@ discreteTime rate = proc _ -> do
   t <- localTime -< ()
   e <- every rate () -< ()
   returnA -< t <$ e
-
-test :: SF i (Event Double)
-test = proc _ -> do
-  ea <- discreteTime 0.5 -< ()
-  eatt <- at 5 3 -< ()
-  arr (fmap fromRational) <<< attractor 2 -< (ea, eatt)
-
-getVoice :: Ord v => v -> SF (Event (Voiced v a)) (Event a)
-getVoice v = mapMaybeE $ MM.lookup v . unVoiced
 

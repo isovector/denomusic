@@ -1,4 +1,4 @@
-module FRP.Event
+module FRP.Types.Event
   ( Event (Event, NoEvent)
   , eventToMaybe
   ) where

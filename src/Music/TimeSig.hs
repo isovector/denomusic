@@ -1,6 +1,6 @@
 {-# LANGUAGE BlockArguments  #-}
 
-module FRP.TimeSig
+module Music.TimeSig
   ( beatsOf
   , subdivide
   , swing
@@ -12,13 +12,15 @@ module FRP.TimeSig
   , time6'8
   , time9'8
   , time12'8
+  , subdiv
+  , beat
   ) where
 
 import Data.Coerce
 import Data.Foldable
 import Data.Functor.Foldable
-import FRP.Beat
-import FRP.Types
+import Music.Beat
+import FRP
 
 
 subdivide :: Int -> Time -> Meter Time
@@ -84,4 +86,14 @@ beatsOf m = do
       clk = ts <> fmap (+ dur) clk
       ws = zip clk $ cycle $ fmap (uncurry Beat) bs
   discrete ws
+
+
+subdiv :: Int -> SF (Event Beat) (Event Beat)
+subdiv n = ev2ev $ \bs -> do
+  (t, Beat d s) <- bs
+  let d' = d / fromIntegral n
+  take n $ zip (iterate (+ d') t) $ Beat d' s : repeat (Beat d' $ succ s)
+
+beat :: Time -> Priority -> Seq i (Event Beat) ()
+beat t p = hit t $ Beat t p
 

@@ -32,13 +32,14 @@ library
       DenoMusic.Play
       DenoMusic.Types
       FRP
-      FRP.Beat
-      FRP.Event
-      FRP.Extra
-      FRP.Time
-      FRP.TimeSig
+      FRP.Primitives
       FRP.Types
+      FRP.Types.Event
+      FRP.Types.SF
       FRP.Types.Signal
+      FRP.Types.Time
+      Music.Beat
+      Music.TimeSig
   other-modules:
       Paths_denomusic
   autogen-modules:

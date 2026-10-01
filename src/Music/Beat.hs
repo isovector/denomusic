@@ -1,9 +1,10 @@
 {-# LANGUAGE TemplateHaskell #-}
 
-module FRP.Beat where
+module Music.Beat where
 
-import FRP.Time
+import FRP.Types.Time
 import Data.Functor.Foldable.TH
+import FRP
 
 
 data Beat = Beat
@@ -36,4 +37,15 @@ instance Monad Meter where
 
 
 makeBaseFunctor ''Meter
+
+
+partitionBeats :: Priority -> SF (Event Beat) (Event Beat, Event Beat)
+partitionBeats p = proc b -> do
+  strong <- filterE ((<= p) . stress) -< b
+  weak   <- filterE ((> p) . stress)  -< b
+  returnA -< (strong, weak)
+
+
+setDuration :: Time -> Beat -> Beat
+setDuration d (Beat _ p) = Beat d p
 
