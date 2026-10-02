@@ -15,7 +15,9 @@ import Control.Category
 import Control.Monad
 import Control.Monad.Cont
 import Data.Bool
+import Data.Coerce
 import Data.Functor
+import Data.Functor.Identity
 import Data.Maybe
 import Data.Monoid
 import Data.Ratio
@@ -145,8 +147,8 @@ attractor dur = proc (ea, eatt) -> do
       True -> lerp (fromRational $ dt / dur) a_attr
       False -> da
 
-lerp :: Fractional a => a -> a -> a -> a
-lerp x lo hi = (1 - x) * lo + x * hi
+lerp :: (Real b, Fractional a) => b -> a -> a -> a
+lerp x lo hi = (1 - realToFrac x) * lo + realToFrac x * hi
 
 
 discreteTime :: Time -> SF x (Event Time)
@@ -154,4 +156,27 @@ discreteTime rate = proc _ -> do
   t <- localTime -< ()
   e <- every rate () -< ()
   returnA -< t <$ e
+
+
+-- | Continuously lerp between events.
+smoothly
+    :: (Applicative f, Integral a, Fractional b)
+    => SF (Event (f a)) (f b)
+smoothly = proc es -> do
+  t <- localTime -< ()
+  let ets = fmap (\e -> (t, fmap fromIntegral e)) es
+  rec
+    ~e0@(t0, fa0) <- hold  e' -<< ets
+    ~e'@(t', fa') <- fhold e0 -<< ets
+  returnA -<
+    case t' - t0 == 0 of
+      True -> fa0
+      False ->
+        lerp ((t - t0) / (t' - t0))
+          <$> fa0
+          <*> fa'
+
+
+smoothly1 :: forall a b. (Integral a, Fractional b) => SF (Event a) b
+smoothly1 = coerce $ smoothly @Identity @a @b
 

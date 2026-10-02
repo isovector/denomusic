@@ -35,6 +35,14 @@ instance ArrowLoop SF where
         out = f $ liftA2 (,) a b
     fmap fst out
 
+instance ArrowApply SF where
+  app = SF $ \s -> do
+    let sf' = fmap fst s
+        sb = fmap snd s
+        cc = fmap (flip runSF sb) sf'
+    Signal (memo $ \t -> sample (sample cc t) t) []
+
+
 
 sample :: Signal a -> Time -> a
 sample (Signal fa []) t = fa t

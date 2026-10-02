@@ -9,12 +9,13 @@ module DenoMusic.Harmony
 import Control.Category
 import Data.Align
 import Data.Bool
+import Data.Functor.Identity
 import Data.Kind
 import Data.List (dropWhileEnd, sort, nub)
 import Data.Proxy
 import Data.Ratio
 import Data.These
-import GHC.Generics (Generic)
+import GHC.Generics (Generic, Generic1)
 import GHC.TypeLits
 import Prelude hiding (id, (.))
 
@@ -26,12 +27,17 @@ noteDeg :: Note n -> Deg n
 noteDeg (Note d _) = d
 
 
-type Deg :: Nat -> Type
-newtype Deg n = Deg
-  { getDeg :: Int
+type CDeg :: Nat -> Type -> Type
+newtype CDeg n a = Deg
+  { getDeg :: a
   }
-  deriving stock Generic
+  deriving stock (Generic, Generic1, Functor, Foldable, Traversable)
+  deriving (Applicative) via Identity
   deriving newtype (Eq, Ord, Show, Num, Enum, Real, Integral)
+
+type Deg n = CDeg n Int
+
+
 
 scaleSize :: forall n. KnownNat n => Int
 scaleSize = fromInteger $ natVal $ Proxy @n
@@ -147,6 +153,7 @@ instance Num (T c s) where
   abs    (T a b) = T (abs a)    (abs b)
   signum (T a b) = T (signum a) (signum b)
   fromInteger n = T (fromInteger n) (fromInteger n)
+
 
 lead :: forall c s. (KnownNat c, KnownNat s) => Deg s -> Deg s -> T c s
 lead (Deg from) (Deg to) =
