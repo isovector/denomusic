@@ -22,6 +22,12 @@ ev2ev :: ([(Time, a)] -> [(Time, b)]) -> SF (Event a) (Event b)
 ev2ev f = SF $ mkDiscrete . f . events
 
 
+evByEv :: ((Time, a) -> (Time, a) -> [(Time, b)]) -> SF (Event a) (Event b)
+evByEv f = SF $ \s -> do
+  let es = events s
+  mkDiscrete $ concat $ zipWith f es (tail es)
+
+
 observe :: SF () (Event a) -> [(Time, a)]
 observe sf = events $ runSF sf (pure ())
 

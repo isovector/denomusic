@@ -180,3 +180,26 @@ smoothly = proc es -> do
 smoothly1 :: forall a b. (Integral a, Fractional b) => SF (Event a) b
 smoothly1 = coerce $ smoothly @Identity @a @b
 
+
+-- | Compute the 'Event's that would have to happen in between the existing
+-- event stream in order to give continuous enumerable motion from one to the
+-- next.
+inBetween :: (Enum a, Ord a) => SF (Event a) (Event a)
+inBetween = evByEv $ \(t1, a1) (t2, a2) -> do
+  let as =
+        zip [1..] $ case compare a1 a2 of
+          LT -> enumFromTo (succ a1) (pred a2)
+          GT -> reverse $ enumFromTo (succ a2) (pred a1)
+          EQ -> mempty
+  let dt = (t2 - t1) / (fromIntegral (length as) + 1)
+  (ix, a) <- as
+  pure (t1 + fromIntegral @Int ix * dt, a)
+
+
+-- | Keep the existing events as 'Right's; compute their 'inBetween's as
+-- 'Left's.
+continuation :: (Enum a, Ord a) => SF (Event a) (Event (Either a a))
+continuation = proc es -> do
+  es' <- inBetween -< es
+  returnA -< fmap Right es <> fmap Left es'
+
