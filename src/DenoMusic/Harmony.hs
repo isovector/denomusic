@@ -1,7 +1,10 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE ViewPatterns        #-}
 
-module DenoMusic.Harmony where
+module DenoMusic.Harmony
+  ( module DenoMusic.Harmony
+  , KnownNat
+  ) where
 
 import Control.Category
 import Data.Align
@@ -19,13 +22,16 @@ type Note :: Nat -> Type
 data Note n = MkNote (Deg n) [Int]
   deriving stock Generic
 
+noteDeg :: Note n -> Deg n
+noteDeg (Note d _) = d
+
 
 type Deg :: Nat -> Type
 newtype Deg n = Deg
   { getDeg :: Int
   }
   deriving stock Generic
-  deriving newtype (Eq, Ord, Show, Num)
+  deriving newtype (Eq, Ord, Show, Num, Enum, Real, Integral)
 
 scaleSize :: forall n. KnownNat n => Int
 scaleSize = fromInteger $ natVal $ Proxy @n

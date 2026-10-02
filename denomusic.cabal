@@ -31,6 +31,7 @@ library
       DenoMusic.NotationBackend
       DenoMusic.Play
       DenoMusic.Types
+      Ex.AutomaticVoiceLeading
       FRP
       FRP.Primitives
       FRP.Types
@@ -39,6 +40,7 @@ library
       FRP.Types.Signal
       FRP.Types.Time
       Music.Beat
+      Music.Extra
       Music.TimeSig
   other-modules:
       Paths_denomusic

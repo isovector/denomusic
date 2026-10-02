@@ -8,7 +8,7 @@ import FRP
 
 
 data Beat = Beat
-  { duration :: Time
+  { bduration :: Time
   , stress :: Priority
   }
   deriving stock (Eq, Ord, Show)

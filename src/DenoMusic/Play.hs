@@ -10,10 +10,10 @@ import DenoMusic.Harmony
 import DenoMusic.Types
 import Euterpea qualified as E
 
-instance E.ToMusic1 (Deg 0) where
+instance E.ToMusic1 (Deg 12) where
   toMusic1 = E.toMusic1 . E.mMap (\(Deg n) -> n)
 
-instance E.ToMusic1 (Note 0) where
+instance E.ToMusic1 (Note 12) where
   toMusic1 = E.toMusic1 . E.mMap (\(Note n _) -> n)
 
 instance E.ToMusic1 (Reg PitchClass) where
