@@ -4,11 +4,13 @@
 module DenoMusic.Play (play) where
 
 import Control.DeepSeq (NFData)
+import Data.Foldable
 import Data.Set (Set)
 import Data.Set qualified as S
 import DenoMusic.Harmony
 import DenoMusic.Types
 import Euterpea qualified as E
+import Music.Types
 
 instance E.ToMusic1 (Deg 12) where
   toMusic1 = E.toMusic1 . E.mMap (\(Deg n) -> n)
@@ -18,6 +20,21 @@ instance E.ToMusic1 (Note 12) where
 
 instance E.ToMusic1 (Reg PitchClass) where
   toMusic1 = E.toMusic1 . E.mMap (fromReg . fmap toStupidEuterpeaPitchClass)
+
+instance (Enum v, Bounded v, E.ToMusic1 a) => E.ToMusic1 (Vertical v a) where
+  toMusic1 =
+    E.mFold
+      (\case
+        E.Note dur v ->
+          foldr
+            (\a m -> m E.:=: E.toMusic1 (E.Prim (E.Note dur a)))
+            (E.Prim $ E.Rest 0)
+            (toList v)
+        E.Rest dur -> E.Prim $ E.Rest dur
+      )
+      (E.:+:)
+      (E.:=:)
+      E.Modify
 
 deriving anyclass instance NFData PitchClass
 deriving anyclass instance NFData (Reg PitchClass)
