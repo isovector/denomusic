@@ -32,6 +32,7 @@ library
       DenoMusic.Play
       DenoMusic.Types
       Ex.AutomaticVoiceLeading
+      Ex.DyadExpansion
       FRP
       FRP.Primitives
       FRP.Types
@@ -42,6 +43,7 @@ library
       Music.Beat
       Music.Extra
       Music.TimeSig
+      Music.Types
   other-modules:
       Paths_denomusic
   autogen-modules:

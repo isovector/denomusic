@@ -1,12 +1,16 @@
 module Music.Types where
 
-import Data.Coerce
-import DenoMusic.Types (Reg(..))
 import Control.Arrow
+import Control.DeepSeq
+import Data.Coerce
+import Data.Foldable
+import Data.Function (on)
 import Data.Maybe (fromMaybe)
+import Data.Monoid (Ap(..))
 import Data.Profunctor
-
 import DenoMusic.Harmony
+import DenoMusic.Types (Reg(..))
+import GHC.Generics
 
 
 data Dyad = Lo | Hi
@@ -21,8 +25,17 @@ data Triad = Root | Third | Fifth
 newtype Vertical v a = Vertical
   { getVertical :: v -> a
   }
-  deriving stock (Functor)
-  deriving newtype (Semigroup, Applicative, Monad, Monoid, Profunctor)
+  deriving stock (Functor, Generic)
+  deriving newtype (Applicative, Monad, Profunctor)
+  deriving (Num, Semigroup, Monoid) via Ap (Vertical v) a
+
+instance NFData (Vertical v a)
+
+instance (Enum v, Bounded v, Eq a) => Eq (Vertical v a) where
+  (==) = on (==) toList
+
+instance (Enum v, Bounded v, Ord a) => Ord (Vertical v a) where
+  compare = on compare toList
 
 instance (Enum v, Bounded v, Show v, Show a) => Show (Vertical v a) where
   showsPrec p = showsPrec p . enumerate
@@ -54,25 +67,6 @@ divModNote (Note d as)
 
 undivModNote :: forall n. KnownNat n => Reg (Note n) -> Note n
 undivModNote (Reg n d) = d + fromIntegral (n * scaleSize @n)
-
-
--- | Swap the degrees and modifications of two voices in a vertical
--- configuration. The voices will maintain their register.
-swapV
-    :: (Eq v, KnownNat n)
-    => v
-    -> v
-    -> Vertical v (Note n)
-    -> Vertical v (Note n)
-swapV v1 v2 (Vertical f) = Vertical $ do
-  let Reg r1 n1 = divModNote $ f v1
-      Reg r2 n2 = divModNote $ f v2
-      a1' = undivModNote $ Reg r1 n2
-      a2' = undivModNote $ Reg r2 n1
-  \case
-    v | v == v1   -> a1'
-      | v == v2   -> a2'
-      | otherwise -> f v
 
 
 embed :: (v' -> (v, a -> b)) -> Vertical v a -> Vertical v' b
