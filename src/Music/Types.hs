@@ -1,7 +1,8 @@
 module Music.Types where
 
-import Control.Arrow
+import Data.Set qualified as S
 import Control.DeepSeq
+import Control.Monad.Cont
 import Data.Coerce
 import Data.Foldable
 import Data.Function (on)
@@ -10,6 +11,7 @@ import Data.Monoid (Ap(..))
 import Data.Profunctor
 import DenoMusic.Harmony
 import DenoMusic.Types (Reg(..))
+import FRP
 import GHC.Generics
 
 
@@ -73,4 +75,39 @@ embed :: (v' -> (v, a -> b)) -> Vertical v a -> Vertical v' b
 embed f' (Vertical f) = Vertical $ \v' ->
   let (v, fab) = f' v'
    in fab $ f v
+
+data Timed a = Timed
+  { duration :: Time
+  , unTimed :: a
+  }
+  deriving stock (Eq, Ord, Show, Functor, Foldable, Traversable)
+
+newtype H i o a = Horizontal
+  { unHorizontal :: Cont (SF i (Event (Timed o))) a
+  }
+  deriving newtype (Functor, Applicative, Monad)
+
+timedToNotes :: Timed a -> Notes a
+timedToNotes (Timed t a) = Notes $ S.singleton (t, a)
+
+
+toHorizontal :: SF i (Event (Timed o), Event a) -> H i o a
+toHorizontal = Horizontal . cont . switch
+
+switchHorizontal :: H i o a -> (a -> SF i (Event (Timed o))) -> SF i (Event (Timed o))
+switchHorizontal = runCont . unHorizontal
+
+getHorizontal :: H i o a -> SF i (Event (Timed o))
+getHorizontal = flip switchHorizontal $ const $ arr $ const NoEvent
+
+rest :: Time -> H i a ()
+rest t = toHorizontal $ proc i -> do
+  e <- at t () -< i
+  returnA -< (NoEvent, e)
+
+hit :: Time -> a -> H i a ()
+hit t a = toHorizontal $ proc i -> do
+  n <- now (Timed t a) -< i
+  e <- at t () -< i
+  returnA -< (n, e)
 

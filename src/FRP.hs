@@ -13,7 +13,6 @@ import Control.Applicative
 import Control.Arrow
 import Control.Category
 import Control.Monad
-import Control.Monad.Cont
 import Data.Bool
 import Data.Coerce
 import Data.Functor
@@ -101,31 +100,6 @@ onlyEvery n = proc ev -> do
   x <- hold 0 <<< accum 0 -< (+1) <$ ev
   returnA -< bool NoEvent ev $ mod x n == 0
 
-newtype Seq i o a = Seq
-  { unSeq :: Cont (SF i o) a
-  }
-  deriving newtype (Functor, Applicative, Monad)
-
-
-toSeq :: SF i (Event o, Event a) -> Seq i (Event o) a
-toSeq = Seq . cont . switch
-
-switchSeq :: Seq i o a -> (a -> SF i o) -> SF i o
-switchSeq = runCont . unSeq
-
-getSeq :: Seq i (Event o) a -> SF i (Event o)
-getSeq = flip switchSeq $ const $ arr $ const NoEvent
-
-rest :: Time -> Seq i (Event a) ()
-rest t = toSeq $ proc i -> do
-  e <- at t () -< i
-  returnA -< (NoEvent, e)
-
-hit :: Time -> a -> Seq i (Event a) ()
-hit t a = toSeq $ proc i -> do
-  n <- now a -< i
-  e <- at t () -< i
-  returnA -< (n, e)
 
 epsilon :: Time
 epsilon = 0.0000000000001
