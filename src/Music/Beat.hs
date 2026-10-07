@@ -2,6 +2,7 @@
 
 module Music.Beat where
 
+import GHC.Exts
 import FRP.Types.Time
 import Data.Functor.Foldable.TH
 import FRP
@@ -34,6 +35,12 @@ instance Applicative Meter where
 instance Monad Meter where
   Pulse a >>= f = f a
   Group as >>= f = Group $ fmap (>>= f) as
+
+instance IsList (Meter a) where
+  type Item (Meter a) = Meter a
+  toList (Group ms) = ms
+  toList (Pulse a) = [Pulse a]
+  fromList = Group
 
 
 makeBaseFunctor ''Meter

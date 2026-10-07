@@ -40,6 +40,9 @@ fhold a0 = SF $ \s -> do
 every :: Time -> a -> SF x (Event a)
 every dur a = discrete $ zip (iterate (+ dur) 0) $ repeat a
 
+rhythm :: [Time] -> a -> SF x (Event a)
+rhythm durs a = discrete $ zip (scanl (+) 0 $ cycle durs) $ repeat a
+
 at :: Time -> a -> SF x (Event a)
 at t' a = discrete $ pure (t', a)
 

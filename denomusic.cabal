@@ -34,6 +34,7 @@ library
       Ex.AutomaticVoiceLeading
       Ex.DyadExpansion
       Ex.Horizontal
+      Ex.Test
       FRP
       FRP.Primitives
       FRP.Types
@@ -45,6 +46,7 @@ library
       Music.Extra
       Music.TimeSig
       Music.Types
+      Rhythm
   other-modules:
       Paths_denomusic
   autogen-modules:
