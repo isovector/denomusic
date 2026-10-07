@@ -20,6 +20,7 @@ import Data.Coerce
 import Data.Foldable
 import Data.Functor.Foldable
 import Music.Beat
+import Music.Types
 import FRP
 
 
@@ -94,6 +95,6 @@ subdiv n = ev2ev $ \bs -> do
   let d' = d / fromIntegral n
   take n $ zip (iterate (+ d') t) $ Beat d' s : repeat (Beat d' $ succ s)
 
-beat :: Time -> Priority -> Seq i (Event Beat) ()
+beat :: Time -> Priority -> H i Beat ()
 beat t p = hit t $ Beat t p
 

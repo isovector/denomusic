@@ -22,7 +22,7 @@ m2 s = do
   qq 8
   qq 7
   qq 10
-  pure $ s + 10 - 1
+  pure $ s + 9 -- up a sixth
 
 song :: SF () (Event (Notes (Note 12)))
 song = mconcat

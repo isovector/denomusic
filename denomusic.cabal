@@ -33,6 +33,7 @@ library
       DenoMusic.Types
       Ex.AutomaticVoiceLeading
       Ex.DyadExpansion
+      Ex.Horizontal
       FRP
       FRP.Primitives
       FRP.Types
