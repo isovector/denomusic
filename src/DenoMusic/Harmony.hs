@@ -1,4 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE TypeAbstractions    #-}
 {-# LANGUAGE ViewPatterns        #-}
 
 module DenoMusic.Harmony
@@ -11,7 +12,7 @@ import Data.Align
 import Data.Bool
 import Data.Functor.Identity
 import Data.Kind
-import Data.List (dropWhileEnd, sort, nub)
+import Data.List (dropWhileEnd, findIndex, sort, nub)
 import Data.Proxy
 import Data.Ratio
 import Data.These
@@ -135,8 +136,8 @@ diatonic = mkScale [0, 2, 4, 5, 7, 9, 11]
 
 
 data T c s = T
-  { intrinsic :: Deg c
-  , extrinsic :: Deg s
+  { intrinsicT :: Deg c
+  , extrinsicT :: Deg s
   }
   deriving stock (Eq, Ord, Show)
 
@@ -182,4 +183,38 @@ lead (Deg from) (Deg to) =
 
 apply :: T c s -> Scale c s -> Scale c s
 apply (T i o) (Scale f) = Scale $ (+ MkNote o []) . f . (+ MkNote i [])
+
+
+intrinsic
+  :: forall v c r
+   . (Enum v, Bounded v, KnownNat c)
+  => (v -> Note c)
+  -> (forall ins. KnownNat ins => Proxy ins -> Scale ins c -> (v -> Note ins) -> r)
+  -> r
+intrinsic voiced k = do
+  let notes = fmap voiced [minBound @v .. maxBound @v]
+  withSomeSNat (fromIntegral $ length notes) $ \case
+    Just (snat :: SNat ins) ->
+      let ds' = nub $ sort $ fmap normalizeNote notes
+          n = length ds'
+          o = scaleSize @c
+       in withKnownNat snat
+            $ k @ins Proxy (mkScale notes)
+            $ flip fmap voiced $ \(Note (Deg a) xs) -> do
+                let (q, r) = divMod a o
+                case findIndex ((== Deg r) . noteDeg) ds' of
+                  Just idx -> MkNote (fromIntegral (q * n + idx))xs
+                  Nothing -> error "impossible"
+    Nothing -> error "impossible"
+
+voiceLead
+    :: (Enum v, Bounded v, KnownNat s)
+    => Deg s
+    -> Deg s
+    -> (v -> Note s)
+    -> (v -> Note s)
+voiceLead from to voiced =
+  intrinsic voiced $ \(Proxy @ins) sc v' -> do
+    let t = lead @ins from to
+    fmap (applyScale $ apply t sc) v'
 
