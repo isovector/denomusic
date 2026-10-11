@@ -1,9 +1,9 @@
 module Ex.DyadExpansion where
 
-import DenoMusic.Harmony
 import DenoMusic.Play
 import FRP
 import Music.Extra
+import Music.Harmony
 import Music.Types
 
 

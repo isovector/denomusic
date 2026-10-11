@@ -3,7 +3,6 @@ module Ex.Horizontal where
 import DenoMusic.Play
 import FRP
 import Music.Types
-import DenoMusic.Harmony
 
 
 m1 :: Note 12 -> H i (Note 12) (Note 12)

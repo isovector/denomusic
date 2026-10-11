@@ -1,10 +1,11 @@
 module Ex.AutomaticVoiceLeading where
 
-import DenoMusic.Harmony
 import DenoMusic.Play
 import FRP
 import Music.Extra
+import Music.Harmony
 import Music.TimeSig
+import Music.Types
 
 
 harmony :: SF x (Event (Deg 7))

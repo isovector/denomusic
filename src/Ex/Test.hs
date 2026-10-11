@@ -2,19 +2,18 @@
 
 module Ex.Test where
 
-import Data.Set qualified as S
-import DenoMusic.Play
-import GHC.Generics
+import Control.Applicative (ZipList(..))
+import Control.DeepSeq (NFData)
 import Control.Lens
 import Data.Kind
-import GHC.TypeLits
-import FRP
-import Music.Types
-import Music.Extra
-import DenoMusic.Harmony
-import Control.Applicative (ZipList(..))
+import Data.Set qualified as S
+import DenoMusic.Play
 import Euterpea qualified as E
-import Control.DeepSeq (NFData)
+import FRP
+import GHC.Generics
+import GHC.TypeLits
+import Music.Harmony
+import Music.Types
 
 
 dyad :: Scale 2 3

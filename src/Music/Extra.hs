@@ -1,7 +1,8 @@
 module Music.Extra where
 
 import Data.Set qualified as S
-import DenoMusic.Harmony
+import Music.Harmony
+import Music.Types
 import Music.Beat
 import FRP
 
@@ -22,6 +23,9 @@ instance HasDuration Beat where
 
 instance HasDuration Time where
   duration = id
+
+instance HasDuration (Timed t) where
+  duration = tduration
 
 note :: HasDuration a => (b -> c) -> Event (a, b) -> Event (Notes c)
 note f = fmap (\(a, b) -> Notes $ S.singleton (duration a, f b))

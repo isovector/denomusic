@@ -7,7 +7,6 @@ import Control.DeepSeq (NFData)
 import Data.Foldable
 import Data.Set (Set)
 import Data.Set qualified as S
-import DenoMusic.Harmony
 import DenoMusic.Types
 import Euterpea qualified as E
 import Music.Types

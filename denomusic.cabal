@@ -26,7 +26,6 @@ source-repository head
 library
   exposed-modules:
       Data.Lilypond
-      DenoMusic.Harmony
       DenoMusic.Notation
       DenoMusic.NotationBackend
       DenoMusic.Play
@@ -44,9 +43,12 @@ library
       FRP.Types.Time
       Music.Beat
       Music.Extra
+      Music.Harmony
       Music.TimeSig
       Music.Types
-      Rhythm
+      Music.Types.Note
+      Music.Types.Scale
+      Music.Types.Vertical
   other-modules:
       Paths_denomusic
   autogen-modules:
