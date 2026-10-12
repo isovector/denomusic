@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -Wno-orphans #-}
+
 module Music.Extra where
 
 import Data.Set qualified as S
@@ -15,17 +17,9 @@ leading' = proc ed' -> do
 msumE :: Monoid a => SF (Event a) a
 msumE = arr (fmap (<>)) >>> accum mempty >>> hold mempty
 
-class HasDuration a where
-  duration :: a -> Time
 
 instance HasDuration Beat where
   duration = bduration
-
-instance HasDuration Time where
-  duration = id
-
-instance HasDuration (Timed t) where
-  duration = tduration
 
 note :: HasDuration a => (b -> c) -> Event (a, b) -> Event (Notes c)
 note f = fmap (\(a, b) -> Notes $ S.singleton (duration a, f b))

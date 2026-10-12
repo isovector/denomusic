@@ -5,6 +5,9 @@ module Music.Types
   , module Music.Types.Vertical
   ) where
 
+import Control.Arrow.Transformer.Static
+import Control.Arrow
+import Control.Category
 import Control.Monad.Cont
 import Data.Coerce
 import Data.Set qualified as S
@@ -14,6 +17,7 @@ import Music.Harmony
 import Music.Types.Note
 import Music.Types.Scale
 import Music.Types.Vertical
+import Prelude hiding (id, (.))
 
 
 data Dyad = Lo | Hi
@@ -39,8 +43,42 @@ data Timed a = Timed
   }
   deriving stock (Eq, Ord, Show, Functor, Foldable, Traversable)
 
-newtype H i o a = Horizontal
-  { unHorizontal :: Cont (SF i (Event (Timed o))) a
+instance Applicative Timed where
+  pure = Timed 0
+  liftA2 f (Timed ta a) (Timed tb b) = Timed (max ta tb) $ f a b
+
+class HasDuration a where
+  duration :: a -> Time
+
+instance HasDuration Time where
+  duration = id
+
+instance HasDuration (Timed t) where
+  duration = tduration
+
+instance HasDuration (Horizontal i o) where
+  duration (Horizontal f) = duration f
+
+denote :: HasDuration a => a -> Horizontal t (Event a)
+denote = Horizontal . uncurry Timed . (duration &&& at 0)
+
+newtype Horizontal i o = Horizontal
+  { unHorizontal :: Timed (SF i o)
+  }
+  deriving (Category, Arrow, ArrowLoop) via StaticArrow Timed SF
+
+
+instance Semigroup (Horizontal i o) where
+  Horizontal (Timed t1 x) <> Horizontal (Timed t2 y) =
+    Horizontal $ Timed (t1 + t2) $ switch (x &&& at t1 ()) $ const y
+
+instance Monoid o => Monoid (Horizontal i o) where
+  mempty = Horizontal $ pure mempty
+
+
+
+newtype H i o a = H
+  { unH :: Cont (SF i (Event (Timed o))) a
   }
   deriving newtype (Functor, Applicative, Monad)
 
@@ -49,10 +87,10 @@ timedToNotes (Timed t a) = Notes $ S.singleton (t, a)
 
 
 toHorizontal :: SF i (Event (Timed o), Event a) -> H i o a
-toHorizontal = Horizontal . cont . switch
+toHorizontal = H . cont . switch
 
 switchHorizontal :: H i o a -> (a -> SF i (Event (Timed o))) -> SF i (Event (Timed o))
-switchHorizontal = runCont . unHorizontal
+switchHorizontal = runCont . unH
 
 getHorizontal :: H i o a -> SF i (Event (Timed o))
 getHorizontal = flip switchHorizontal $ const $ arr $ const NoEvent

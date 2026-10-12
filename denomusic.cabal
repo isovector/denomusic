@@ -69,6 +69,7 @@ library
       Euterpea
     , MemoTrie
     , QuickCheck
+    , arrows
     , base >=4.7 && <5
     , checkers
     , containers >=0.5.9

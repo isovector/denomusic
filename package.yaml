@@ -45,6 +45,7 @@ dependencies:
 - semialign
 - these
 - distributive
+- arrows
 
 default-extensions:
 - Arrows
