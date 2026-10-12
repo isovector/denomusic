@@ -13,6 +13,8 @@ import Data.Maybe (fromMaybe)
 import Data.Monoid (Ap(..))
 import FRP
 import GHC.Generics
+import Music.Types.Note
+import Music.Types.Scale
 
 
 -- | A vertical ("simultaneous") configuration of some sort.
@@ -41,6 +43,9 @@ voice v = lens (($ v ) . getVertical) (\(Vertical f) a -> Vertical $ \case
 iota :: (Enum v, Num a) => Vertical v a
 iota = Vertical $ \i ->
   fromIntegral $ fromEnum i
+
+chord :: Enum v => Scale c s -> Vertical v (Note s)
+chord s = fmap (applyScale s) iota
 
 
 instance Distributive (Vertical v) where
