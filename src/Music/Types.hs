@@ -42,15 +42,17 @@ divModNote (Note d as)
 undivModNote :: forall n. KnownNat n => Reg (Note n) -> Note n
 undivModNote (Reg n d) = d + fromIntegral (n * scaleSize @n)
 
--- | The applicative instance does parallel composition, while the monoid is
--- sequential.
 data Timed a = Timed
   { tduration :: Time
   , unTimed :: a
   }
   deriving stock (Eq, Ord, Show, Functor, Foldable, Traversable, Generic)
-  deriving (Semigroup, Monoid) via Generically (Timed a)
 
+-- | Sequential composition; takes the sum of the two durations.
+deriving via Generically (Timed a) instance Semigroup a => Semigroup (Timed a)
+deriving via Generically (Timed a) instance Monoid a => Monoid (Timed a)
+
+-- | Parallel composition; takes the max of the two durations.
 instance Applicative Timed where
   pure = Timed 0
   liftA2 f (Timed ta a) (Timed tb b) = Timed (max ta tb) $ f a b
