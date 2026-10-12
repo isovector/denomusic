@@ -3,11 +3,12 @@ module Music.Types.Vertical
   , Distributive(..)
   ) where
 
-import Control.Lens
 import Control.DeepSeq
+import Control.Lens
 import Data.Distributive
 import Data.Foldable
 import Data.Function (on)
+import Data.List (intercalate)
 import Data.Maybe (fromMaybe)
 import Data.Monoid (Ap(..))
 import FRP
@@ -21,6 +22,14 @@ newtype Vertical v a = Vertical
   deriving stock (Functor, Generic)
   deriving newtype (Applicative, Monad, Profunctor)
   deriving (Num, Semigroup, Monoid) via Ap (Vertical v) a
+
+prettyVertical :: (Enum v, Bounded v, Show v) => Vertical v String -> String
+prettyVertical
+  = flip mappend " }"
+  . mappend "{ "
+  . intercalate ", "
+  . fmap (\(v, a) -> mconcat [show v, ": ", a])
+  . enumerate
 
 
 voice :: Eq v => v -> Lens' (Vertical v a) a

@@ -7,10 +7,11 @@ module Music.Harmony
   , KnownNat
   ) where
 
-import Control.Lens ((+~), (&), view, (-~))
 import Control.Category
+import Control.Lens ((+~), (&), view, (-~))
 import Data.Bool
 import Data.List (findIndex, sort, nub)
+import Data.Monoid
 import Data.Proxy
 import Data.Ratio
 import GHC.TypeLits
@@ -100,20 +101,31 @@ intrinsic voiced k = do
     Nothing -> error "impossible"
 
 
+newtype VoiceLeading v s = VoiceLeading
+  { applyVoiceLeading :: Vertical v (Note s) -> Vertical v (Note s)
+  }
+  deriving (Semigroup, Monoid) via Endo (Vertical v (Note n))
+
+instance (Show v, Enum v, Bounded v) => Show (VoiceLeading v s) where
+  show (VoiceLeading f) =
+    let v = iota
+     in prettyVertical $ liftA2 (\x y -> unwords [show x, "→", show y]) v (f v)
+
 voiceLead
     :: (Enum v, Bounded v, KnownNat s)
     => Deg s
     -> Deg s
-    -> Vertical v (Note s)
-    -> Vertical v (Note s)
-voiceLead from to voiced =
+    -> VoiceLeading v s
+voiceLead from to = VoiceLeading $ \voiced ->
   intrinsic voiced $ \(Proxy @ins) sc v' -> do
     let t = lead @ins from to
     fmap (applyScale $ apply t sc) v'
 
 
-exchangeToward :: forall m v. (KnownNat m, Ord v) => v -> v -> Vertical v (Note m) -> Vertical v (Note m)
-exchangeToward x y v =
+-- | A voice leading that swaps the two voices by moving each towards the
+-- other.
+contract :: forall m v. (KnownNat m, Ord v) => v -> v -> VoiceLeading v m
+contract x y = VoiceLeading $ \v ->
   let ax = (getDeg $ noteDeg $ view (voice x) v, x)
       by = (getDeg $ noteDeg $ view (voice y) v, y)
       (lo, src) = min ax by
@@ -123,8 +135,10 @@ exchangeToward x y v =
         & voice dst -~ fromIntegral d
 
 
-exchangeAway :: forall m v. (KnownNat m, Ord v) => v -> v -> Vertical v (Note m) -> Vertical v (Note m)
-exchangeAway x y v =
+-- | A voice leading that swaps the two voices by moving each away from the
+-- other.
+expand :: forall m v. (KnownNat m, Ord v) => v -> v -> VoiceLeading v m
+expand x y = VoiceLeading $ \v ->
   let ax = (getDeg $ noteDeg $ view (voice x) v, x)
       by = (getDeg $ noteDeg $ view (voice y) v, y)
       (lo, src) = min ax by
