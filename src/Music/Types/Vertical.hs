@@ -3,13 +3,13 @@ module Music.Types.Vertical
   , Distributive(..)
   ) where
 
+import Control.Lens
 import Control.DeepSeq
 import Data.Distributive
 import Data.Foldable
 import Data.Function (on)
 import Data.Maybe (fromMaybe)
 import Data.Monoid (Ap(..))
-import Data.Profunctor
 import FRP
 import GHC.Generics
 
@@ -21,6 +21,18 @@ newtype Vertical v a = Vertical
   deriving stock (Functor, Generic)
   deriving newtype (Applicative, Monad, Profunctor)
   deriving (Num, Semigroup, Monoid) via Ap (Vertical v) a
+
+
+voice :: Eq v => v -> Lens' (Vertical v a) a
+voice v = lens (($ v ) . getVertical) (\(Vertical f) a -> Vertical $ \case
+  v' | v == v' -> a
+     | otherwise -> f v')
+
+
+iota :: (Enum v, Num a) => Vertical v a
+iota = Vertical $ \i ->
+  fromIntegral $ fromEnum i
+
 
 instance Distributive (Vertical v) where
   distribute f = Vertical $ \v -> fmap (($ v) . getVertical) f

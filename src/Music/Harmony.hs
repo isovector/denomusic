@@ -7,6 +7,7 @@ module Music.Harmony
   , KnownNat
   ) where
 
+import Control.Lens ((+~), (&), view, (-~))
 import Control.Category
 import Data.Bool
 import Data.List (findIndex, sort, nub)
@@ -109,4 +110,26 @@ voiceLead from to voiced =
   intrinsic voiced $ \(Proxy @ins) sc v' -> do
     let t = lead @ins from to
     fmap (applyScale $ apply t sc) v'
+
+
+exchangeToward :: forall m v. (KnownNat m, Ord v) => v -> v -> Vertical v (Note m) -> Vertical v (Note m)
+exchangeToward x y v =
+  let ax = (getDeg $ noteDeg $ view (voice x) v, x)
+      by = (getDeg $ noteDeg $ view (voice y) v, y)
+      (lo, src) = min ax by
+      (hi, dst) = max ax by
+      d = mod (hi - lo) $ scaleSize @m
+   in v & voice src +~ fromIntegral d
+        & voice dst -~ fromIntegral d
+
+
+exchangeAway :: forall m v. (KnownNat m, Ord v) => v -> v -> Vertical v (Note m) -> Vertical v (Note m)
+exchangeAway x y v =
+  let ax = (getDeg $ noteDeg $ view (voice x) v, x)
+      by = (getDeg $ noteDeg $ view (voice y) v, y)
+      (lo, src) = min ax by
+      (hi, dst) = max ax by
+      d = scaleSize @m - mod (hi - lo) (scaleSize @m)
+   in v & voice src -~ fromIntegral d
+        & voice dst +~ fromIntegral d
 
