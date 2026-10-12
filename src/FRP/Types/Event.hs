@@ -3,12 +3,13 @@ module FRP.Types.Event
   , eventToMaybe
   ) where
 
+import GHC.Generics
 import Control.Applicative
 
 newtype Event a = MkEvent
   { eventToMaybe :: Maybe a
   }
-  deriving stock (Foldable, Traversable)
+  deriving stock (Foldable, Traversable, Generic)
   deriving newtype (Functor, Applicative, Monad, Eq, Ord, Show, Alternative)
 
 {-# COMPLETE Event, NoEvent #-}

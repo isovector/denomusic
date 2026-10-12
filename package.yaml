@@ -46,6 +46,7 @@ dependencies:
 - these
 - distributive
 - arrows
+- generic-lens
 
 default-extensions:
 - Arrows
@@ -56,6 +57,7 @@ default-extensions:
 - PatternSynonyms
 - TypeFamilies
 - ViewPatterns
+- OverloadedLabels
 
 ghc-options:
 - -Wall

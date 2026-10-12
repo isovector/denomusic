@@ -5,14 +5,19 @@ module Music.Types
   , module Music.Types.Vertical
   ) where
 
-import Control.Arrow.Transformer.Static
+import Control.Applicative
 import Control.Arrow
+import Control.Arrow.Transformer.Static
 import Control.Category
+import Control.Lens hiding (at)
 import Control.Monad.Cont
 import Data.Coerce
+import Data.Generics.Labels ()
+import Data.Generics.Product (field')
 import Data.Set qualified as S
 import DenoMusic.Types (Reg(..))
 import FRP
+import GHC.Generics
 import Music.Harmony
 import Music.Types.Note
 import Music.Types.Scale
@@ -37,34 +42,42 @@ divModNote (Note d as)
 undivModNote :: forall n. KnownNat n => Reg (Note n) -> Note n
 undivModNote (Reg n d) = d + fromIntegral (n * scaleSize @n)
 
+-- | The applicative instance does parallel composition, while the monoid is
+-- sequential.
 data Timed a = Timed
   { tduration :: Time
   , unTimed :: a
   }
-  deriving stock (Eq, Ord, Show, Functor, Foldable, Traversable)
+  deriving stock (Eq, Ord, Show, Functor, Foldable, Traversable, Generic)
+  deriving (Semigroup, Monoid) via Generically (Timed a)
 
 instance Applicative Timed where
   pure = Timed 0
   liftA2 f (Timed ta a) (Timed tb b) = Timed (max ta tb) $ f a b
 
 class HasDuration a where
-  duration :: a -> Time
+  duration :: Traversal' a Time
 
 instance HasDuration Time where
   duration = id
 
 instance HasDuration (Timed t) where
-  duration = tduration
+  duration = #tduration
 
 instance HasDuration (Horizontal i o) where
-  duration (Horizontal f) = duration f
+  duration = field' @"unHorizontal" . duration
+
+instance HasDuration a => HasDuration (Event a) where
+  duration = #_MkEvent . _Just . duration
 
 denote :: HasDuration a => a -> Horizontal t (Event a)
-denote = Horizontal . uncurry Timed . (duration &&& at 0)
+denote = Horizontal . uncurry Timed . (view duration &&& at 0)
 
 newtype Horizontal i o = Horizontal
   { unHorizontal :: Timed (SF i o)
   }
+  deriving stock (Generic, Functor)
+  deriving (Applicative) via WrappedArrow (StaticArrow Timed SF) i
   deriving (Category, Arrow, ArrowLoop) via StaticArrow Timed SF
 
 
@@ -75,6 +88,10 @@ instance Semigroup (Horizontal i o) where
 instance Monoid o => Monoid (Horizontal i o) where
   mempty = Horizontal $ pure mempty
 
+
+resize :: HasDuration o => Time -> Horizontal i o -> Horizontal i o
+resize d (Horizontal (Timed t sf)) =
+  Horizontal $ Timed (d * t) $ fmap (duration *~ d) $ sf >>> stretch d
 
 
 newtype H i o a = H

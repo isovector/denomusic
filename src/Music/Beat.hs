@@ -2,6 +2,7 @@
 
 module Music.Beat where
 
+import GHC.Generics
 import GHC.Exts
 import FRP.Types.Time
 import Data.Functor.Foldable.TH
@@ -12,7 +13,7 @@ data Beat = Beat
   { bduration :: Time
   , stress :: Priority
   }
-  deriving stock (Eq, Ord, Show)
+  deriving stock (Eq, Ord, Show, Generic)
 
 
 newtype Priority = P Int
