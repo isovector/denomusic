@@ -73,6 +73,7 @@ library
     , checkers
     , containers >=0.5.9
     , deepseq
+    , distributive
     , fingertree
     , groups
     , hspec

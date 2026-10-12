@@ -1,10 +1,10 @@
 module Music.Extra where
 
 import Data.Set qualified as S
+import FRP
+import Music.Beat
 import Music.Harmony
 import Music.Types
-import Music.Beat
-import FRP
 
 
 leading' :: (KnownNat c, KnownNat s) => SF (Event (Deg s)) (Event (T c s))
@@ -29,4 +29,12 @@ instance HasDuration (Timed t) where
 
 note :: HasDuration a => (b -> c) -> Event (a, b) -> Event (Notes c)
 note f = fmap (\(a, b) -> Notes $ S.singleton (duration a, f b))
+
+
+toV :: SF i (Vertical v a) -> Vertical v (SF i a)
+toV = distribute
+
+
+toH :: (Enum v, Bounded v, Eq v) => Vertical v (SF i a) -> SF i (Vertical v a)
+toH = sequenceA
 

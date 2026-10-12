@@ -1,6 +1,10 @@
-module Music.Types.Vertical where
+module Music.Types.Vertical
+  ( module Music.Types.Vertical
+  , Distributive(..)
+  ) where
 
 import Control.DeepSeq
+import Data.Distributive
 import Data.Foldable
 import Data.Function (on)
 import Data.Maybe (fromMaybe)
@@ -17,6 +21,9 @@ newtype Vertical v a = Vertical
   deriving stock (Functor, Generic)
   deriving newtype (Applicative, Monad, Profunctor)
   deriving (Num, Semigroup, Monoid) via Ap (Vertical v) a
+
+instance Distributive (Vertical v) where
+  distribute f = Vertical $ \v -> fmap (($ v) . getVertical) f
 
 instance NFData (Vertical v a)
 
