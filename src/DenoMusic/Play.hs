@@ -9,7 +9,9 @@ import Data.Set (Set)
 import Data.Set qualified as S
 import DenoMusic.Types
 import Euterpea qualified as E
+import FRP.Types.Time
 import Music.Types
+
 
 instance E.ToMusic1 (Deg 12) where
   toMusic1 = E.toMusic1 . E.mMap (\(Deg n) -> n)
@@ -62,12 +64,12 @@ toStupidEuterpeaPitchClass Gs = E.Gs
 
 
 -- | Play a piece of music by converting it to MIDI.
-play :: (E.ToMusic1 a, NFData a) => [(Interval Rational, Set a)] -> IO ()
+play :: (E.ToMusic1 a, NFData a) => [(Interval Time, Set a)] -> IO ()
 play z
   = E.playDev 2
   $ foldr (E.:=:) (E.rest 0)
   $ do
-    (Interval lo hi, as) <- z
+    (Interval (Time lo) (Time hi), as) <- z
     pure $ foldr (E.:=:) (E.rest 0) $ do
       a <- S.toList as
       pure $ E.rest lo E.:+: E.note (hi - lo) a

@@ -28,7 +28,7 @@ subdivide :: Int -> Time -> Meter Time
 subdivide n t = Group $ replicate n $ Pulse $ (t / fromIntegral n)
 
 swing :: Rational -> Time -> Meter Time
-swing r t = Group
+swing (fromRational -> r) t = Group
   [ Pulse $ t * r
   , Pulse $ t * (1 - r)
   ]

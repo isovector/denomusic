@@ -89,9 +89,9 @@ instance Monoid o => Monoid (Horizontal i o) where
   mempty = Horizontal $ pure mempty
 
 
-resize :: HasDuration o => Time -> Horizontal i o -> Horizontal i o
+resize :: HasDuration o => Rational -> Horizontal i o -> Horizontal i o
 resize d (Horizontal (Timed t sf)) =
-  Horizontal $ Timed (d * t) $ fmap (duration *~ d) $ sf >>> stretch d
+  Horizontal $ Timed (fromRational d * t) $ fmap (duration *~ fromRational d) $ sf >>> stretch d
 
 
 newtype H i o a = H

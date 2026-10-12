@@ -8,7 +8,6 @@ import Control.Category
 import Data.Functor
 import Data.MemoTrie
 import Data.Monoid
-import Data.Ratio
 import FRP.Types.Time
 import FRP.Types.Signal
 import Prelude hiding (id, (.))
@@ -54,11 +53,4 @@ sample (Signal fa ((t0, sa) : as)) t =
         Step Nothing f -> f t
         Step (Just a) _ -> a
     GT -> sample (Signal (step sa) as) t
-
-
-instance HasTrie Rational where
-  data Rational :->: x = RationalTrie (Integer :->: (Integer :->: x))
-  trie f = RationalTrie $ trie $ trie . \n d -> f (n % d)
-  untrie (RationalTrie x) = (\f r -> f (numerator r) (denominator r)) (untrie . untrie x)
-  enumerate = error "no enumerate for Rational"
 

@@ -48,7 +48,7 @@ at t' a = discrete $ pure (t', a)
 
 -- | Stretch time by the given amount.
 stretch :: Rational -> SF a a
-stretch r = SF $ invmapTime (* r) (/ r)
+stretch (fromRational -> r) = SF $ invmapTime (* r) (/ r)
 
 now :: a -> SF x (Event a)
 now = at 0
@@ -114,10 +114,10 @@ diffs = proc e -> do
 
 
 attractor :: Fractional a => Time -> SF (Event a, Event a) (Event a)
-attractor dur = proc (ea, eatt) -> do
+attractor (Time dur) = proc (ea, eatt) -> do
   t <- localTime -< ()
   (t_at, a_attr) <- fhold (99999, 0) <<< offset epsilon -< fmap (t, ) eatt
-  let dt = t_at - t
+  let (Time dt) = t_at - t
   eda <- diffs -< ea
   accum 0 -< eda <&> \da ->
     case dt >= 0 && dt <= dur of
