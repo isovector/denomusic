@@ -10,11 +10,9 @@ import Control.Arrow
 import Control.Arrow.Transformer.Static
 import Control.Category
 import Control.Lens hiding (at)
-import Control.Monad.Cont
 import Data.Coerce
 import Data.Generics.Labels ()
 import Data.Generics.Product (field')
-import Data.Set qualified as S
 import DenoMusic.Types (Reg(..))
 import FRP
 import GHC.Generics
@@ -49,8 +47,11 @@ data Timed a = Timed
   deriving stock (Eq, Ord, Show, Functor, Foldable, Traversable, Generic)
 
 -- | Sequential composition; takes the sum of the two durations.
-deriving via Generically (Timed a) instance Semigroup a => Semigroup (Timed a)
-deriving via Generically (Timed a) instance Monoid a => Monoid (Timed a)
+instance Semigroup a => Semigroup (Timed a) where
+  Timed t1 a <> Timed t2 b = Timed (t1 + t2) (a <> b)
+
+instance Monoid a => Monoid (Timed a) where
+  mempty = Timed 0 mempty
 
 -- | Parallel composition; takes the max of the two durations.
 instance Applicative Timed where
@@ -72,8 +73,8 @@ instance HasDuration (Horizontal i o) where
 instance HasDuration a => HasDuration (Event a) where
   duration = #_MkEvent . _Just . duration
 
-denote :: HasDuration a => a -> Horizontal t (Event a)
-denote = Horizontal . uncurry Timed . (view duration &&& at 0)
+timed :: HasDuration a => a -> Horizontal t (Event a)
+timed = Horizontal . uncurry Timed . (view duration &&& at 0)
 
 newtype Horizontal i o = Horizontal
   { unHorizontal :: Timed (SF i o)
@@ -95,33 +96,12 @@ resize :: HasDuration o => Rational -> Horizontal i o -> Horizontal i o
 resize d (Horizontal (Timed t sf)) =
   Horizontal $ Timed (fromRational d * t) $ fmap (duration *~ fromRational d) $ sf >>> stretch d
 
+getHorizontal :: Horizontal i o -> SF i o
+getHorizontal = unTimed . unHorizontal
 
-newtype H i o a = H
-  { unH :: Cont (SF i (Event (Timed o))) a
-  }
-  deriving newtype (Functor, Applicative, Monad)
+rest :: Time -> Horizontal i (Event a)
+rest t = Horizontal $ Timed t $ pure NoEvent
 
-timedToNotes :: Timed a -> Notes a
-timedToNotes (Timed t a) = Notes $ S.singleton (t, a)
-
-
-toHorizontal :: SF i (Event (Timed o), Event a) -> H i o a
-toHorizontal = H . cont . switch
-
-switchHorizontal :: H i o a -> (a -> SF i (Event (Timed o))) -> SF i (Event (Timed o))
-switchHorizontal = runCont . unH
-
-getHorizontal :: H i o a -> SF i (Event (Timed o))
-getHorizontal = flip switchHorizontal $ const $ arr $ const NoEvent
-
-rest :: Time -> H i a ()
-rest t = toHorizontal $ proc i -> do
-  e <- at t () -< i
-  returnA -< (NoEvent, e)
-
-hit :: Time -> a -> H i a ()
-hit t a = toHorizontal $ proc i -> do
-  n <- now (Timed t a) -< i
-  e <- at t () -< i
-  returnA -< (n, e)
+hit :: Time -> a -> Horizontal a (Event (Timed a))
+hit t a = timed $ Timed t a
 

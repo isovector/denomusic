@@ -13,14 +13,12 @@ module Music.TimeSig
   , time9'8
   , time12'8
   , subdiv
-  , beat
   ) where
 
 import Data.Coerce
 import Data.Foldable
 import Data.Functor.Foldable
 import Music.Beat
-import Music.Types
 import FRP
 
 
@@ -94,7 +92,4 @@ subdiv n = ev2ev $ \bs -> do
   (t, Beat d s) <- bs
   let d' = d / fromIntegral n
   take n $ zip (iterate (+ d') t) $ Beat d' s : repeat (Beat d' $ succ s)
-
-beat :: Time -> Priority -> H i Beat ()
-beat t p = hit t $ Beat t p
 

@@ -1,7 +1,6 @@
 module FRP.Types.Time where
 
 import Data.Ratio
-import Data.Group
 import Data.MemoTrie
 
 newtype Time = Time
@@ -18,11 +17,8 @@ instance HasTrie Time where
 
 
 instance Semigroup Time where
-  (<>) = (+)
+  (<>) = max
 
 instance Monoid Time where
   mempty = 0
-
-instance Group Time where
-  invert = negate
 
