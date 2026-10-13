@@ -58,11 +58,6 @@ instance Applicative Timed where
   pure = Timed 0
   liftA2 f (Timed ta a) (Timed tb b) = Timed (max ta tb) $ f a b
 
-class HasDuration a where
-  duration :: Traversal' a Time
-
-instance HasDuration Time where
-  duration = id
 
 instance HasDuration (Timed t) where
   duration = #tduration
@@ -70,8 +65,6 @@ instance HasDuration (Timed t) where
 instance HasDuration (Horizontal i o) where
   duration = field' @"unHorizontal" . duration
 
-instance HasDuration a => HasDuration (Event a) where
-  duration = #_MkEvent . _Just . duration
 
 timed :: HasDuration a => a -> Horizontal t (Event a)
 timed = Horizontal . uncurry Timed . (view duration &&& at 0)

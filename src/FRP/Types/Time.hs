@@ -1,5 +1,7 @@
 module FRP.Types.Time where
 
+import GHC.Generics
+import Control.Lens (Traversal')
 import Data.Ratio
 import Data.MemoTrie
 
@@ -7,6 +9,7 @@ newtype Time = Time
   { unTime :: Rational
   }
   deriving newtype (Eq, Ord, Show, Enum, Num, Real, Fractional)
+  deriving stock Generic
 
 
 instance HasTrie Time where
@@ -21,4 +24,11 @@ instance Semigroup Time where
 
 instance Monoid Time where
   mempty = 0
+
+
+class HasDuration a where
+  duration :: Traversal' a Time
+
+instance HasDuration Time where
+  duration = id
 

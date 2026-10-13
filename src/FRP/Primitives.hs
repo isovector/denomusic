@@ -2,10 +2,10 @@
 
 module FRP.Primitives where
 
-import Data.Function (on)
-import Data.List (groupBy, sortBy)
-import Data.Set (Set)
+import GHC.Generics
 import Data.Set qualified as S
+import Data.Set (Set)
+import Control.Lens (view)
 import FRP.Types
 import Data.Maybe (listToMaybe)
 
@@ -45,20 +45,23 @@ switch (SF f) k = SF $ \sig -> do
 newtype Notes a = Notes
   { getNotes :: Set (Time, a)
   }
+  deriving stock Generic
   deriving newtype (Eq, Ord, Show, Semigroup, Monoid)
 
 
+instance Ord a => HasDuration (Notes a) where
+  duration f (Notes n) = fmap (Notes . S.fromList) $ traverse (\(t, a) -> fmap (, a) $ f t) $ S.toList n
+
+
 export
-    :: Ord a
+    :: (HasDuration a)
     => (Time, Time)
-    -> SF () (Event (Notes a))
-    -> [(Interval Time, Set a)]
+    -> SF () (Event a)
+    -> [(Interval Time, a)]
 export (lo, hi)
-  = concatMap (\o -> do
-      let t = fst o - lo
-      xs <- groupBy (on (==) fst) $ sortBy (on compare fst) $ S.toList $ getNotes $ snd o
-      let d = fst $ head xs
-      pure (Interval t (t + d), S.fromList $ fmap snd xs)
+  = fmap (\(time, o) -> do
+      let t = time - lo
+      (Interval t $ t + view duration o, o)
         )
   . takeWhile ((< hi) . fst)
   . dropWhile ((< lo) . fst)
