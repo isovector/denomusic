@@ -1,5 +1,6 @@
 module Ex.AutomaticVoiceLeading where
 
+import Control.Lens
 import DenoMusic.Play
 import FRP
 import Music.Extra
@@ -38,14 +39,14 @@ motive = drop 1 $ scanl (+) 0
   ]
 
 
-song :: SF () (Event (Notes (Note 12)))
+song :: SF () (Event (Timed (Note 12)))
 song = proc _ -> do
   vls <- msumE <<< leading' @3 <<< harmony -< ()
   let sc = apply vls triad >>> diatonic
   bs <- beatsOf time4'4 -< ()
   bs' <- replace (0 : cycle motive) -< bs
 
-  returnA -< note ((+ 60) . applyScale sc) bs'
+  returnA -< fmap (\(bb, n) -> Timed (view duration bb) $ applyScale sc n) bs'
 
 
 main :: IO ()

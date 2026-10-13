@@ -17,6 +17,9 @@ import Music.Types
 instance (E.ToMusic1 a, Ord a) => E.ToMusic1 (Notes a) where
   toMusic1 = E.toMusic1 . fmap (S.map snd . getNotes)
 
+instance E.ToMusic1 a => E.ToMusic1 (Timed a) where
+  toMusic1 = E.toMusic1 . fmap unTimed
+
 instance E.ToMusic1 a => E.ToMusic1 (Set a) where
   toMusic1 =
     E.mFold
@@ -64,6 +67,7 @@ deriving anyclass instance NFData (Reg PitchClass)
 deriving anyclass instance NFData (Deg n)
 deriving anyclass instance NFData (Note n)
 deriving anyclass instance NFData a => NFData (Notes a)
+deriving anyclass instance NFData a => NFData (Timed a)
 deriving anyclass instance NFData Time
 
 
