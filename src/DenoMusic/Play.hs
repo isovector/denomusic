@@ -12,37 +12,28 @@ import FRP.Types.Time
 import Music.Harmony
 import Music.Types
 
+toMusicF :: (E.ToMusic1 b) => (a -> b) -> E.Music a -> E.Music1
+toMusicF f = E.toMusic1 . fmap f
+
 instance E.ToMusic1 a => E.ToMusic1 (Timed a) where
-  toMusic1 = E.toMusic1 . fmap unTimed
+  toMusic1 = toMusicF unTimed
 
 instance E.ToMusic1 a => E.ToMusic1 (Set a) where
-  toMusic1 =
-    E.mFold
-      (\case
-        E.Note dur v ->
-          foldr
-            (\a m -> m E.:=: E.toMusic1 (E.Prim (E.Note dur a)))
-            (E.Prim $ E.Rest 0)
-            (toList v)
-        E.Rest dur -> E.Prim $ E.Rest dur
-      )
-      (E.:+:)
-      (E.:=:)
-      E.Modify
+  toMusic1 = toMusicF toList
 
 instance E.ToMusic1 (Deg 12) where
-  toMusic1 = E.toMusic1 . fmap ((+ 60) . getDeg)
+  toMusic1 = toMusicF $ (+ 60) . getDeg
 
 instance E.ToMusic1 (Note 12) where
-  toMusic1 = E.toMusic1 . fmap noteDeg
+  toMusic1 = toMusicF noteDeg
 
 instance E.ToMusic1 (Note 7) where
-  toMusic1 = E.toMusic1 . fmap (applyScale diatonic)
+  toMusic1 = toMusicF $ applyScale diatonic
 
-instance E.ToMusic1 (Reg PitchClass) where
-  toMusic1 = E.toMusic1 . E.mMap (fromReg . fmap toStupidEuterpeaPitchClass)
+instance E.ToMusic1 (Note 3) where
+  toMusic1 = toMusicF $ applyScale triad
 
-instance (Enum v, Bounded v, E.ToMusic1 a) => E.ToMusic1 (Vertical v a) where
+instance E.ToMusic1 a => E.ToMusic1 [a] where
   toMusic1 =
     E.mFold
       (\case
@@ -50,39 +41,20 @@ instance (Enum v, Bounded v, E.ToMusic1 a) => E.ToMusic1 (Vertical v a) where
           foldr
             (\a m -> m E.:=: E.toMusic1 (E.Prim (E.Note dur a)))
             (E.Prim $ E.Rest 0)
-            (toList v)
+            v
         E.Rest dur -> E.Prim $ E.Rest dur
       )
       (E.:+:)
       (E.:=:)
       E.Modify
 
-deriving anyclass instance NFData PitchClass
-deriving anyclass instance NFData (Reg PitchClass)
+instance (Enum v, Bounded v, E.ToMusic1 a) => E.ToMusic1 (Vertical v a) where
+  toMusic1 = toMusicF toList
+
 deriving anyclass instance NFData (Deg n)
 deriving anyclass instance NFData (Note n)
 deriving anyclass instance NFData a => NFData (Timed a)
 deriving anyclass instance NFData Time
-
-
-toStupidEuterpeaPitchClass :: PitchClass -> E.PitchClass
-toStupidEuterpeaPitchClass Af = E.Af
-toStupidEuterpeaPitchClass A = E.A
-toStupidEuterpeaPitchClass As = E.As
-toStupidEuterpeaPitchClass Bf = E.Bf
-toStupidEuterpeaPitchClass B = E.B
-toStupidEuterpeaPitchClass C = E.C
-toStupidEuterpeaPitchClass Cs = E.Cs
-toStupidEuterpeaPitchClass Df = E.Df
-toStupidEuterpeaPitchClass D = E.D
-toStupidEuterpeaPitchClass Ds = E.Ds
-toStupidEuterpeaPitchClass Ef = E.Ef
-toStupidEuterpeaPitchClass E = E.E
-toStupidEuterpeaPitchClass F = E.F
-toStupidEuterpeaPitchClass Fs = E.Fs
-toStupidEuterpeaPitchClass Gf = E.Gf
-toStupidEuterpeaPitchClass G = E.G
-toStupidEuterpeaPitchClass Gs = E.Gs
 
 
 -- | Play a piece of music by converting it to MIDI.

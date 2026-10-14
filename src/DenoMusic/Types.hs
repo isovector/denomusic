@@ -24,10 +24,6 @@ instance Monad Reg where
   Reg r a >>= f = withReg (+ r) $ f a
 
 
-fromReg :: Reg a -> (a, Int)
-fromReg (Reg i a) = (a, i)
-
-
 withReg :: (Int -> Int) -> Reg a -> Reg a
 withReg f (Reg r a) = Reg (f r) a
 
