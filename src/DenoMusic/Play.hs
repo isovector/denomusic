@@ -6,16 +6,11 @@ module DenoMusic.Play (play) where
 import Control.DeepSeq (NFData)
 import Data.Foldable
 import Data.Set (Set)
-import Data.Set qualified as S
 import DenoMusic.Types
 import Euterpea qualified as E
-import FRP.Primitives
 import FRP.Types.Time
 import Music.Harmony
 import Music.Types
-
-instance (E.ToMusic1 a, Ord a) => E.ToMusic1 (Notes a) where
-  toMusic1 = E.toMusic1 . fmap (S.map snd . getNotes)
 
 instance E.ToMusic1 a => E.ToMusic1 (Timed a) where
   toMusic1 = E.toMusic1 . fmap unTimed
@@ -66,7 +61,6 @@ deriving anyclass instance NFData PitchClass
 deriving anyclass instance NFData (Reg PitchClass)
 deriving anyclass instance NFData (Deg n)
 deriving anyclass instance NFData (Note n)
-deriving anyclass instance NFData a => NFData (Notes a)
 deriving anyclass instance NFData a => NFData (Timed a)
 deriving anyclass instance NFData Time
 

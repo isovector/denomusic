@@ -2,9 +2,6 @@
 
 module FRP.Primitives where
 
-import GHC.Generics
-import Data.Set qualified as S
-import Data.Set (Set)
 import Control.Lens (view)
 import FRP.Types
 import Data.Maybe (listToMaybe)
@@ -42,17 +39,6 @@ switch (SF f) k = SF $ \sig -> do
         -- Make sure we sample the new signal relative to t0!
         invmapTime (subtract t0) (+ t0) sig
     Nothing -> sig'1
-
-
-newtype Notes a = Notes
-  { getNotes :: Set (Time, a)
-  }
-  deriving stock Generic
-  deriving newtype (Eq, Ord, Show, Semigroup, Monoid)
-
-
-instance Ord a => HasDuration (Notes a) where
-  duration f (Notes n) = fmap (Notes . S.fromList) $ traverse (\(t, a) -> fmap (, a) $ f t) $ S.toList n
 
 
 export

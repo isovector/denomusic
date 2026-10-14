@@ -2,8 +2,6 @@
 
 module Music.Extra where
 
-import Control.Lens (view)
-import Data.Set qualified as S
 import FRP
 import Music.Beat
 import Music.Harmony
@@ -21,9 +19,6 @@ msumE = arr (fmap (<>)) >>> accum mempty >>> hold mempty
 
 instance HasDuration Beat where
   duration = #bduration
-
-note :: HasDuration a => (b -> c) -> Event (a, b) -> Event (Notes c)
-note f = fmap (\(a, b) -> Notes $ S.singleton (view duration a, f b))
 
 
 toV :: SF i (Vertical v a) -> Vertical v (SF i a)
