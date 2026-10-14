@@ -44,7 +44,12 @@ rhythm :: [Time] -> a -> SF x (Event a)
 rhythm durs a = discrete $ zip (scanl (+) 0 $ cycle durs) $ repeat a
 
 at :: Time -> a -> SF x (Event a)
-at t' a = discrete $ pure (t', a)
+at t a = discrete $ pure (t, a)
+
+at' :: Time -> SF i (Event i)
+at' t = proc i -> do
+  e <- at t () -< i
+  returnA -< i <$ e
 
 -- | Stretch time by the given amount. This is probably not what you want!
 -- Instead, you likely want 'stretch'!

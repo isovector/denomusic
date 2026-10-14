@@ -11,6 +11,7 @@ import Control.Arrow.Transformer.Static
 import Control.Category
 import Control.Lens hiding (at)
 import Data.Coerce
+import Data.Foldable
 import Data.Generics.Labels ()
 import Data.Generics.Product (field')
 import DenoMusic.Types (Reg(..))
@@ -77,12 +78,16 @@ newtype Horizontal i o = Horizontal
   deriving (Category, Arrow, ArrowLoop) via StaticArrow Timed SF
 
 
+replicateH :: Int -> Horizontal i (Event o) -> Horizontal i (Event o)
+replicateH n = fold . replicate n
+
+
 instance Semigroup (Horizontal i o) where
   Horizontal (Timed t1 x) <> Horizontal (Timed t2 y) =
     Horizontal $ Timed (t1 + t2) $ switch (x &&& at t1 ()) $ const y
 
-instance Monoid o => Monoid (Horizontal i o) where
-  mempty = Horizontal $ pure mempty
+instance Monoid (Horizontal i (Event o)) where
+  mempty = Horizontal $ pure $ arr $ const NoEvent
 
 
 resize :: HasDuration o => Rational -> Horizontal i o -> Horizontal i o
@@ -100,6 +105,15 @@ getHorizontal = unTimed . unHorizontal
 rest :: Time -> Horizontal i (Event a)
 rest t = Horizontal $ Timed t $ pure NoEvent
 
-hit :: Time -> a -> Horizontal a (Event (Timed a))
-hit t a = timed $ Timed t a
+hit :: Time -> a -> Horizontal i (Event a)
+hit t = hitWith t . const
+
+dnote :: a -> Horizontal i (Event a)
+dnote = hit 1
+
+with :: (i -> a) -> Horizontal i (Event a)
+with = hitWith 1
+
+hitWith :: Time -> (i -> a) -> Horizontal i (Event a)
+hitWith t f = Horizontal $ Timed t $ fmap (fmap f) $ at' 0
 
