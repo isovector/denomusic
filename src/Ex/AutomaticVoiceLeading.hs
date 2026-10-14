@@ -39,10 +39,10 @@ motive = drop 1 $ scanl (+) 0
   ]
 
 
-song :: SF () (Event (Timed (Note 12)))
+song :: SF () (Event (Timed (Note 7)))
 song = proc _ -> do
   vls <- msumE <<< leading' @3 <<< harmony -< ()
-  let sc = apply vls triad >>> diatonic
+  let sc = apply vls triad
   bs <- beatsOf time4'4 -< ()
   bs' <- replace (0 : cycle motive) -< bs
 

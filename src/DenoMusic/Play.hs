@@ -36,7 +36,7 @@ instance E.ToMusic1 a => E.ToMusic1 (Set a) where
       E.Modify
 
 instance E.ToMusic1 (Deg 12) where
-  toMusic1 = E.toMusic1 . fmap getDeg
+  toMusic1 = E.toMusic1 . fmap ((+ 60) . getDeg)
 
 instance E.ToMusic1 (Note 12) where
   toMusic1 = E.toMusic1 . fmap noteDeg

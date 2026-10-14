@@ -14,7 +14,7 @@ holdAccum :: c -> SF (Event (c -> c)) c
 holdAccum d0 = hold d0 <<< accum d0
 
 
-song :: SF () (Event (Notes (Vertical Dyad (Note 12))))
+song :: SF () (Event (Notes (Vertical Dyad (Note 7))))
 song = proc _ -> do
   v <- holdAccum mempty
    <<< arr (fmap (<>))
@@ -25,7 +25,7 @@ song = proc _ -> do
     -< ()
   e <- every 0.5 (id @Time 0.5, ()) -< ()
   returnA
-    -< note (const $ (+ 60) $ fmap (applyScale diatonic) $ applyVoiceLeading v d0) e
+    -< note (const $ applyVoiceLeading v d0) e
  where
   d0 = chord triad
 
