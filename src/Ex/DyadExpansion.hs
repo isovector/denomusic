@@ -2,7 +2,6 @@ module Ex.DyadExpansion where
 
 import DenoMusic.Play
 import FRP
-import Music.Extra
 import Music.Harmony
 import Music.Types
 
@@ -14,21 +13,27 @@ holdAccum :: c -> SF (Event (c -> c)) c
 holdAccum d0 = hold d0 <<< accum d0
 
 
-song :: SF () (Event (Notes (Vertical Dyad (Note 7))))
+divergence :: Horizontal i (Event (VoiceLeading Dyad 7))
+divergence = resize' 0.5 $ replicateH 12 $ foldMap dnote
+  [ voiceLead 0 3
+  , expand Lo Hi
+  ]
+
+
+song :: SF () (Event (Timed (Vertical Dyad (Note 7))))
 song = proc _ -> do
   v <- holdAccum mempty
    <<< arr (fmap (<>))
-   <<< discrete
-         ( zip [id @Time 0, 0.5 ..]
-         $ cycle [voiceLead @Dyad @7 0 3, expand Lo Hi]
-         )
+   <<< offset 0.5
+   <<< getHorizontal divergence
     -< ()
-  e <- every 0.5 (id @Time 0.5, ()) -< ()
-  returnA
-    -< note (const $ applyVoiceLeading v d0) e
- where
-  d0 = chord triad
+  (| (getHorizontal . resize 0.5 . replicateH 12)
+   (do
+      x <- with id -< v
+      returnA -< fmap (\vl -> Timed 1 $ applyVoiceLeading vl $ chord triad) x
+   )|)
+
 
 main :: IO ()
-main = play $ export (0, 12) song
+main = play $ export (0, 4) song
 
