@@ -46,9 +46,13 @@ rhythm durs a = discrete $ zip (scanl (+) 0 $ cycle durs) $ repeat a
 at :: Time -> a -> SF x (Event a)
 at t' a = discrete $ pure (t', a)
 
--- | Stretch time by the given amount.
-stretch :: Rational -> SF a a
-stretch (fromRational -> r) = SF $ invmapTime (* r) (/ r)
+-- | Stretch time by the given amount. This is probably not what you want!
+-- Instead, you likely want 'stretch'!
+warpSignal :: Rational -> SF a a
+warpSignal (fromRational -> r) = SF $ invmapTime (* r) (/ r)
+
+stretch :: Rational -> SF a b -> SF a b
+stretch t sf = warpSignal (recip t) >>> sf >>> warpSignal t
 
 now :: a -> SF x (Event a)
 now = at 0

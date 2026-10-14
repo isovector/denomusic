@@ -38,7 +38,9 @@ switch (SF f) k = SF $ \sig -> do
       sig'1 = fmap fst sig'
   case listToMaybe $ eventsTerminating $ fmap snd sig' of
     Just (t0, a) ->
-      spliceAt sig'1 t0 $ runSF (k a) sig
+      spliceAt sig'1 t0 $ runSF (k a) $
+        -- Make sure we sample the new signal relative to t0!
+        invmapTime (subtract t0) (+ t0) sig
     Nothing -> sig'1
 
 

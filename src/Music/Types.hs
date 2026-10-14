@@ -87,7 +87,12 @@ instance Monoid o => Monoid (Horizontal i o) where
 
 resize :: HasDuration o => Rational -> Horizontal i o -> Horizontal i o
 resize d (Horizontal (Timed t sf)) =
-  Horizontal $ Timed (fromRational d * t) $ fmap (duration *~ fromRational d) $ sf >>> stretch d
+  Horizontal $ Timed (fromRational d * t) $ fmap (duration *~ fromRational d) $ stretch d sf
+
+
+resize' :: Rational -> Horizontal i o -> Horizontal i o
+resize' d (Horizontal (Timed t sf)) =
+  Horizontal $ Timed (fromRational d * t) $ stretch d sf
 
 getHorizontal :: Horizontal i o -> SF i o
 getHorizontal = unTimed . unHorizontal
