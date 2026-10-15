@@ -16,10 +16,10 @@ msumE :: Monoid a => SF (Event a) a
 msumE = arr (fmap (<>)) >>> accum mempty >>> hold mempty
 
 
-toV :: SF i (Vertical v a) -> Vertical v (SF i a)
+toV :: Functor f => f (Vertical v a) -> Vertical v (f a)
 toV = distribute
 
 
-toH :: (Enum v, Bounded v, Eq v) => Vertical v (SF i a) -> SF i (Vertical v a)
-toH = sequenceA
+fromV :: (Enum v, Bounded v, Eq v, Applicative f) => Vertical v (f a) -> f (Vertical v a)
+fromV = sequenceA
 
