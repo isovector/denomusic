@@ -5,6 +5,8 @@ module Music.Types
   , module Music.Types.Vertical
   ) where
 
+import Control.Monad
+import Control.Arrow.Transformer.Static
 import Control.Applicative
 import Control.Arrow
 import Control.Category
@@ -73,42 +75,18 @@ instance HasDuration (Horizontal i o) where
   duration = field' @"unHorizontal" . duration
 
 
-timed :: HasDuration a => a -> Horizontal t a
-timed a = hit (view duration a) a
-
 newtype Horizontal i o = Horizontal
-  { unHorizontal :: Timed (SF i (Event (Timed o)))
+  { unHorizontal :: Timed (SF i o)
   }
   deriving stock (Generic, Functor)
+  deriving (Category, Arrow, ArrowLoop) via StaticArrow Timed SF
   deriving (Applicative) via WrappedArrow Horizontal i
 
-instance Category Horizontal where
-  id = Horizontal $ pure $ arr $ Event . pure
-  Horizontal (Timed t2 g) . Horizontal (Timed t1 f)
-    = Horizontal
-    $ Timed (t1 + t2)
-    $ hoistSF g . f
+resize :: Rational -> Horizontal i o -> Horizontal i o
+resize dt (Horizontal (Timed d sf)) = Horizontal $ Timed (fromRational dt * d) $ stretch dt sf
 
 
-
--- TODO(sandy): Is this safe? unclear but plausible
-hoistSF :: SF i (Event (Timed o)) -> SF (Event (Timed i)) (Event (Timed o))
-hoistSF sf = proc ei -> do
-  eo <- sf -< event undefined unTimed ei
-  returnA -< liftA2 (liftA2 $ flip const) ei eo
-
-instance Arrow Horizontal where
-  arr f = Horizontal $ pure $ arr (Event . pure . f)
-  Horizontal (Timed t1 f) *** Horizontal (Timed t2 g)
-    = Horizontal
-    $ Timed (max t1 t2)
-    $ proc (b, b') -> do
-        ec  <- f -< b
-        ec' <- g -< b'
-        returnA -< liftA2 (liftA2 (,)) ec ec'
-
-
-replicateH :: Int -> Horizontal i o -> Horizontal i o
+replicateH :: Int -> Horizontal i (Event o) -> Horizontal i (Event o)
 replicateH n = fold . replicate n
 
 
@@ -116,30 +94,35 @@ instance Semigroup (Horizontal i o) where
   Horizontal (Timed t1 x) <> Horizontal (Timed t2 y) =
     Horizontal $ Timed (t1 + t2) $ switch (x &&& at t1 ()) $ const y
 
-instance Monoid (Horizontal i o) where
+instance Monoid (Horizontal i (Event o)) where
   mempty = Horizontal $ pure $ arr $ const NoEvent
 
 
-resize :: Rational -> Horizontal i o -> Horizontal i o
-resize d (Horizontal (Timed t sf)) =
-  Horizontal $ Timed (fromRational d * t) $ fmap (duration *~ fromRational d) $ stretch d sf
-
-
-getHorizontal :: Horizontal i o -> SF i (Event (Timed o))
+getHorizontal :: Horizontal i o -> SF i o
 getHorizontal = unTimed . unHorizontal
 
-rest :: Time -> Horizontal i a
-rest t = Horizontal $ Timed t $ pure NoEvent
+horizontal :: Horizontal i (Event o) -> SF i (Event (Timed o))
+horizontal h = extending . unTimed (unHorizontal h)
 
-hit :: Time -> a -> Horizontal i a
+rest :: Time -> Horizontal i (Event a)
+rest t = Horizontal $ Timed t $ proc i -> do
+  es <- at 0 NoEvent -< i
+  returnA -< join es
+
+hit :: Time -> a -> Horizontal i (Event a)
 hit t = hitWith t . const
 
-dnote :: a -> Horizontal i a
+dnote :: a -> Horizontal i (Event a)
 dnote = hit 1
 
-with :: (i -> a) -> Horizontal i a
+with :: (i -> a) -> Horizontal i (Event a)
 with = hitWith 1
 
-hitWith :: Time -> (i -> a) -> Horizontal i a
-hitWith t f = Horizontal $ Timed t $ fmap (fmap $ Timed t . f) $ at' 0
+hitWith :: Time -> (i -> a) -> Horizontal i (Event a)
+hitWith t f = Horizontal $ Timed t $ proc i -> do
+  es <- discrete [(0, Event ()), (t, NoEvent)] -< i
+  returnA -< f i <$ join es
+
+timed :: HasDuration a => a -> Horizontal t (Event a)
+timed a = hit (view duration a) a
 
