@@ -59,6 +59,13 @@ instance Applicative Timed where
   liftA2 f (Timed ta a) (Timed tb b) = Timed (max ta tb) $ f a b
 
 
+-- | Add a duration for each event that lasts until the next clocked time
+-- (regardless of whether that clocked time is 'Event' or 'NoEvent'.)
+extending :: SF (Event a) (Event (Timed a))
+extending = evStream $ \es ->
+  zipWith (\(t1, ea) (t2, _) -> (t1, fmap (Timed $ t2 - t1) ea)) es $ drop 1 es
+
+
 instance HasDuration (Timed t) where
   duration = #tduration
 

@@ -1,10 +1,8 @@
-{-# OPTIONS_GHC -Wno-x-partial #-}
-
 module FRP.Primitives where
 
 import Control.Lens (view)
 import FRP.Types
-import Data.Maybe (listToMaybe)
+import Data.Maybe (listToMaybe, mapMaybe)
 
 
 discrete :: [(Time, a)] -> SF x (Event a)
@@ -18,16 +16,18 @@ steps a = SF . const . mkSteps a
 ev2ev :: ([(Time, a)] -> [(Time, b)]) -> SF (Event a) (Event b)
 ev2ev f = SF $ mkDiscrete . f . events
 
+evStream :: ([(Time, Event a)] -> [(Time, Event b)]) -> SF (Event a) (Event b)
+evStream f = SF $ mkDiscrete . mapMaybe (traverse eventToMaybe) . f . values
+
 
 evByEv :: ((Time, a) -> (Time, a) -> [(Time, b)]) -> SF (Event a) (Event b)
 evByEv f = SF $ \s -> do
   let es = events s
-  mkDiscrete $ concat $ zipWith f es (tail es)
+  mkDiscrete $ concat $ zipWith f es $ drop 1 es
 
 
 observe :: SF () (Event a) -> [(Time, a)]
 observe sf = events $ runSF sf (pure ())
-
 
 switch :: SF a (b, Event c) -> (c -> SF a b) -> SF a b
 switch (SF f) k = SF $ \sig -> do
