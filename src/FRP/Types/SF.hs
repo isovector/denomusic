@@ -42,7 +42,6 @@ instance ArrowApply SF where
     Signal (memo $ \t -> sample (sample cc t) t) []
 
 
-
 sample :: Signal a -> Time -> a
 sample (Signal fa []) t = fa t
 sample (Signal fa ((t0, sa) : as)) t =

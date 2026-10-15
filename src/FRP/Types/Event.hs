@@ -1,6 +1,7 @@
 module FRP.Types.Event
   ( Event (Event, NoEvent)
   , eventToMaybe
+  , event
   ) where
 
 import Control.Applicative
@@ -21,6 +22,9 @@ pattern Event a = MkEvent (Just a)
 
 pattern NoEvent :: Event a
 pattern NoEvent = MkEvent Nothing
+
+event :: b -> (a -> b) -> Event a -> b
+event b f = maybe b f . eventToMaybe
 
 instance Semigroup a => Semigroup (Event a) where
   NoEvent <> a = a

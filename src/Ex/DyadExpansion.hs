@@ -13,8 +13,8 @@ holdAccum :: c -> SF (Event (c -> c)) c
 holdAccum d0 = hold d0 <<< accum d0
 
 
-divergence :: Horizontal i (Event (VoiceLeading Dyad 7))
-divergence = resize' 0.5 $ replicateH 12 $ foldMap dnote
+divergence :: Horizontal i (VoiceLeading Dyad 7)
+divergence = resize 0.5 $ replicateH 12 $ foldMap dnote
   [ voiceLead 0 3
   , expand Lo Hi
   ]
@@ -29,8 +29,8 @@ song = proc _ -> do
     -< ()
   (| (getHorizontal . resize 0.5 . replicateH 12)
    (do
-      x <- with id -< v
-      returnA -< fmap (\vl -> Timed 1 $ applyVoiceLeading vl $ chord triad) x
+      vl <- with unTimed -< v
+      returnA -< applyVoiceLeading vl $ chord triad
    )|)
 
 
