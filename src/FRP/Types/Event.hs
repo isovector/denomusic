@@ -5,9 +5,7 @@ module FRP.Types.Event
   ) where
 
 import Control.Applicative
-import Control.Lens hiding (at)
 import Data.Generics.Labels ()
-import FRP.Types.Time
 import GHC.Generics
 
 newtype Event a = MkEvent
@@ -33,7 +31,4 @@ instance Semigroup a => Semigroup (Event a) where
 
 instance Semigroup a => Monoid (Event a) where
   mempty = NoEvent
-
-instance HasDuration a => HasDuration (Event a) where
-  duration = #_MkEvent . _Just . duration
 

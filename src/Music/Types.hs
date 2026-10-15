@@ -10,11 +10,8 @@ import Control.Arrow.Transformer.Static
 import Control.Applicative
 import Control.Arrow
 import Control.Category
-import Control.Lens hiding (at)
 import Data.Coerce
 import Data.Foldable
-import Data.Generics.Labels ()
-import Data.Generics.Product (field')
 import DenoMusic.Types (Reg(..))
 import FRP
 import GHC.Generics
@@ -42,37 +39,12 @@ divModNote (Note d as)
 undivModNote :: forall n. KnownNat n => Reg (Note n) -> Note n
 undivModNote (Reg n d) = d + fromIntegral (n * scaleSize @n)
 
-data Timed a = Timed
-  { tduration :: Time
-  , unTimed :: a
-  }
-  deriving stock (Eq, Ord, Show, Functor, Foldable, Traversable, Generic)
-
--- | Sequential composition; takes the sum of the two durations.
-instance Semigroup a => Semigroup (Timed a) where
-  Timed t1 a <> Timed t2 b = Timed (t1 + t2) (a <> b)
-
-instance Monoid a => Monoid (Timed a) where
-  mempty = Timed 0 mempty
-
--- | Parallel composition; takes the max of the two durations.
-instance Applicative Timed where
-  pure = Timed 0
-  liftA2 f (Timed ta a) (Timed tb b) = Timed (max ta tb) $ f a b
-
 
 -- | Add a duration for each event that lasts until the next clocked time
 -- (regardless of whether that clocked time is 'Event' or 'NoEvent'.)
 extending :: SF (Event a) (Event (Timed a))
 extending = evStream $ \es ->
   zipWith (\(t1, ea) (t2, _) -> (t1, fmap (Timed $ t2 - t1) ea)) es $ drop 1 es
-
-
-instance HasDuration (Timed t) where
-  duration = #tduration
-
-instance HasDuration (Horizontal i o) where
-  duration = field' @"unHorizontal" . duration
 
 
 newtype Horizontal i o = Horizontal
@@ -122,7 +94,4 @@ hitWith :: Time -> (i -> a) -> Horizontal i (Event a)
 hitWith t f = Horizontal $ Timed t $ proc i -> do
   es <- discrete [(0, Event ()), (t, NoEvent)] -< i
   returnA -< f i <$ join es
-
-timed :: HasDuration a => a -> Horizontal t (Event a)
-timed a = hit (view duration a) a
 

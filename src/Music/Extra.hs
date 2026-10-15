@@ -3,7 +3,6 @@
 module Music.Extra where
 
 import FRP
-import Music.Beat
 import Music.Harmony
 import Music.Types
 
@@ -15,10 +14,6 @@ leading' = proc ed' -> do
 
 msumE :: Monoid a => SF (Event a) a
 msumE = arr (fmap (<>)) >>> accum mempty >>> hold mempty
-
-
-instance HasDuration Beat where
-  duration = #bduration
 
 
 toV :: SF i (Vertical v a) -> Vertical v (SF i a)

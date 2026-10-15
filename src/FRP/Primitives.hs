@@ -1,6 +1,5 @@
 module FRP.Primitives where
 
-import Control.Lens (view)
 import FRP.Types
 import Data.Maybe (listToMaybe, mapMaybe)
 
@@ -42,14 +41,13 @@ switch (SF f) k = SF $ \sig -> do
 
 
 export
-    :: (HasDuration a)
-    => (Time, Time)
-    -> SF () (Event a)
+    :: (Time, Time)
+    -> SF () (Event (Timed a))
     -> [(Interval Time, a)]
 export (lo, hi)
-  = fmap (\(time, o) -> do
+  = fmap (\(time, Timed d o) -> do
       let t = time - lo
-      (Interval t $ t + view duration o, o)
+      (Interval t $ t + d, o)
         )
   . takeWhile ((< hi) . fst)
   . dropWhile ((< lo) . fst)

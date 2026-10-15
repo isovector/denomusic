@@ -1,7 +1,6 @@
 module FRP.Types.Time where
 
 import GHC.Generics
-import Control.Lens (Traversal')
 import Data.Ratio
 import Data.MemoTrie
 
@@ -26,9 +25,20 @@ instance Monoid Time where
   mempty = 0
 
 
-class HasDuration a where
-  duration :: Traversal' a Time
+data Timed a = Timed
+  { duration :: Time
+  , unTimed :: a
+  }
+  deriving stock (Eq, Ord, Show, Functor, Foldable, Traversable, Generic)
 
-instance HasDuration Time where
-  duration = id
+-- | Sequential composition; takes the sum of the two durations.
+instance Semigroup a => Semigroup (Timed a) where
+  Timed t1 a <> Timed t2 b = Timed (t1 + t2) (a <> b)
 
+instance Monoid a => Monoid (Timed a) where
+  mempty = Timed 0 mempty
+
+-- | Parallel composition; takes the max of the two durations.
+instance Applicative Timed where
+  pure = Timed 0
+  liftA2 f (Timed ta a) (Timed tb b) = Timed (max ta tb) $ f a b

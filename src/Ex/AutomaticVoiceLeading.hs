@@ -1,8 +1,8 @@
 module Ex.AutomaticVoiceLeading where
 
-import Control.Lens
 import DenoMusic.Play
 import FRP
+import Music.Beat
 import Music.Extra
 import Music.Harmony
 import Music.TimeSig
@@ -46,7 +46,7 @@ song = proc _ -> do
   bs <- beatsOf time4'4 -< ()
   bs' <- replace (0 : cycle motive) -< bs
 
-  returnA -< fmap (\(bb, n) -> Timed (view duration bb) $ applyScale sc n) bs'
+  returnA -< fmap (\(bb, n) -> Timed (bduration bb) $ applyScale sc n) bs'
 
 
 main :: IO ()
