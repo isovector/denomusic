@@ -30,8 +30,7 @@ import Data.Music.Lilypond.Pitch
 import Data.Ratio
 import Data.String
 import Text.PrettyPrint.HughesPJClass hiding (Mode, (<>), first)
-import Data.List (minimumBy, unsnoc)
-import Data.Ord (comparing)
+import Data.List (unsnoc, intercalate)
 
 instance Pretty Pitch where
   pPrint (Pitch (c,a,o)) = text $ fmap toLower (show c) <> acc a <> oct (o-4)
@@ -60,6 +59,7 @@ instance Pretty Dynamics where
 --
 data Score
     = Chord [Note] Rational [PostEvent]
+    | Skip Rational [PostEvent]                     -- ^ Spacer rest (invisible), e.g. @s4@.
     | Sequential   [Score]                          -- ^ Sequential composition.
     | Simultaneous Bool [Score]                     -- ^ Parallel composition (split voices?).
     | Repeat Bool Int Score (Maybe (Score, Score))  -- ^ Repetition (unfold?, times, music, alternative).
@@ -237,6 +237,8 @@ instance Pretty Score where
       ]
     pPrint BarCheck       = "|"
     pPrint (Rest d p)       = "r" <> pPrint (Duration d) <> pPrintList prettyNormal p
+
+    pPrint (Skip d p)       = "s" <> pPrint (Duration d) <> pPrintList prettyNormal p
 
     pPrint (Note d n p)     = pPrint n <> pPrint (Duration d) <> pPrintList prettyNormal p
 
@@ -483,19 +485,35 @@ instance Monoid (TupletTree a) where
 
 
 -- | Fold over a piece of music, turning series of non-standard-duration notes
--- into tuplets.
+-- into tuplets. Tuplets are never allowed to cross a 'BarCheck', so the stream
+-- is first broken into per-bar runs that are tupletized independently and then
+-- rejoined with the barlines back in place.
 makeTuplets :: Score -> Score
 makeTuplets = (cata $ \case
-  SequentialF xs
-    | any (not . isDivisibleBy @Double 2 . fromMaybe 2 . getDuration) xs
-    -> Sequential $ foldTupletTree $ parseTupletTree $ mapMaybe (\x -> fmap (, x) $ getDuration x) xs
+  SequentialF xs ->
+    Sequential $ intercalate [BarCheck] $ fmap tupletizeRun $ splitOnBarCheck xs
   x -> embed x) . flattenSequence
+  where
+    tupletizeRun xs
+      | any (not . isDivisibleBy @Double 2 . fromMaybe 2 . getDuration) xs
+      = foldTupletTree $ parseTupletTree $ mapMaybe (\x -> fmap (, x) $ getDuration x) xs
+      | otherwise = xs
+
+-- | Break a list of scores into the runs lying between 'BarCheck's, dropping
+-- the 'BarCheck's themselves.
+splitOnBarCheck :: [Score] -> [[Score]]
+splitOnBarCheck = foldr step [[]]
+  where
+    step BarCheck acc = [] : acc
+    step x (cur : rest) = (x : cur) : rest
+    step _ [] = [[]]  -- unreachable; keeps the pattern total
 
 
 -- | For pieces of music that are tupletizable, get their durations.
 getDuration :: Score -> Maybe Rational
 getDuration = \case
     Chord _ b _ -> Just b
+    Skip b _ -> Just b
     BarCheck -> Just 0
     Time _ _ -> Just 0
     _ -> Nothing
@@ -517,6 +535,7 @@ foldTupletTree :: TupletTree Score -> [Score]
 foldTupletTree (One d (Chord a _ c)) = pure $ Chord a d c
 foldTupletTree (One d (Note _ a c)) = pure $ Note d a c
 foldTupletTree (One d (Rest _ c)) = pure $ Rest d c
+foldTupletTree (One d (Skip _ c)) = pure $ Skip d c
 foldTupletTree (One _ x) = pure x
 foldTupletTree (Many as) = foldTupletTree =<< as
 foldTupletTree (TupletTree d as) = pure $ Tuplet (1 / d) Nothing $ Sequential $ foldTupletTree as
@@ -569,7 +588,11 @@ partitionIntoPowerOfTwo = go 0
 -- https://lists.gnu.org/archive/html/lilypond-user/2008-06/msg00070.html.
 tupletize :: [(Rational, a)] -> (Rational, [(Rational, a)])
 tupletize rs = do
-  let smallest = minimumBy (comparing (isDivisibleBy @Double 2 . denominator) <> comparing denominator) $ fmap fst rs
+  let -- The grid unit is the numerically smallest duration in the group. Using
+      -- the actual minimum (rather than breaking ties by list order) keeps the
+      -- written value of a given duration independent of its neighbours, so the
+      -- same note isn't notated differently in different bars.
+      smallest = minimum $ fmap fst rs
       power = 2 ^ (floor @Double @Int (logBase 2 (fromIntegral $ denominator smallest) ))
       multiplier = smallest * power
    in (multiplier, fmap (first (/ multiplier)) rs)

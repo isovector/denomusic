@@ -3,6 +3,8 @@
 
 module DenoMusic.NotationBackend (finalizeLily, makeScore, header, footer, pPrint, toPitch) where
 
+import Data.Ratio (denominator)
+import Data.Bits ((.&.))
 import Data.Containers.ListUtils (nubOrd)
 import Data.Function (on)
 import Data.Lilypond
@@ -58,6 +60,10 @@ pitchClassToPitchAndAccidental Bf = (L.B, -1)
 data Body
   = -- | Silence.
     Rest'
+  | -- | Silence that occupies time but is not drawn (a lilypond spacer rest).
+    -- Used when another voice already shows a rest or note covering the same
+    -- time, so repeating the rest here would just add clutter.
+    Spacer
   | -- | A zero-width control event injected verbatim into the stream.
     Control Score
   | -- | One or more simultaneous pitches (a note or a chord) that share a
@@ -146,6 +152,10 @@ splitBars = go 1 0
       | isControl s =
           let (barLen', barStart') = updateMeter barLen barStart s
            in s : go barLen' barStart' ss
+      -- Everything, even a tuplet member, must be cut at a barline: nothing may
+      -- cross one. A non-dyadic span that lies wholly inside a bar is left
+      -- untouched here (its 'nextBar' falls past its end), so in-bar tuplets are
+      -- preserved for 'makeTuplets'.
       | otherwise = splitOne barLen barStart s <> go barLen barStart ss
 
     updateMeter _ _ (Span pos _ (Control (Time m n))) =
@@ -182,6 +192,9 @@ splitBeats = go (4, 4) 0
           let (sig', barStart') = updateMeter sig barStart s
            in s : go sig' barStart' ss
       | spanDur s <= 0 = s : go sig barStart ss
+      -- Tuplet members live on non-dyadic grid positions; leave them for
+      -- 'makeTuplets' rather than shredding them against the dyadic beat grid.
+      | not (dyadicSpan s) = s : go sig barStart ss
       | otherwise = splitOne sig barStart s <> go sig barStart ss
 
     updateMeter _ _ (Span pos _ (Control (Time m n))) = ((m, n), pos)
@@ -285,29 +298,183 @@ splitMetric (Metric ms me children) (s, e)
 notatable :: Rational -> Bool
 notatable r = r > 0 && isJust (separateDots (Duration r))
 
+-- | A rational is dyadic when its denominator is a power of two. Such values
+-- fall on the ordinary binary rhythmic grid; anything else (1\/3, 1\/6, 1\/5,
+-- ...) is part of a tuplet and must be left for 'makeTuplets' to handle.
+isDyadic :: Rational -> Bool
+isDyadic r =
+  let d = denominator r
+   in d == 1 || (d .&. (d - 1)) == 0
+
+-- | A note\/rest span sits on the dyadic grid when both its endpoints (and
+-- hence its duration) are dyadic. Tuplet members fail this test.
+dyadicSpan :: Span -> Bool
+dyadicSpan s = isDyadic (spanStart s) && isDyadic (spanEnd s)
+
 -- | Compile a single 'Span' into a lilypond note/chord/rest.
 spanToScore :: Span -> Score
 spanToScore s = case spanBody s of
   Rest'         -> Rest (spanDur s) []
+  Spacer        -> Skip (spanDur s) []
   Control sc    -> sc
   Notes pes [p] -> Note (spanDur s) (NotePitch (toPitch p)) pes
   Notes pes ps  -> Chord (fmap (NotePitch . toPitch) ps) (spanDur s) pes
 
--- | Compile a voice all the way down to a lilypond expression, filling rests,
+-- | Normalize a voice into a gapless, sorted sequence of 'Span's, with every
+-- silence made explicit as a 'Rest''. This is the first half of compilation;
+-- it is kept separate from 'spansToScore' so that 'shareRests' can look at all
+-- voices' spans together before each is notated.
+voiceToSpans :: Voice -> [Span]
+voiceToSpans = fillRests . sortSpans . toSpans
+
+-- | Compile a normalized span list all the way down to a lilypond expression,
 -- splitting over-long durations, generating tuplets, and tying everything into
 -- notatable note values.
-voiceToScore :: Voice -> Score
-voiceToScore =
+spansToScore :: [Span] -> Score
+spansToScore =
     tieLengths
   . splitRests
   . makeTuplets
   . Sequential
   . fmap spanToScore
+  . insertBarlines
   . splitBeats
   . splitBars
-  . fillRests
-  . sortSpans
-  . toSpans
+
+-- | Insert a zero-width 'BarCheck' control at every barline that coincides with
+-- a span boundary. These markers do nothing for ordinary notation, but they
+-- stop 'makeTuplets' from merging tuplet notes on opposite sides of a barline
+-- into one bar-spanning tuplet (tuplets may not cross barlines).
+--
+-- Meter is tracked exactly as in 'splitBars': the measure length defaults to
+-- 4/4 and is reset, along with the bar origin, by each @\\time@ control.
+insertBarlines :: [Span] -> [Span]
+insertBarlines = go 1 0
+  where
+    go _ _ [] = []
+    go barLen barStart (s : ss)
+      | isControl s =
+          let (barLen', barStart') = updateMeter barLen barStart s
+           in s : go barLen' barStart' ss
+      | onBarline barLen barStart s =
+          Span (spanStart s) (spanStart s) (Control BarCheck)
+            : s
+            : go barLen barStart ss
+      | otherwise = s : go barLen barStart ss
+
+    updateMeter _ _ (Span pos _ (Control (Time m n))) =
+      (fromIntegral m / fromIntegral n, pos)
+    updateMeter barLen barStart _ = (barLen, barStart)
+
+    onBarline barLen barStart s =
+      let n = (spanStart s - barStart) / barLen
+       in spanStart s > barStart && denominator n == 1
+
+
+--------------------------------------------------------------------------------
+-- Cross-voice rest sharing
+--
+-- When several voices share a staff, a rest in one voice is redundant if, over
+-- the same span of time, another voice already shows a note or rest: the reader
+-- can see the beat from that other voice. 'shareRests' turns such redundant
+-- rests into invisible spacer rests, keeping exactly one visible rest at each
+-- instant where /every/ voice is silent.
+--------------------------------------------------------------------------------
+
+-- | Rewrite redundant rests across a set of normalized voices into spacers.
+-- A rest in voice @i@ over some sub-interval becomes a 'Spacer' unless either
+-- (a) some other voice is sounding a note there (its note shows the beat), or
+-- (b) all voices are silent there and @i@ is the lowest-indexed silent voice,
+--     which is elected to carry the one visible rest.
+shareRests :: [[Span]] -> [[Span]]
+shareRests voices =
+  [ concatMap (shareSpan i) sv
+  | (i, sv) <- zip [0 ..] voices
+  ]
+  where
+    n = length voices
+
+    -- Every note/rest boundary anywhere, used to cut rests so each piece sees a
+    -- constant set of other-voice states. Only dyadic boundaries are used:
+    -- cutting a rest on a tuplet boundary would leave non-dyadic rest fragments
+    -- that 'makeTuplets' would then mis-group, so tuplet regions are left whole
+    -- for the normal rest/tuplet machinery downstream.
+    breakpoints =
+      nubOrd $
+        sortOn id
+          [ t
+          | sv <- voices
+          , s <- sv
+          , not (isControl s)
+          , t <- [spanStart s, spanEnd s]
+          , isDyadic t
+          ]
+
+    -- The body of the span covering instant @t@ in voice @j@, if any.
+    bodyAt j t =
+      case [ spanBody s
+           | s <- voices !! j
+           , not (isControl s)
+           , spanStart s <= t
+           , t < spanEnd s
+           ] of
+        (b : _) -> Just b
+        []      -> Nothing
+
+    isSounding (Just (Notes _ _)) = True
+    isSounding _                  = False
+
+    isResting (Just Rest') = True
+    isResting _            = False
+
+    shareSpan _ s@(Span _ _ Rest') | spanDur s <= 0 = [s]
+    -- A rest that is itself a tuplet member (non-dyadic endpoints) must be left
+    -- whole and visible; cutting it would strand non-dyadic fragments that
+    -- 'makeTuplets' would then mis-group.
+    shareSpan _ s@(Span _ _ Rest') | not (dyadicSpan s) = [s]
+    shareSpan i s@(Span lo hi Rest') =
+      rebuild lo $
+        mergeRuns
+          [ (a, b, decide i a b)
+          | (a, b) <- subIntervals lo hi
+          ]
+    shareSpan _ s = [s]
+
+    -- Cut @[lo, hi)@ at every interior breakpoint.
+    subIntervals lo hi =
+      let cuts  = filter (\t -> lo < t && t < hi) breakpoints
+          edges = lo : cuts <> [hi]
+       in zip edges (drop 1 edges)
+
+    -- Decide whether voice @i@'s rest over @[a, b)@ stays visible or hides.
+    decide i a b
+      -- Spacer rests inside a tuplet are ungrammatical, so only ever hide rests
+      -- that sit on the ordinary dyadic grid.
+      | not (isDyadic a && isDyadic b) = Rest'
+      | otherwise =
+          let mid    = (a + b) / 2
+              others = [j | j <- [0 .. n - 1], j /= i]
+           in if any (\j -> isSounding (bodyAt j mid)) others
+                then Spacer
+                else
+                  let resting = [j | j <- [0 .. n - 1], isResting (bodyAt j mid)]
+                   in case resting of
+                        (owner : _) | owner == i -> Rest'
+                        _                        -> Spacer
+
+    -- Coalesce neighbouring sub-intervals that reached the same verdict.
+    mergeRuns [] = []
+    mergeRuns ((a, b, body) : rest) =
+      case mergeRuns rest of
+        (a', b', body') : more
+          | sameBody body body' && b == a' -> (a, b', body) : more
+        merged -> (a, b, body) : merged
+
+    rebuild _ runs = [Span a b body | (a, b, body) <- runs]
+
+    sameBody Rest'  Rest'  = True
+    sameBody Spacer Spacer = True
+    sameBody _      _      = False
 
 
 --------------------------------------------------------------------------------
@@ -390,9 +557,11 @@ makeScore :: [Voice] -> Score
 makeScore voices =
   New "PianoStaff" Nothing $
     Simultaneous False
-      [ upStaff (fmap voiceToScore (voiceOrder voices))
+      [ upStaff (fmap spansToScore sharedVoices)
       , downStaff
       ]
+  where
+    sharedVoices = shareRests (fmap voiceToSpans (voiceOrder voices))
 
 
 --------------------------------------------------------------------------------
