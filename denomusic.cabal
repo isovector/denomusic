@@ -33,6 +33,7 @@ library
       Ex.AutomaticVoiceLeading
       Ex.DyadExpansion
       Ex.Test
+      Ex.Tintinnabuli
       FRP
       FRP.Primitives
       FRP.Types
@@ -48,7 +49,6 @@ library
       Music.Types.Note
       Music.Types.Scale
       Music.Types.Vertical
-      Test
   other-modules:
       Paths_denomusic
   autogen-modules:

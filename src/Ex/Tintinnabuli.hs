@@ -6,6 +6,7 @@ import FRP
 import Music.Extra
 import Music.Harmony
 import Music.Types
+import DenoMusic.Notation
 
 
 dropMod :: Note s -> Note s
@@ -37,9 +38,9 @@ harmonized = proc i -> do
 
 
 song :: Vertical Bool (SF () (Event (Timed (Note 7))))
-song = fmap horizontal $ toV harmonized
+song = fmap horizontal $ toV $ resize (1/3) harmonized
 
 
 main :: IO ()
-main = play song
+main = toPdf song
 

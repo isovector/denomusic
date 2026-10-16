@@ -52,23 +52,21 @@ instance E.ToMusic1 (Note 3) where
 
 instance E.ToMusic1 a => E.ToMusic1 [a] where
   toMusic1 = bindMusic $ \dur v ->
-    foldr
-      (\a m -> m E.:=: E.toMusic1 (E.Prim (E.Note dur a)))
-      (E.Prim $ E.Rest 0)
-      v
+    case fmap (\a -> E.toMusic1 (E.Prim (E.Note dur a))) v of
+      [] -> E.Prim $ E.Rest 0
+      ms -> foldr1 (E.:=:) ms
 
 instance (Enum v, Bounded v, E.ToMusic1 a) => E.ToMusic1 (Vertical v a) where
   toMusic1 = toMusicF toList
 
 instance E.ToMusic1 o => E.ToMusic1 (SF () (Event o)) where
   toMusic1 = bindMusic $ \dur v ->
-    foldr
-      (\(t, a) m ->
-        m E.:=: (E.rest (unTime t) E.:+: E.toMusic1 (E.note 1 a))
-      )
-      (E.rest 0)
-      $ observe
-      $ stretch dur v
+    let go _ [] = E.rest 0
+        go now ((t, a) : es) =
+          let onset = unTime t
+              m     = E.toMusic1 (E.note dur a)
+           in (E.rest (onset - now) E.:+: m) E.:+: go (onset + E.dur m) es
+     in go 0 $ observe $ stretch dur v
 
 
 deriving anyclass instance NFData (Deg n)

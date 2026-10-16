@@ -9,11 +9,12 @@ import Data.Containers.ListUtils (nubOrd)
 import Data.Function (on)
 import Data.Lilypond
 import Data.List (groupBy, sortOn, unsnoc)
-import Data.Maybe (isJust, mapMaybe)
+import Data.Maybe (isJust)
 import Data.Music.Lilypond.Pitch hiding (PitchName (..))
 import Data.Music.Lilypond.Pitch qualified as L
 import Data.Ord (Down (..))
 import DenoMusic.Types
+import Euterpea qualified as E
 import Text.PrettyPrint.HughesPJClass (pPrint)
 
 
@@ -86,34 +87,68 @@ spanDur s = spanEnd s - spanStart s
 
 
 --------------------------------------------------------------------------------
--- Voice -> Score
+-- Music -> Spans
+--
+-- We compile a Euterpea 'E.Music' directly by structural recursion. Parallel
+-- composition (@:=:@) splits a piece into independent voices, while a parallel
+-- of simultaneous notes within a voice becomes a chord. Each voice is rendered
+-- into an absolute-time 'Span' timeline, which the rest of this module already
+-- knows how to notate.
+--
+-- Simplifying assumption: no sequential-of-parallel-of-sequential. In other
+-- words, @:=:@ is used either to stack whole voices (its operands are
+-- themselves sequential music) or to stack the simultaneous notes of a single
+-- chord (its operands are bare notes) \-\- never to splice a multi-voice passage
+-- into the middle of another voice.
 --------------------------------------------------------------------------------
 
-type Voice = [(Interval Rational, Either Score ([PostEvent], Reg PitchClass))]
+-- | Split a piece of music into its parallel voices. A top-level @:=:@ is read
+-- as parallel composition of voices; anything else is a single voice whose
+-- timeline is produced by 'musicToSpans'.
+musicToVoices :: E.Music (Reg PitchClass) -> [[Span]]
+musicToVoices = \case
+  m1 E.:=: m2   -> musicToVoices m1 <> musicToVoices m2
+  E.Modify _ m  -> musicToVoices m
+  m             -> [snd (musicToSpans 0 m)]
 
--- | Turn a voice's raw timeline into intermediate 'Span's. Notes sharing the
--- same interval are merged into a single chord.
-toSpans :: Voice -> [Span]
-toSpans xs = controls <> notes
+-- | Render a single (parallel-free, except for chords) voice into an
+-- absolute-time span timeline, starting at time @t@. Returns the end time
+-- alongside the spans so sequential composition can thread the clock through.
+musicToSpans :: Rational -> E.Music (Reg PitchClass) -> (Rational, [Span])
+musicToSpans t = \case
+  E.Prim (E.Note d p)
+    | d <= 0    -> (t, [])
+    | otherwise -> (t + d, [Span t (t + d) (Notes [] [p])])
+  E.Prim (E.Rest d)
+    | d <= 0    -> (t, [])
+    | otherwise -> (t + d, [Span t (t + d) Rest'])
+  m1 E.:+: m2 ->
+    -- Sequential composition: lay @m2@ down right after @m1@.
+    let (t1, s1) = musicToSpans t m1
+        (t2, s2) = musicToSpans t1 m2
+     in (t2, s1 <> s2)
+  m1 E.:=: m2 ->
+    -- Parallel composition within a voice: a chord. Both operands start at the
+    -- same instant; merge notes sharing an interval into a single chord span.
+    let (t1, s1) = musicToSpans t m1
+        (t2, s2) = musicToSpans t m2
+     in (max t1 t2, mergeChords (s1 <> s2))
+  E.Modify _ m -> musicToSpans t m
+
+-- | Merge note spans that share an identical interval into a single chord span,
+-- combining their pitches and post events. Non-note spans are left untouched.
+mergeChords :: [Span] -> [Span]
+mergeChords = fmap merge . groupBy (on (==) key) . sortOn key
   where
-    controls =
-      [ Span lo lo (Control sc)
-      | (Interval lo _, Left sc) <- xs
-      ]
+    key s = (spanStart s, spanEnd s)
 
-    notes =
-      fmap mkChord
-        . groupBy (on (==) fst)
-        . sortOn fst
-        $ [ (Interval lo hi, (pes, p))
-          | (Interval lo hi, Right (pes, p)) <- xs
-          ]
-
-    mkChord [] = Span 0 0 (Notes [] [])
-    mkChord grp@((Interval lo hi, _) : _) =
-      let pes = nubOrd $ foldMap (fst . snd) grp
-          ps  = fmap (snd . snd) grp
-       in Span lo hi (Notes pes ps)
+    merge grp@(s0 : _) =
+      case [ (pes, ps) | Span _ _ (Notes pes ps) <- grp ] of
+        []    -> s0
+        notes ->
+          Span (spanStart s0) (spanEnd s0) $
+            Notes (nubOrd (foldMap fst notes)) (foldMap snd notes)
+    merge [] = Span 0 0 (Notes [] [])
 
 -- | Sort spans by start time, placing zero-width controls before the notes
 -- that begin at the same instant.
@@ -324,8 +359,8 @@ spanToScore s = case spanBody s of
 -- silence made explicit as a 'Rest''. This is the first half of compilation;
 -- it is kept separate from 'spansToScore' so that 'shareRests' can look at all
 -- voices' spans together before each is notated.
-voiceToSpans :: Voice -> [Span]
-voiceToSpans = fillRests . sortSpans . toSpans
+normalizeVoice :: [Span] -> [Span]
+normalizeVoice = fillRests . sortSpans
 
 -- | Compile a normalized span list all the way down to a lilypond expression,
 -- splitting over-long durations, generating tuplets, and tying everything into
@@ -509,14 +544,14 @@ pitchHeight (Reg o pc) = o * 12 + fromEnum pc
 
 -- | A voice's average pitch height, used to rank voices from high to low.
 -- Voices with no sounding notes sort to the bottom.
-voiceHeight :: Voice -> Double
+voiceHeight :: [Span] -> Double
 voiceHeight v =
-  case mapMaybe pitchOf v of
+  case concatMap pitchesOf v of
     [] -> -1 / 0
     hs -> fromIntegral (sum hs) / fromIntegral (length hs)
   where
-    pitchOf (_, Right (_, p)) = Just (pitchHeight p)
-    pitchOf _                 = Nothing
+    pitchesOf (Span _ _ (Notes _ ps)) = fmap pitchHeight ps
+    pitchesOf _                       = []
 
 -- | Reorder voices into the order LilyPond expects for numbered voices:
 --
@@ -525,7 +560,7 @@ voiceHeight v =
 -- > Voice 5: 3rd highest   Voice 6: 3rd lowest   (etc.)
 --
 -- The input is first sorted high-to-low, then interleaved from both ends.
-voiceOrder :: [Voice] -> [Voice]
+voiceOrder :: [[Span]] -> [[Span]]
 voiceOrder = interleave . sortOn (Down . voiceHeight)
   where
     interleave []       = []
@@ -538,9 +573,7 @@ upStaff :: [Score] -> Score
 upStaff voices =
   New "Staff" (Just "up") $
     Simultaneous False $
-      [ Command "set Timing.beamExceptions = #'()"
-      , Command "set Timing.beatStructure = #'(4)"
-      , Command "accidentalStyle piano-cautionary"
+      [ Command "accidentalStyle piano-cautionary"
       ]
         <> zipWith wrapVoice [0 ..] voices
 
@@ -553,15 +586,16 @@ downStaff =
       , Command "accidentalStyle piano-cautionary"
       ]
 
-makeScore :: [Voice] -> Score
-makeScore voices =
+makeScore :: E.Music (Reg PitchClass) -> Score
+makeScore music =
   New "PianoStaff" Nothing $
     Simultaneous False
       [ upStaff (fmap spansToScore sharedVoices)
       , downStaff
       ]
   where
-    sharedVoices = shareRests (fmap voiceToSpans (voiceOrder voices))
+    sharedVoices =
+      shareRests (fmap normalizeVoice (voiceOrder (musicToVoices music)))
 
 
 --------------------------------------------------------------------------------
