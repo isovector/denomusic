@@ -8,9 +8,8 @@ module Music.Harmony
   ) where
 
 import Control.Category
-import Control.Lens ((+~), (&), view, (-~))
+import Control.Lens ((+~), (&), view, (-~), iso)
 import Data.Bool
-import Data.List (findIndex, sort, nub)
 import Data.Monoid
 import Data.Proxy
 import Data.Ratio
@@ -75,7 +74,8 @@ lead (Deg from) (Deg to) =
    in T (fromIntegral sTrans) $ fromIntegral tLevel
 
 apply :: T c s -> Scale c s -> Scale c s
-apply (T i o) (Scale f) = Scale $ (+ MkNote o []) . f . (+ MkNote i [])
+apply (T (flip MkNote [] -> i) (flip MkNote [] -> o)) (Scale f) = Scale $
+  iso (+ i) (subtract i) . f . iso (+ o) (subtract o)
 
 
 intrinsic
@@ -87,17 +87,10 @@ intrinsic
 intrinsic voiced k = do
   let notes = fmap (getVertical voiced) $ enumFromTo minBound maxBound
   withSomeSNat (fromIntegral $ length notes) $ \case
-    Just (snat :: SNat ins) ->
-      let ds' = nub $ sort $ fmap normalizeNote notes
-          n = length ds'
-          o = scaleSize @c
-       in withKnownNat snat
-            $ k @ins Proxy (mkScale notes)
-            $ flip fmap voiced $ \(Note (Deg a) xs) -> do
-                let (q, r) = divMod a o
-                case findIndex ((== Deg r) . noteDeg) ds' of
-                  Just idx -> MkNote (fromIntegral (q * n + idx))xs
-                  Nothing -> error "impossible"
+    Just (snat :: SNat ins) -> do
+      withKnownNat snat $ do
+        let sc = mkScale @ins notes
+        k Proxy sc $ fmap (invertScale sc) voiced
     Nothing -> error "impossible"
 
 
