@@ -48,6 +48,7 @@ library
       Music.Types.Note
       Music.Types.Scale
       Music.Types.Vertical
+      Test
   other-modules:
       Paths_denomusic
   autogen-modules:

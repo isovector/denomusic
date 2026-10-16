@@ -67,6 +67,7 @@ data Score
     | Tuplet Rational (Maybe Int) Score                          -- ^ Stretch music (multiplier).
     | Transpose Pitch Pitch Score                   -- ^ Transpose music (from to).
     | Relative Pitch Score                          -- ^ Use relative octave (octave).
+    | Fixed Pitch Score                             -- ^ Fix the reference octave (octave).
     | Clef Clef                                     -- ^ Clef.
     | Key Pitch Mode                                -- ^ Key signature.
     | Time Integer Integer                          -- ^ Time signature.
@@ -74,6 +75,7 @@ data Score
     | New String (Maybe String) Score               -- ^ New expression.
     | Context String (Maybe String) Score           -- ^ Context expression.
     | Command String -- ^ Arbitrary lilypond command
+    | Raw String     -- ^ Verbatim lilypond/scheme, printed exactly as given.
     | ChordMode [(Rational, Pitch, ChordMod)]
     | Revert String
     | BarCheck
@@ -267,6 +269,9 @@ instance Pretty Score where
     pPrint (Relative p x) =
         "\\relative" <+> pPrint p <+> pPrint x
 
+    pPrint (Fixed p x) =
+        "\\fixed" <+> pPrint p <+> pPrint x
+
     pPrint (Clef c) = "\\clef" <+> pPrint c
 
     pPrint (Key p m) = "\\key" <+> pPrint p <+> pPrint m
@@ -281,13 +286,16 @@ instance Pretty Score where
     -- TODO metronome
 
     pPrint (New typ name x) =
-        "\\new" <+> text typ <+> maybe "" pPrint name $$ pPrint x
+        "\\new" <+> text typ <+> maybe empty (\n -> "=" <+> text (show n)) name $$ pPrint x
 
     pPrint (Context typ name x) =
         "\\context" <+> text typ <+> pPrint name <+> pPrint x
 
     pPrint (Command val) =
         ("\\" <> text val)
+
+    pPrint (Raw val) =
+        text val
 
     pPrint (Revert name) =
         "\\revert" <+> text name
