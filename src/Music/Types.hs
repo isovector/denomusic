@@ -62,6 +62,10 @@ replicateH :: Int -> Horizontal i (Event o) -> Horizontal i (Event o)
 replicateH n = fold . replicate n
 
 
+holdH :: o -> Horizontal (Event o) o
+holdH = Horizontal . pure . hold
+
+
 instance Semigroup (Horizontal i o) where
   Horizontal (Timed t1 x) <> Horizontal (Timed t2 y) =
     Horizontal $ Timed (t1 + t2) $ switch (x &&& at t1 ()) $ const y
