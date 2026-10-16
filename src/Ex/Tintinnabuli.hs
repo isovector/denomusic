@@ -24,7 +24,7 @@ tintinnabuli sc c = scaleIso (opScale sc) %~ (+ c) . dropMod
 
 melody :: Horizontal i (Event (Note 7))
 melody = resize 0.25 $ foldMap dnote $
-  fmap fromInteger [0 .. 12]
+  fmap fromInteger [-12 .. 12]
 
 harmonized :: Horizontal i (Vertical Bool (Event (Note 7)))
 harmonized = proc i -> do
@@ -37,10 +37,15 @@ harmonized = proc i -> do
 
 
 
-song :: Vertical Bool (SF () (Event (Timed (Note 7))))
-song = fmap horizontal $ toV $ resize (1/3) harmonized
+-- song :: Vertical Bool (SF () (Event (Timed (Note 7))))
+-- song = fmap horizontal $ toV $ harmonized
+
+song :: SF () (Event (Timed (Vertical Bool (Note 7))))
+song = horizontal $ fmap fromV harmonized
 
 
 main :: IO ()
-main = toPdf song
+main = do
+  toPdf song
+  play song
 

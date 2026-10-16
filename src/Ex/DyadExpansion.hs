@@ -1,9 +1,11 @@
 module Ex.DyadExpansion where
 
 import DenoMusic.Play
+import DenoMusic.Notation
 import FRP
 import Music.Harmony
 import Music.Types
+import Music.Extra
 
 
 dyad :: Scale 2 7
@@ -35,5 +37,7 @@ song = proc _ -> do
 
 
 main :: IO ()
-main = play $ export (0, 4) song
+main = do
+  toPdf $ toV $ fmap (toV . fmap toV) song
+  play song
 
