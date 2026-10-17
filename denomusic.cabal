@@ -25,6 +25,7 @@ source-repository head
 
 library
   exposed-modules:
+      Data.Iso
       Data.Lilypond
       DenoMusic.Notation
       DenoMusic.NotationBackend
@@ -82,6 +83,7 @@ library
     , hspec
     , lens
     , lilypond
+    , monoid-extras
     , monoidal-containers
     , mtl
     , pretty

@@ -9,7 +9,7 @@ import Data.Foldable
 import Data.Set (Set)
 import Euterpea qualified as E
 import FRP.Types
-import FRP
+import FRP (stretch)
 import Music.Harmony
 import Music.Types
 

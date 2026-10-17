@@ -5,10 +5,12 @@
 module Music.Harmony
   ( module Music.Harmony
   , KnownNat
+  , Group(..)
   ) where
 
-import Control.Category
-import Control.Lens ((+~), (&), view, (-~), iso)
+import Data.Functor.Compose
+import Data.Iso
+import Control.Lens ((+~), (&), view, (-~))
 import Data.Bool
 import Data.Monoid
 import Data.Proxy
@@ -95,30 +97,51 @@ intrinsic voiced k = do
 
 
 newtype VoiceLeading v s = VoiceLeading
-  { applyVoiceLeading :: Vertical v (Note s) -> Vertical v (Note s)
+  { voiceLeadingAnIso :: AnIso' (Vertical v (Note s)) (Vertical v (Note s))
   }
-  deriving (Semigroup, Monoid) via Endo (Vertical v (Note n))
+  deriving (Semigroup, Monoid, Group) via Endomorphism (GenericIso (Compose (Vertical v) Note)) n
+
+voiceLeadingIso :: VoiceLeading v s -> Iso' (Vertical v (Note s)) (Vertical v (Note s))
+voiceLeadingIso v = cloneIso $ voiceLeadingAnIso v
+
+applyVoiceLeading :: VoiceLeading v s -> Vertical v (Note s) -> Vertical v (Note s)
+applyVoiceLeading v = view $ voiceLeadingIso v
 
 instance (Show v, Enum v, Bounded v) => Show (VoiceLeading v s) where
-  show (VoiceLeading f) =
+  show vl =
     let v = iota
-     in prettyVertical $ liftA2 (\x y -> unwords [show x, "→", show y]) v (f v)
+     in prettyVertical $ liftA2 (\x y -> unwords [show x, "→", show y]) v (applyVoiceLeading vl v)
 
 voiceLead
     :: (Enum v, Bounded v, KnownNat s)
     => Deg s
     -> Deg s
     -> VoiceLeading v s
-voiceLead from to = VoiceLeading $ \voiced ->
-  intrinsic voiced $ \(Proxy @ins) sc v' -> do
-    let t = lead @ins from to
-    fmap (applyScale $ apply t sc) v'
+voiceLead from to = VoiceLeading $
+  iso
+    ( \voiced ->
+      intrinsic voiced $ \(Proxy @ins) sc v' -> do
+        let t = lead @ins from to
+        fmap (applyScale $ apply t sc) v'
+    )
+    ( \voiced ->
+      intrinsic voiced $ \(Proxy @ins) sc v' -> do
+        let t = lead @ins to from
+        fmap (applyScale $ apply t sc) v'
+    )
+
+-- TODO(sandy): It's not immediately clear to me whether the inverse direction here is correct
+expand :: (KnownNat m, Ord v) => v -> v -> VoiceLeading v m
+expand src dst = VoiceLeading $ iso (expandF src dst) (contractF src dst)
+
+contract :: (KnownNat m, Ord v) => v -> v -> VoiceLeading v m
+contract src dst = invert $ expand src dst
 
 
 -- | A voice leading that swaps the two voices by moving each towards the
 -- other.
-contract :: forall m v. (KnownNat m, Ord v) => v -> v -> VoiceLeading v m
-contract x y = VoiceLeading $ \v ->
+contractF :: forall m v. (KnownNat m, Ord v) => v -> v -> Vertical v (Note m) -> Vertical v (Note m)
+contractF x y v =
   let ax = (getDeg $ noteDeg $ view (voice x) v, x)
       by = (getDeg $ noteDeg $ view (voice y) v, y)
       (lo, src) = min ax by
@@ -130,8 +153,8 @@ contract x y = VoiceLeading $ \v ->
 
 -- | A voice leading that swaps the two voices by moving each away from the
 -- other.
-expand :: forall m v. (KnownNat m, Ord v) => v -> v -> VoiceLeading v m
-expand x y = VoiceLeading $ \v ->
+expandF :: forall m v. (KnownNat m, Ord v) => v -> v -> Vertical v (Note m) -> Vertical v (Note m)
+expandF x y v =
   let ax = (getDeg $ noteDeg $ view (voice x) v, x)
       by = (getDeg $ noteDeg $ view (voice y) v, y)
       (lo, src) = min ax by

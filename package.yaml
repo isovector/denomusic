@@ -23,30 +23,31 @@ description:         Please see the README on GitHub at <https://github.com/isov
 dependencies:
 - base >= 4.7 && < 5
 - Euterpea
-- checkers
+- MemoTrie
 - QuickCheck
+- arrows
+- checkers
 - containers >= 0.5.9
-- monoidal-containers
-- hspec
-- mtl
-- transformers
-- lens
-- fingertree
-- recursion-schemes
 - deepseq
+- distributive
+- fingertree
+- generic-lens
+- groups
+- hspec
+- lens
 - lilypond
+- monoid-extras
+- monoidal-containers
+- mtl
 - pretty
 - process
-- groups
-- step-function
 - profunctors
-- witherable
-- MemoTrie
+- recursion-schemes
 - semialign
+- step-function
 - these
-- distributive
-- arrows
-- generic-lens
+- transformers
+- witherable
 
 default-extensions:
 - Arrows

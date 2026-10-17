@@ -1,6 +1,6 @@
 module Music.Types.Scale where
 
-import Control.Category
+import Data.Iso
 import Control.Lens
 import Data.Bool
 import Data.List (sort, nub, minimumBy)
@@ -11,18 +11,18 @@ import Prelude hiding (id, (.))
 
 
 newtype Scale a b = Scale
-  { scaleIso :: Iso' (Note a) (Note b)
+  { scaleAnIso :: AnIso' (Note a) (Note b)
   }
+  deriving Category via GenericIso Note
+
+scaleIso :: Scale a b -> Iso' (Note a) (Note b)
+scaleIso s = cloneIso $ scaleAnIso s
 
 opScale :: Scale a b -> Scale b a
-opScale (Scale s) = Scale $ from s
-
-instance Category Scale where
-  id = Scale id
-  Scale g . Scale f = Scale $ f . g
+opScale s = Scale $ from $ scaleIso s
 
 applyScale :: Scale a b -> Note a -> Note b
-applyScale (Scale s) = view s
+applyScale s = view $ scaleIso s
 
 invertScale :: Scale a b -> Note b -> Note a
 invertScale = applyScale . opScale
