@@ -163,3 +163,7 @@ expandF x y v =
    in v & voice src -~ fromIntegral d
         & voice dst +~ fromIntegral d
 
+
+invertAround :: Note n -> Scale n n
+invertAround z = Scale $ iso (\n -> negate (n - z) + z) (\n -> negate (n - z) + z)
+
