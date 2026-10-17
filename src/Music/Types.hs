@@ -5,11 +5,11 @@ module Music.Types
   , module Music.Types.Vertical
   ) where
 
-import Control.Monad
-import Control.Arrow.Transformer.Static
+import Data.Semigroup
 import Control.Applicative
 import Control.Arrow
 import Control.Category
+import Control.Monad
 import Data.Coerce
 import Data.Foldable
 import DenoMusic.Types (Reg(..))
@@ -48,42 +48,59 @@ extending = evStream $ \es ->
 
 
 newtype Horizontal i o = Horizontal
-  { unHorizontal :: Timed (SF i o)
+  { unHorizontal :: SF i (o, Event ())
   }
   deriving stock (Generic, Functor)
-  deriving (Category, Arrow, ArrowLoop) via StaticArrow Timed SF
   deriving (Applicative) via WrappedArrow Horizontal i
 
+instance Category Horizontal where
+  id = Horizontal $ id &&& at 0 ()
+  Horizontal h2 . Horizontal h1 = Horizontal $ proc a -> do
+    (b, e1) <- h1 -< a
+    (c, e2) <- h2 -< b
+    e' <- latestOf -< e1 <> e2
+    returnA -< (c, e')
+
+instance Arrow Horizontal where
+  arr f = Horizontal $ arr f &&& at 0 ()
+  Horizontal f *** Horizontal g = Horizontal $ proc (b, b') -> do
+    (c,  e1) <- f -< b
+    (c', e2) <- g -< b'
+    e' <- latestOf -< e1 <> e2
+    returnA -< ((c, c'), e')
+
+instance Semigroup (Horizontal i o) where
+  Horizontal x <> Horizontal y = Horizontal $ switch (x >>> arr (\(o, e) -> ((o, e), e))) $ const y
+
+instance Monoid (Horizontal i (Event o)) where
+  mempty = Horizontal $ arr (const NoEvent) &&& at 0 ()
+
+
+latestOf :: SF (Event a) (Event a)
+latestOf = ev2ev $ \case
+  [] -> []
+  xs -> [last xs]
+
+
 resize :: Rational -> Horizontal i o -> Horizontal i o
-resize dt (Horizontal (Timed d sf)) = Horizontal $ Timed (fromRational dt * d) $ stretch dt sf
+resize dt (Horizontal sf) = Horizontal $ stretch dt sf
 
 
 replicateH :: Int -> Horizontal i (Event o) -> Horizontal i (Event o)
-replicateH n = fold . replicate n
-
-
-holdH :: o -> Horizontal (Event o) o
-holdH = Horizontal . pure . hold
-
-
-instance Semigroup (Horizontal i o) where
-  Horizontal (Timed t1 x) <> Horizontal (Timed t2 y) =
-    Horizontal $ Timed (t1 + t2) $ switch (x &&& at t1 ()) $ const y
-
-instance Monoid (Horizontal i (Event o)) where
-  mempty = Horizontal $ pure $ arr $ const NoEvent
+replicateH = stimes
 
 
 getHorizontal :: Horizontal i o -> SF i o
-getHorizontal = unTimed . unHorizontal
+getHorizontal = fmap fst . unHorizontal
 
 horizontal :: Horizontal i (Event o) -> SF i (Event (Timed o))
-horizontal h = extending . unTimed (unHorizontal h)
+horizontal h = extending . getHorizontal h
 
 rest :: Time -> Horizontal i (Event a)
-rest t = Horizontal $ Timed t $ proc i -> do
+rest t = Horizontal $ proc i -> do
   es <- at 0 NoEvent -< i
-  returnA -< join es
+  end <- at t () -< i
+  returnA -< (join es, end)
 
 hit :: Time -> a -> Horizontal i (Event a)
 hit t = hitWith t . const
@@ -95,7 +112,8 @@ with :: (i -> a) -> Horizontal i (Event a)
 with = hitWith 1
 
 hitWith :: Time -> (i -> a) -> Horizontal i (Event a)
-hitWith t f = Horizontal $ Timed t $ proc i -> do
+hitWith t f = Horizontal $ proc i -> do
   es <- discrete [(0, Event ()), (t, NoEvent)] -< i
-  returnA -< f i <$ join es
+  end <- at t () -< i
+  returnA -< (f i <$ join es, end)
 
