@@ -8,6 +8,7 @@ module Music.Harmony
   , Group(..)
   ) where
 
+import Data.Foldable
 import Data.Functor.Compose
 import Data.Iso
 import Control.Lens ((+~), (&), view, (-~))
@@ -81,13 +82,13 @@ apply (T (flip MkNote [] -> i) (flip MkNote [] -> o)) (Scale f) = Scale $
 
 
 intrinsic
-  :: forall v c r
-   . (Enum v, Bounded v, KnownNat c)
-  => (Vertical v (Note c))
-  -> (forall ins. KnownNat ins => Proxy ins -> Scale ins c -> Vertical v (Note ins) -> r)
+  :: forall f c r
+   . (Foldable f, Functor f, KnownNat c)
+  => f (Note c)
+  -> (forall ins. KnownNat ins => Proxy ins -> Scale ins c -> f (Note ins) -> r)
   -> r
 intrinsic voiced k = do
-  let notes = fmap (getVertical voiced) $ enumFromTo minBound maxBound
+  let notes = toList voiced
   withSomeSNat (fromIntegral $ length notes) $ \case
     Just (snat :: SNat ins) -> do
       withKnownNat snat $ do
