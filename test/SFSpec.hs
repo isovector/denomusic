@@ -89,7 +89,7 @@ toSF (At t b) = at t b
 toSF (Steps a as) = steps a as
 toSF (Discrete as) = discrete as
 toSF Fst = arr fst
-toSF Never = arr $ const NoEvent
+toSF Never = never
 
 instance (Arbitrary (SFMaker a b), Arbitrary (SFMaker a c), Function a, CoArbitrary a, Arbitrary b, Arbitrary c, Show b, Show c) => Arbitrary (SFMaker a (b, c)) where
   arbitrary = oneof

@@ -53,7 +53,7 @@ newtype Horizontal i o = Horizontal
   deriving (Applicative) via WrappedArrow Horizontal i
 
 instance Category Horizontal where
-  id = Horizontal $ id &&& at 0 ()
+  id = Horizontal $ id &&& now ()
   Horizontal h2 . Horizontal h1 = Horizontal $ proc a -> do
     (b, e1) <- h1 -< a
     (c, e2) <- h2 -< b
@@ -61,7 +61,7 @@ instance Category Horizontal where
     returnA -< (c, e')
 
 instance Arrow Horizontal where
-  arr f = Horizontal $ arr f &&& at 0 ()
+  arr f = Horizontal $ arr f &&& now ()
   Horizontal f *** Horizontal g = Horizontal $ proc (b, b') -> do
     (c,  e1) <- f -< b
     (c', e2) <- g -< b'
@@ -72,7 +72,7 @@ instance Semigroup (Horizontal i o) where
   Horizontal x <> Horizontal y = Horizontal $ switch (x >>> arr (\(o, e) -> ((o, e), e))) $ const y
 
 instance Monoid (Horizontal i (Event o)) where
-  mempty = Horizontal $ arr (const NoEvent) &&& at 0 ()
+  mempty = Horizontal $ never &&& now ()
 
 
 latestOf :: SF (Event a) (Event a)
@@ -98,7 +98,7 @@ horizontal h = extending . getHorizontal h
 
 rest :: Time -> Horizontal i (Event a)
 rest t = Horizontal $ proc i -> do
-  es <- at 0 NoEvent -< i
+  es <- now NoEvent -< i
   end <- at t () -< i
   returnA -< (join es, end)
 
@@ -120,6 +120,6 @@ hitWith t f = Horizontal $ proc i -> do
 hitDyn :: Horizontal (Time, a) (Event a)
 hitDyn = Horizontal $ proc i -> do
   (a, end) <- dynamicE -< i
-  e <- at 0 () -< i
+  e <- now () -< i
   returnA -< (a <$ e, end)
 

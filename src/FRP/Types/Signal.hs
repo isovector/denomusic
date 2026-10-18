@@ -14,7 +14,6 @@ module FRP.Types.Signal
 import Control.Applicative
 import Control.Arrow
 import Control.Exception (evaluate)
-import Control.Lens (set, ix, _1)
 import Data.These
 import Data.Maybe
 import FRP.Types.Event

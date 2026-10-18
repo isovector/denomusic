@@ -19,7 +19,8 @@ holdH a0 = Horizontal $ proc i -> do
 
 main :: IO ()
 main = do
-  toPdf $ horizontal song
-  play $ horizontal song
+  let s = horizontal song
+  toPdf s
+  play s
 
 

@@ -62,6 +62,9 @@ stretch t sf = warpSignal (recip t) >>> sf >>> warpSignal t
 now :: a -> SF x (Event a)
 now = at 0
 
+never :: SF x (Event a)
+never = discrete []
+
 offset :: Time -> SF a a
 offset dt = SF $ \input ->
   unionClock input $ invmapTime (+ dt) (subtract dt) input
