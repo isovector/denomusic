@@ -97,27 +97,27 @@ intrinsic voiced k = do
     Nothing -> error "impossible"
 
 
-newtype VoiceLeading v s = VoiceLeading
-  { voiceLeadingAnIso :: AnIso' (Vertical v (Note s)) (Vertical v (Note s))
+newtype VoiceLeading f s = VoiceLeading
+  { voiceLeadingAnIso :: AnIso' (f (Note s)) (f (Note s))
   }
-  deriving (Semigroup, Monoid, Group) via Endomorphism (GenericIso (Compose (Vertical v) Note)) n
+  deriving (Semigroup, Monoid, Group) via Endomorphism (GenericIso (Compose f Note)) s
 
-voiceLeadingIso :: VoiceLeading v s -> Iso' (Vertical v (Note s)) (Vertical v (Note s))
+voiceLeadingIso :: VoiceLeading f s -> Iso' (f (Note s)) (f (Note s))
 voiceLeadingIso v = cloneIso $ voiceLeadingAnIso v
 
-applyVoiceLeading :: VoiceLeading v s -> Vertical v (Note s) -> Vertical v (Note s)
+applyVoiceLeading :: VoiceLeading f s -> f (Note s) -> f (Note s)
 applyVoiceLeading v = view $ voiceLeadingIso v
 
-instance (Show v, Enum v, Bounded v) => Show (VoiceLeading v s) where
+instance (Enum v, Bounded v, Show v) => Show (VoiceLeading (Vertical v) s) where
   show vl =
     let v = iota
      in prettyVertical $ liftA2 (\x y -> unwords [show x, "→", show y]) v (applyVoiceLeading vl v)
 
 voiceLead
-    :: (Enum v, Bounded v, KnownNat s)
+    :: (Foldable f, Functor f, KnownNat s)
     => Deg s
     -> Deg s
-    -> VoiceLeading v s
+    -> VoiceLeading f s
 voiceLead from to = VoiceLeading $
   iso
     ( \voiced ->
@@ -132,10 +132,10 @@ voiceLead from to = VoiceLeading $
     )
 
 -- TODO(sandy): It's not immediately clear to me whether the inverse direction here is correct
-expand :: (KnownNat m, Ord v) => v -> v -> VoiceLeading v m
+expand :: (KnownNat m, Ord v) => v -> v -> VoiceLeading (Vertical v) m
 expand src dst = VoiceLeading $ iso (expandF src dst) (contractF src dst)
 
-contract :: (KnownNat m, Ord v) => v -> v -> VoiceLeading v m
+contract :: (KnownNat m, Ord v) => v -> v -> VoiceLeading (Vertical v) m
 contract src dst = invert $ expand src dst
 
 

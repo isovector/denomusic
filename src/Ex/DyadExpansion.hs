@@ -15,7 +15,7 @@ holdAccum :: c -> SF (Event (c -> c)) c
 holdAccum d0 = hold d0 <<< accum d0
 
 
-divergence :: Horizontal i (Event (VoiceLeading Dyad 7))
+divergence :: Horizontal i (Event (VoiceLeading (Vertical Dyad) 7))
 divergence = resize 0.5 $ replicateH 12 $ foldMap dnote
   [ voiceLead 0 3
   , expand Lo Hi
