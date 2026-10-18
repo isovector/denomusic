@@ -33,6 +33,9 @@ evByEv f = SF $ \s -> do
 observe :: SF () (Event a) -> [(Time, a)]
 observe sf = events $ runSF sf (pure ())
 
+observeV :: SF () (a) -> [(Time, a)]
+observeV sf = values $ runSF sf (pure ())
+
 -- | Generate an event by sampling at local time 0.
 dynamicE :: SF (Time, a) (a, Event ())
 dynamicE = SF $ \s -> do

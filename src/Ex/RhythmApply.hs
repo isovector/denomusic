@@ -5,30 +5,21 @@ import DenoMusic.Notation
 import FRP
 import Music.Types
 
-times :: Horizontal i (Event Time)
-times = foldMap (hit 1)
-  [ 1/3
-  , 1
-  , 1/4
-  , 1/2
-  ]
 
-
-song :: SF () (Event (Timed (Note 7)))
+song :: Horizontal () (Event ((Note 7)))
 song = proc _ -> do
-  d <- hold 1
-   <<< getHorizontal times
-    -< ()
-  (| (horizontal . replicateH 10)
-      ( do
-          hitDyn -< (d, fromIntegral $ floor $ recip $ unTime d)
-      )
-   |)
+  d <- holdH 0 <<< foldMap (hit 1) [1/3, 1 , 1/4 , 1/2] -< ()
+  replicateH 10 hitDyn -< (d, fromIntegral $ floor $ recip $ unTime d)
+
+holdH :: a -> Horizontal (Event a) a
+holdH a0 = Horizontal $ proc i -> do
+  a <- hold a0 -< i
+  returnA -< (a, NoEvent)
 
 
 main :: IO ()
 main = do
-  toPdf song
-  play song
+  toPdf $ horizontal song
+  play $ horizontal song
 
 
