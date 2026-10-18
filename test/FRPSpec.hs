@@ -1,8 +1,8 @@
 module FRPSpec where
 
 import FRP
+import Harness ()
 import Music.Types
-import SignalSpec ()
 import Test.Hspec
 import Test.Hspec.QuickCheck
 import Test.QuickCheck
