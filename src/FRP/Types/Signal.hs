@@ -141,18 +141,14 @@ spliceAt (Signal a as) t0 bs =
     ]
 
 
--- | Keep only the stepwise components of a 'Signal' that begin at 0.
+-- | Keep only the stepwise components of a 'Signal' that begin at or after 0.
 fromZero :: Signal a -> [(Time, Step a)]
 fromZero (Signal a0 as) =
   case as of
     [] -> [(0, Step Nothing a0)]
     ((t, a) : as') ->
       case compare t 0 of
-        LT ->
-          set (ix 0 . _1) 0
-            $ fmap snd
-            $ dropWhile ((< 0) . fst . fst)
-            $ zip (cycle as') as
+        LT -> fromZero (Signal (step a) as')
         EQ -> as
         GT -> (0, a) : as
 
