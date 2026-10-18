@@ -5,7 +5,10 @@ import Data.Maybe (listToMaybe, mapMaybe)
 
 
 discrete :: [(Time, a)] -> SF x (Event a)
-discrete = SF . const . mkDiscrete
+discrete as = SF $ \input ->
+  unionClock
+    input
+    (mkDiscrete as)
 
 
 steps :: a -> [(Time, a)] -> SF x a
@@ -13,7 +16,9 @@ steps a = SF . const . mkSteps a
 
 
 ev2ev :: ([(Time, a)] -> [(Time, b)]) -> SF (Event a) (Event b)
-ev2ev f = SF $ mkDiscrete . f . events
+ev2ev f = SF $ \input ->
+  unionClock input $ mkDiscrete $ f $ events input
+
 
 evStream :: ([(Time, Event a)] -> [(Time, Event b)]) -> SF (Event a) (Event b)
 evStream f = SF $ mkDiscrete . mapMaybe (traverse eventToMaybe) . f . values

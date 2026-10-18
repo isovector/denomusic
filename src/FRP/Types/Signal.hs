@@ -6,6 +6,7 @@ module FRP.Types.Signal
   , eventsTerminating
   , mkDiscrete
   , mkSteps
+  , unionClock
   , invmapTime
   , spliceAt
   ) where
@@ -117,6 +118,11 @@ mkDiscrete = Signal (const NoEvent) . fmap (fmap $ \a -> Step (Just $ Event a) $
 -- | Build a 'Signal' as a stepwise function.
 mkSteps :: a -> [(Time, a)] -> Signal a
 mkSteps a = Signal (const a) . fmap (fmap $ Step Nothing . const)
+
+
+-- | Use the values from the second signal while retaining update times from both.
+unionClock :: Signal a -> Signal b -> Signal b
+unionClock = liftA2 $ flip const
 
 
 -- | Map a function over time. Since time is represented both co- and

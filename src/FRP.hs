@@ -63,7 +63,8 @@ now :: a -> SF x (Event a)
 now = at 0
 
 offset :: Time -> SF a a
-offset dt = SF $ invmapTime (+ dt) (subtract dt)
+offset dt = SF $ \input ->
+  unionClock input $ invmapTime (+ dt) (subtract dt) input
 
 localTime :: SF x Time
 localTime = SF $ const $ Signal id mempty
