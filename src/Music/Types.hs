@@ -11,7 +11,6 @@ import Control.Arrow
 import Control.Category
 import Control.Monad
 import Data.Coerce
-import Data.Foldable
 import DenoMusic.Types (Reg(..))
 import FRP
 import GHC.Generics

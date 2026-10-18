@@ -96,3 +96,56 @@ library
     , transformers
     , witherable
   default-language: GHC2021
+
+test-suite tests
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  other-modules:
+      SignalSpec
+      Paths_denomusic
+  autogen-modules:
+      Paths_denomusic
+  hs-source-dirs:
+      test
+  default-extensions:
+      Arrows
+      DataKinds
+      DerivingStrategies
+      DerivingVia
+      LambdaCase
+      PatternSynonyms
+      TypeFamilies
+      ViewPatterns
+      OverloadedLabels
+  ghc-options: -Wall -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints -Wno-type-defaults -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      Euterpea
+    , MemoTrie
+    , QuickCheck
+    , arrows
+    , base >=4.7 && <5
+    , checkers
+    , containers >=0.5.9
+    , deepseq
+    , denomusic
+    , distributive
+    , fingertree
+    , generic-lens
+    , groups
+    , hspec
+    , hspec-discover
+    , lens
+    , lilypond
+    , monoid-extras
+    , monoidal-containers
+    , mtl
+    , pretty
+    , process
+    , profunctors
+    , recursion-schemes
+    , semialign
+    , step-function
+    , these
+    , transformers
+    , witherable
+  default-language: GHC2021

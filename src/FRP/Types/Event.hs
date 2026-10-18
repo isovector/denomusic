@@ -5,7 +5,6 @@ module FRP.Types.Event
   ) where
 
 import Control.Applicative
-import Data.Generics.Labels ()
 import GHC.Generics
 
 newtype Event a = MkEvent
