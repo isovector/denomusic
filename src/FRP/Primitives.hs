@@ -28,6 +28,13 @@ evByEv f = SF $ \s -> do
 observe :: SF () (Event a) -> [(Time, a)]
 observe sf = events $ runSF sf (pure ())
 
+-- | Generate an event by sampling at local time 0.
+dynamicE :: SF (Time, a) (a, Event ())
+dynamicE = SF $ \s -> do
+  let (t, a) = sample s 0
+  fmap (a, ) $ mkDiscrete $ pure (t, ())
+
+
 switch :: SF a (b, Event c) -> (c -> SF a b) -> SF a b
 switch (SF f) k = SF $ \sig -> do
   let sig' = f sig

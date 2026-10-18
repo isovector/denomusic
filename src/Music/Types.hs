@@ -81,6 +81,7 @@ latestOf = ev2ev $ \case
   xs -> [last xs]
 
 
+
 resize :: Rational -> Horizontal i o -> Horizontal i o
 resize dt (Horizontal sf) = Horizontal $ stretch dt sf
 
@@ -115,4 +116,10 @@ hitWith t f = Horizontal $ proc i -> do
   es <- discrete [(0, Event ()), (t, NoEvent)] -< i
   end <- at t () -< i
   returnA -< (f i <$ join es, end)
+
+hitDyn :: Horizontal (Time, a) (Event a)
+hitDyn = Horizontal $ proc i -> do
+  (a, end) <- dynamicE -< i
+  e <- at 0 () -< i
+  returnA -< (a <$ e, end)
 
