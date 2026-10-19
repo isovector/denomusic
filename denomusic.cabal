@@ -103,6 +103,7 @@ test-suite tests
   main-is: Spec.hs
   other-modules:
       FRPSpec
+      HarmonicSpec
       Harness
       SFSpec
       SignalSpec
