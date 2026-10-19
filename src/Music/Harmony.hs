@@ -240,3 +240,15 @@ neoriemannian v1 v2 = VoiceLeading $ selfDual $ \v -> do
           index <- [0 .. insSize - 1]
           pure $ placements IM.! index
 
+
+-- | The @t@ operation in "Tonality"
+chordalSteps :: (Foldable f, Functor f, KnownNat s) => Int -> VoiceLeading f s
+chordalSteps n = VoiceLeading $
+  iso
+    ( \c -> intrinsic c $ \(Proxy @ins) sc c' ->
+        fmap (applyScale sc . (+ fromIntegral n)) c'
+    )
+    ( \c -> intrinsic c $ \(Proxy @ins) sc c' ->
+        fmap (applyScale sc . (subtract $ fromIntegral n)) c'
+    )
+

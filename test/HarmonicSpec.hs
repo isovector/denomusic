@@ -12,6 +12,10 @@ import Test.QuickCheck
 
 spec :: Spec
 spec = do
+  describe "chordalSteps" $ do
+    prop "should be invertible" $ \t ->
+      invertible @24 @(Vertical Fiver) $ chordalSteps t
+
   describe "neo-riemannian transformations" $ do
     prop "should be an involution" $ \(v1 :: Quad) v2 ->
       involution @24 $ neoriemannian v1 v2
