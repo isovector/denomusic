@@ -9,6 +9,7 @@ module Data.Iso
   , AnIso'
   , cloneIso
   , SelfDual(..)
+  , selfDual
   ) where
 
 import Control.Category
@@ -43,4 +44,8 @@ instance Category k => Monoid (Endomorphism k a) where
 
 instance SelfDual k => Group (Endomorphism k a) where
   invert (Endomorphism k) = Endomorphism $ op k
+
+
+selfDual :: (a -> a) -> Iso' a a
+selfDual f = iso f f
 
