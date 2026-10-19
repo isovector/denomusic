@@ -1,9 +1,11 @@
 module Music.Types.Scale where
 
+import Data.Set qualified as S
+import Data.Set (Set)
 import Data.Iso
 import Control.Lens
 import Data.Bool
-import Data.List (sort, nub, minimumBy)
+import Data.List (minimumBy)
 import Data.Ord (comparing, Down(..))
 import GHC.TypeLits
 import Music.Types.Note
@@ -32,10 +34,21 @@ elim f (Note a []) = f a
 elim f (Note a (j : js)) = f a + Note (Deg j) js
 
 
-mkScale :: forall c s. (KnownNat c, KnownNat s) => [Note s] -> Scale c s
-mkScale ds = do
-  let ds' = nub $ sort $ fmap normalizeNote ds
-      o = scaleSize @s
+-- | Generate a scale from a set of "generalized pitch classes." In particular,
+-- this normalizes all notes to lie within a single octave, and then
+-- deduplicates them. It then maps @0 :: Note s@ to be the least element in the
+-- set.
+mkScale :: forall c s. (KnownNat c, KnownNat s) => Set (Note s) -> Scale c s
+mkScale = mkExoticScale . S.toList . S.map normalizeNote
+
+
+-- | Generate an "exotic" scale. Unlike 'mkScale', this function performs no
+-- normalization/ordering/deduplication on the incoming list. Thus you can very
+-- odd things like make a non-monotonic, non-bijective scale. In such a case,
+-- the isomorphism behind a scale degrades to a section/retraction.
+mkExoticScale :: forall c s. (KnownNat c, KnownNat s) => [Note s] -> Scale c s
+mkExoticScale ds' = do
+  let o = scaleSize @s
       n = length ds'
   case n == scaleSize @c of
     True ->
@@ -53,7 +66,7 @@ mkScale ds = do
                   pure (qq * n + k, i - sDeg)
             Note (Deg cd) (cr : mods)
     False -> error $ unwords
-      [ "mkScale: declared as chord size"
+      [ "mkExoticScale: declared as chord size"
       , show $ scaleSize @c
       , "but given"
       , show n

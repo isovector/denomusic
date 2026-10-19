@@ -8,6 +8,7 @@ module Music.Harmony
   , Group(..)
   ) where
 
+import Data.Set qualified as S
 import Data.Foldable
 import Data.Functor.Compose
 import Data.Iso
@@ -24,10 +25,10 @@ import Prelude hiding (id, (.))
 
 
 triad :: Scale 3 7
-triad = mkScale [0, 2, 4]
+triad = mkScale $ S.fromList [0, 2, 4]
 
 diatonic :: Scale 7 12
-diatonic = mkScale [0, 2, 4, 5, 7, 9, 11]
+diatonic = mkScale $ S.fromList [0, 2, 4, 5, 7, 9, 11]
 
 
 data T c s = T
@@ -88,7 +89,7 @@ intrinsic
   -> (forall ins. KnownNat ins => Proxy ins -> Scale ins c -> f (Note ins) -> r)
   -> r
 intrinsic voiced k = do
-  let notes = toList voiced
+  let notes = S.map normalizeNote $ S.fromList $ toList voiced
   withSomeSNat (fromIntegral $ length notes) $ \case
     Just (snat :: SNat ins) -> do
       withKnownNat snat $ do

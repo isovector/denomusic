@@ -1,7 +1,6 @@
-{-# LANGUAGE DeriveAnyClass #-}
-
 module Ex.Test where
 
+import Data.Set qualified as S
 import DenoMusic.Play
 import FRP
 import Music.Harmony
@@ -9,7 +8,7 @@ import Music.Types
 
 
 dyad :: Scale 2 3
-dyad = mkScale [0, 1]
+dyad = mkScale $ S.fromList [0, 1]
 
 
 song :: SF () (Event (Timed (Vertical Bool (Note 7))))

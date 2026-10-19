@@ -1,15 +1,16 @@
 module Ex.DyadExpansion where
 
-import DenoMusic.Play
+import Data.Set qualified as S
 import DenoMusic.Notation
+import DenoMusic.Play
 import FRP
+import Music.Extra
 import Music.Harmony
 import Music.Types
-import Music.Extra
 
 
 dyad :: Scale 2 7
-dyad = mkScale [0, 2]
+dyad = mkScale $ S.fromList [0, 2]
 
 holdAccum :: c -> SF (Event (c -> c)) c
 holdAccum d0 = hold d0 <<< accum d0
