@@ -8,15 +8,18 @@ module Music.Harmony
   , Group(..)
   ) where
 
-import Data.Set qualified as S
+import Control.Lens ((+~), (&), view, (-~), (.~))
+import Data.Bool
 import Data.Foldable
 import Data.Functor.Compose
+import Data.IntMap qualified as IM
 import Data.Iso
-import Control.Lens ((+~), (&), view, (-~))
-import Data.Bool
+import Data.List (findIndex)
+import Data.Maybe (fromMaybe)
 import Data.Monoid
 import Data.Proxy
 import Data.Ratio
+import Data.Set qualified as S
 import GHC.TypeLits
 import Music.Types.Note
 import Music.Types.Scale
@@ -166,6 +169,74 @@ expandF x y v =
         & voice dst +~ fromIntegral d
 
 
-invertAround :: Note n -> Scale n n
-invertAround z = Scale $ iso (\n -> negate (n - z) + z) (\n -> negate (n - z) + z)
+invertAround :: Rational -> Note n -> Note n
+invertAround z (Note (Deg (fromIntegral -> d)) mods) =
+  Note (Deg $ floor $ negate (d - z) + z) mods
+
+
+invertAround2
+  :: Note n  -- ^ Fixed note 1
+  -> Note n  -- ^ Fixed note 2
+  -> Note n
+  -> Note n
+invertAround2 fp1 fp2 = invertAround $ (deg fp1 + deg fp2) / 2
+  where deg = fromIntegral . getDeg . noteDeg
+
+
+neoriemannian
+  :: forall s v
+   . (Enum v, Bounded v, Ord v, KnownNat s)
+  => v
+  -> v
+  -> VoiceLeading (Vertical v) s
+neoriemannian v1 v2 = VoiceLeading $ selfDual $ \v -> do
+  let sSize = scaleSize @s
+      fp1 = view (voice v1) v
+      fp2 = view (voice v2) v
+      pcs = foldMap (S.singleton . normalizeNote) v
+      inv = normalizeNote . invertAround2 fp1 fp2
+      locate f =
+        let z = f (normalizeNote fp1) (normalizeNote fp2)
+          in ( inv z
+             , fromMaybe (error "neoriemannian: impossible")
+                 $ findIndex (== z)
+                 $ S.toList pcs
+             )
+  case normalizeNote fp1 == normalizeNote fp2 of
+    True ->
+      fmap (invertAround2 fp1 fp2) v
+        & voice v1 .~ fp1
+        & voice v2 .~ fp2
+    False ->
+      -- Convert the chord into an intrinsic scale. We don't care about the
+      -- transformation to get back, since we will compute our own.
+      intrinsic v $ \(Proxy @ins) _ -> do
+        let insSize = scaleSize @ins
+            ins = S.toList $ S.map inv pcs
+            (hiX, loOffset) = locate min
+            (loX, hiOffset) = locate max
+            cycled = ins <> fmap (+ fromIntegral sSize) cycled
+            cyclic
+              = filter (/= loX)
+              $ filter (/= hiX)
+              $ dropWhile ((/=) loX) cycled
+            indices
+              = take (insSize - 2)
+              $ filter ((/= hiOffset) . snd)
+              $ filter ((/= loOffset) . snd)
+              $ fmap (flip divMod insSize)
+              $ drop loOffset [0 ..]
+            placements
+              = IM.fromList
+              $ (loOffset, loX)
+              : (hiOffset, hiX)
+              : do
+                  ((d, m), note) <- zip indices cyclic
+                  pure
+                    ( m
+                    , note - fromIntegral (d * sSize)
+                    )
+        fmap $ applyScale $ mkExoticScale @ins $ do
+          index <- [0 .. insSize - 1]
+          pure $ placements IM.! index
 
