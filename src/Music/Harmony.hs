@@ -252,3 +252,9 @@ chordalSteps n = VoiceLeading $
         fmap (applyScale sc . (subtract $ fromIntegral n)) c'
     )
 
+
+-- | The @T@ operation in "Tonality"
+scaleSteps :: (Functor f) => Int -> VoiceLeading f s
+scaleSteps (fromIntegral -> n) = VoiceLeading $
+  iso (fmap (+ n)) (fmap $ subtract n)
+
