@@ -34,7 +34,7 @@ newtype Deg n = Deg
   deriving newtype (Eq, Ord, Show, Num, Enum, Real, Integral)
 
 
-scaleSize :: forall n. KnownNat n => Int
+scaleSize :: forall n a. (KnownNat n, Num a) => a
 scaleSize = fromInteger $ natVal $ Proxy @n
 
 

@@ -38,7 +38,7 @@ divModNote :: forall n. KnownNat n => Note n -> Reg (Note n)
 divModNote (Note d as)
   = uncurry Reg
   . fmap (flip Note as)
-  $ coerce (flip divMod $ scaleSize @n) d
+  $ coerce (flip divMod $ scaleSize @n @Int) d
 
 
 undivModNote :: forall n. KnownNat n => Reg (Note n) -> Note n
