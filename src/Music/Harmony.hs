@@ -85,20 +85,31 @@ apply (T (flip MkNote [] -> i) (flip MkNote [] -> o)) (Scale f) = Scale $
   iso (+ i) (subtract i) . f . iso (+ o) (subtract o)
 
 
+getIntrinsicScale
+  :: forall f c r
+   . (Foldable f, KnownNat c)
+  => f (Note c)
+  -> (forall ins. KnownNat ins => Proxy ins -> Scale ins c -> r)
+  -> r
+getIntrinsicScale voiced k = do
+  let notes = S.map normalizeNote $ S.fromList $ toList voiced
+  withSomeSNat (fromIntegral $ length notes) $ \case
+    Just (snat :: SNat ins) -> do
+      withKnownNat snat $ do
+        let sc = mkScale @ins notes
+        k Proxy sc
+    Nothing -> error "impossible"
+
+
 intrinsic
   :: forall f c r
    . (Foldable f, Functor f, KnownNat c)
   => f (Note c)
   -> (forall ins. KnownNat ins => Proxy ins -> Scale ins c -> f (Note ins) -> r)
   -> r
-intrinsic voiced k = do
-  let notes = S.map normalizeNote $ S.fromList $ toList voiced
-  withSomeSNat (fromIntegral $ length notes) $ \case
-    Just (snat :: SNat ins) -> do
-      withKnownNat snat $ do
-        let sc = mkScale @ins notes
-        k Proxy sc $ fmap (invertScale sc) voiced
-    Nothing -> error "impossible"
+intrinsic voiced k =
+  getIntrinsicScale voiced $ \p sc ->
+    k p sc $ fmap (invertScale sc) voiced
 
 
 newtype VoiceLeading f s = VoiceLeading
