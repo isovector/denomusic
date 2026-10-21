@@ -96,6 +96,17 @@ replicateH :: Int -> Horizontal i (Event o) -> Horizontal i (Event o)
 replicateH = stimes
 
 
+holdH :: a -> Horizontal (Event a) a
+holdH a0 = Horizontal $ proc i -> do
+  a <- hold a0 -< i
+  returnA -< (a, NoEvent)
+
+accumH :: a -> Horizontal (Event (a -> a)) (Event a)
+accumH a0 = Horizontal $ proc i -> do
+  a <- accum a0 -< i
+  returnA -< (a, NoEvent)
+
+
 getHorizontal :: Horizontal i o -> SF i o
 getHorizontal = fmap fst . unHorizontal
 
