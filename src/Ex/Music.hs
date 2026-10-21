@@ -53,6 +53,7 @@ motive = mconcat
   , hit 1 3
   , hit 1 3
   , hit 1 3
+  , hit 1 3
   ]
 
 something :: Horizontal i (Event (Note s -> Note s))

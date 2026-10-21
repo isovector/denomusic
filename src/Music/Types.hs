@@ -5,12 +5,13 @@ module Music.Types
   , module Music.Types.Vertical
   ) where
 
-import Data.Semigroup
 import Control.Applicative
 import Control.Arrow
 import Control.Category
 import Control.Monad
 import Data.Coerce
+import Data.Maybe (catMaybes)
+import Data.Semigroup
 import DenoMusic.Types (Reg(..))
 import FRP
 import GHC.Generics
@@ -47,38 +48,65 @@ undivModNote (Reg n d) = d + fromIntegral (n * scaleSize @n)
 
 -- | Add a duration for each event that lasts until the next clocked time
 -- (regardless of whether that clocked time is 'Event' or 'NoEvent'.)
-extending :: SF (Event a) (Event (Timed a))
-extending = evStream $ \es ->
-  zipWith (\(t1, ea) (t2, _) -> (t1, fmap (Timed $ t2 - t1) ea)) es $ drop 1 es
+extending :: SF (Event (), Event a) (Event (Timed a))
+extending = proc (end, a) ->
+  ev2ev
+    (\es -> catMaybes
+      $ zipWith
+          (\(t1, ema) (t2, _) -> case ema of
+            Just a -> Just (t1, Timed (t2 - t1) a)
+            Nothing -> Nothing
+          )
+          es
+      $ drop 1 es
+    ) -< fmap Just a <|> Nothing <$ end
 
+
+data HState o = HState
+  { h_out :: o
+  , h_evs :: Event ()
+    -- ^ All start or stop events.
+  , h_end :: Event ()
+    -- ^ The end of the Horizontal
+  }
+  deriving stock (Eq, Ord, Show, Functor)
 
 newtype Horizontal i o = Horizontal
-  { unHorizontal :: SF i (o, Event ())
+  { unHorizontal :: SF i (HState o)
   }
   deriving stock (Generic, Functor)
   deriving (Applicative) via WrappedArrow Horizontal i
 
 instance Category Horizontal where
-  id = Horizontal $ id &&& now ()
+  id = Horizontal $ proc a -> do
+    e <- now () -< a
+    returnA -< HState a NoEvent e
   Horizontal h2 . Horizontal h1 = Horizontal $ proc a -> do
-    (b, e1) <- h1 -< a
-    (c, e2) <- h2 -< b
+    (HState b es1 e1) <- h1 -< a
+    (HState c es2 e2) <- h2 -< b
     e' <- latestOf -< e1 <> e2
-    returnA -< (c, e')
+    returnA -< (HState c (es1 <> es2) e')
 
 instance Arrow Horizontal where
-  arr f = Horizontal $ arr f &&& now ()
+  arr f = Horizontal $ proc a -> do
+    e <- now () -< a
+    returnA -< HState (f a) NoEvent e
   Horizontal f *** Horizontal g = Horizontal $ proc (b, b') -> do
-    (c,  e1) <- f -< b
-    (c', e2) <- g -< b'
+    (HState c  es1 e1) <- f -< b
+    (HState c' es2 e2) <- g -< b'
     e' <- latestOf -< e1 <> e2
-    returnA -< ((c, c'), e')
+    returnA -< (HState (c, c') (es1 <> es2) e')
 
 instance Semigroup (Horizontal i o) where
-  Horizontal x <> Horizontal y = Horizontal $ switch (x >>> arr (\(o, e) -> ((o, e), e))) $ const y
+  Horizontal x <> Horizontal y = Horizontal $
+    switch
+      (x >>> arr (\(HState o es e) -> ((HState o es e), e)))
+      $ const y
 
 instance Monoid (Horizontal i (Event o)) where
-  mempty = Horizontal $ never &&& now ()
+  mempty = Horizontal $ proc a -> do
+    e <- now () -< a
+    returnA -< HState NoEvent e e
 
 
 latestOf :: SF (Event a) (Event a)
@@ -99,25 +127,24 @@ replicateH = stimes
 holdH :: a -> Horizontal (Event a) a
 holdH a0 = Horizontal $ proc i -> do
   a <- hold a0 -< i
-  returnA -< (a, NoEvent)
+  returnA -< HState a NoEvent NoEvent
 
 accumH :: a -> Horizontal (Event (a -> a)) (Event a)
 accumH a0 = Horizontal $ proc i -> do
   a <- accum a0 -< i
-  returnA -< (a, NoEvent)
+  returnA -< HState a NoEvent NoEvent
 
 
 getHorizontal :: Horizontal i o -> SF i o
-getHorizontal = fmap fst . unHorizontal
+getHorizontal = fmap h_out . unHorizontal
 
 horizontal :: Horizontal i (Event o) -> SF i (Event (Timed o))
-horizontal h = extending . getHorizontal h
+horizontal h = extending <<< fmap (h_evs &&& h_out) (unHorizontal h)
 
 rest :: Time -> Horizontal i (Event a)
 rest t = Horizontal $ proc i -> do
-  es <- now NoEvent -< i
   end <- at t () -< i
-  returnA -< (join es, end)
+  returnA -< HState NoEvent end end
 
 hit :: Time -> a -> Horizontal i (Event a)
 hit t = hitWith t . const
@@ -130,13 +157,13 @@ with = hitWith 1
 
 hitWith :: Time -> (i -> a) -> Horizontal i (Event a)
 hitWith t f = Horizontal $ proc i -> do
-  es <- discrete [(0, Event ()), (t, NoEvent)] -< i
+  e0 <- now () -< i
   end <- at t () -< i
-  returnA -< (f i <$ join es, end)
+  returnA -< HState (f i <$ e0) (e0 <> end) end
 
 hitDyn :: Horizontal (Time, a) (Event a)
 hitDyn = Horizontal $ proc i -> do
   (a, end) <- dynamicE -< i
   e <- now () -< i
-  returnA -< (a <$ e, end)
+  returnA -< HState (a <$ e) (e <> end) end
 
