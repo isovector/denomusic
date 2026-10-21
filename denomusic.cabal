@@ -33,6 +33,7 @@ library
       DenoMusic.Types
       Ex.AutomaticVoiceLeading
       Ex.DyadExpansion
+      Ex.Music
       Ex.RhythmApply
       Ex.Test
       Ex.Tintinnabuli
