@@ -32,6 +32,8 @@ dependencies:
 - distributive
 - fingertree
 - generic-lens
+- ghc-typelits-knownnat
+- ghc-typelits-natnormalise
 - groups
 - hspec
 - lens
@@ -68,6 +70,9 @@ ghc-options:
 - -Wpartial-fields
 - -Wredundant-constraints
 - -Wno-type-defaults
+- -fplugin GHC.TypeLits.Normalise
+- -fplugin GHC.TypeLits.KnownNat.Solver
+
 
 library:
   source-dirs: src
