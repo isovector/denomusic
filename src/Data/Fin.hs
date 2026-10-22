@@ -8,6 +8,8 @@ module Data.Fin
   , explicitShowsPrec
   , cataFin
   , isMin
+  , unsafeFromNum
+  , Induction(..)
   ) where
 
 import Control.DeepSeq (NFData (..))
@@ -50,7 +52,7 @@ type Induction :: Nat -> Constraint
 class KnownNat n => Induction n where
   induction :: f 0 -> (forall m. (KnownNat m, Induction m) => f m -> f (m + 1)) -> f n
 
-instance {-# OVERLAPPING #-} Induction 0 where
+instance {-# INCOHERENT #-} Induction 0 where
   induction n _ = n
 
 instance {-# OVERLAPPABLE #-} (m ~ n + 1, Induction n, KnownNat m) => Induction m where

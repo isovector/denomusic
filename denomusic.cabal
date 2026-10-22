@@ -28,6 +28,8 @@ library
       Data.Fin
       Data.Iso
       Data.Lilypond
+      Data.SNat
+      Data.Vec
       DenoMusic.Notation
       DenoMusic.NotationBackend
       DenoMusic.Play
@@ -74,6 +76,7 @@ library
       Euterpea
     , MemoTrie
     , QuickCheck
+    , adjunctions
     , arrows
     , base >=4.7 && <5
     , checkers
@@ -131,6 +134,7 @@ test-suite tests
       Euterpea
     , MemoTrie
     , QuickCheck
+    , adjunctions
     , arrows
     , base >=4.7 && <5
     , checkers

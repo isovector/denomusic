@@ -25,6 +25,7 @@ dependencies:
 - Euterpea
 - MemoTrie
 - QuickCheck
+- adjunctions
 - arrows
 - checkers
 - containers >= 0.5.9
