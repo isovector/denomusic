@@ -16,14 +16,14 @@ holdAccum :: c -> SF (Event (c -> c)) c
 holdAccum d0 = hold d0 <<< accum d0
 
 
-divergence :: Horizontal i (Event (VoiceLeading (Vertical Dyad) 7))
+divergence :: Horizontal i (Event (VoiceLeading (Vertical 2) 7))
 divergence = resize 0.5 $ replicateH 12 $ foldMap dnote
   [ voiceLead 0 3
-  , expand Lo Hi
+  , expand 0 1
   ]
 
 
-song :: SF () (Event (Timed (Vertical Dyad (Note 7))))
+song :: SF () (Event (Timed (Vertical 2 (Note 7))))
 song = proc _ -> do
   v <- holdAccum mempty
    <<< arr (fmap (<>))

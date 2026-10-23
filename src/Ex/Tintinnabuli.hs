@@ -1,6 +1,6 @@
 module Ex.Tintinnabuli where
 
-import Control.Lens
+import Control.Lens hiding ((:>))
 import DenoMusic.Play
 import FRP
 import Music.Extra
@@ -26,21 +26,18 @@ melody :: Horizontal i (Event (Note 7))
 melody = resize 0.25 $ foldMap dnote $
   fmap fromInteger [-12 .. 12]
 
-harmonized :: Horizontal i (Vertical Bool (Event (Note 7)))
+harmonized :: Horizontal i (Vertical 2 (Event (Note 7)))
 harmonized = proc i -> do
   m <- melody -< i
   let t = fmap (tintinnabuli triad 2) m
-  returnA -<
-    Vertical $ \case
-      False -> m
-      True -> t
+  returnA -< m :> t :> Nil
 
 
 
--- song :: Vertical Bool (SF () (Event (Timed (Note 7))))
+-- song :: Vertical 2 (SF () (Event (Timed (Note 7))))
 -- song = fmap horizontal $ toV $ harmonized
 
-song :: SF () (Event (Timed (Vertical Bool (Note 7))))
+song :: SF () (Event (Timed (Vertical 2 (Note 7))))
 song = horizontal $ fmap fromV harmonized
 
 

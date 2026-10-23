@@ -63,7 +63,7 @@ instance {-# OVERLAPPABLE #-} (E.ToMusic1 a, E.ToMusic1 b) => E.ToMusic1 (a, b) 
   toMusic1 = bindMusic $ \dur (a, b) ->
     E.toMusic1 (E.note dur a) E.:=: E.toMusic1 (E.note dur b)
 
-instance (Enum v, Bounded v, E.ToMusic1 a) => E.ToMusic1 (Vertical v a) where
+instance (KnownNat v, E.ToMusic1 a) => E.ToMusic1 (Vertical v a) where
   toMusic1 = toMusicF toList
 
 instance E.ToMusic1 o => E.ToMusic1 (SF () (Event o)) where

@@ -12,21 +12,16 @@ import Data.Coerce
 dyad :: Scale 2 3
 dyad = mkScale $ S.fromList [0, 1]
 
-gesualdo :: VoiceLeading (Vertical Triad) 12
-gesualdo = scaleSteps (-1) <> neoriemannian Root Third
+gesualdo :: VoiceLeading (Vertical 3) 12
+gesualdo = scaleSteps (-1) <> neoriemannian 0 1
 
-tr :: Vertical Triad (Note 12)
-tr = Vertical $ \case
-  Root -> 0
-  Third -> 4
-  Fifth -> 7
+tr :: Vertical 3 (Note 12)
+tr = 0 :> 4 :> 7 :> Nil
 
-dd :: Vertical Dyad (Note 3)
-dd = Vertical $ \case
-  Lo -> -2
-  Hi -> -1
+dd :: Vertical 2 (Note 3)
+dd = -2 :> -1 :> Nil
 
-song :: SF () (Event (Timed (Note 12)), Event (Timed (Note 12)), Event (Timed (Vertical Dyad (Note 12))))
+song :: SF () (Event (Timed (Note 12)), Event (Timed (Note 12)), Event (Timed (Vertical 2 (Note 12))))
 song = proc _ -> do
   v <-
     (| (horizontal (mconcat $ take 10 $ do
@@ -77,6 +72,4 @@ main :: IO ()
 main = do
   toPdf song
   play song
-
-
 

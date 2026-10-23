@@ -10,6 +10,7 @@ module Data.Fin
   , isMin
   , unsafeFromNum
   , Induction(..)
+  , toNatural
   ) where
 
 import Control.DeepSeq (NFData (..))

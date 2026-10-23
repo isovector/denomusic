@@ -123,10 +123,10 @@ voiceLeadingIso v = cloneIso $ voiceLeadingAnIso v
 applyVoiceLeading :: VoiceLeading f s -> f (Note s) -> f (Note s)
 applyVoiceLeading v = view $ voiceLeadingIso v
 
-instance (Enum v, Bounded v, Show v) => Show (VoiceLeading (Vertical v) s) where
+instance (KnownNat v) => Show (VoiceLeading (Vertical v) s) where
   show vl =
     let v = iota
-     in prettyVertical $ liftA2 (\x y -> unwords [show x, "→", show y]) v (applyVoiceLeading vl v)
+     in show $ liftA2 (\x y -> unwords [show x, "→", show y]) v (applyVoiceLeading vl v)
 
 voiceLead
     :: (Foldable f, Functor f, KnownNat s)
@@ -147,16 +147,16 @@ voiceLead from to = VoiceLeading $
     )
 
 -- TODO(sandy): It's not immediately clear to me whether the inverse direction here is correct
-expand :: (KnownNat m, Ord v) => v -> v -> VoiceLeading (Vertical v) m
+expand :: (KnownNat m) => Fin v -> Fin v -> VoiceLeading (Vertical v) m
 expand src dst = VoiceLeading $ iso (expandF src dst) (contractF src dst)
 
-contract :: (KnownNat m, Ord v) => v -> v -> VoiceLeading (Vertical v) m
+contract :: (KnownNat m) => Fin v -> Fin v -> VoiceLeading (Vertical v) m
 contract src dst = invert $ expand src dst
 
 
 -- | A voice leading that swaps the two voices by moving each towards the
 -- other.
-contractF :: forall m v. (KnownNat m, Ord v) => v -> v -> Vertical v (Note m) -> Vertical v (Note m)
+contractF :: forall m v. (KnownNat m) => Fin v -> Fin v -> Vertical v (Note m) -> Vertical v (Note m)
 contractF x y v =
   let ax = (getDeg $ noteDeg $ view (voice x) v, x)
       by = (getDeg $ noteDeg $ view (voice y) v, y)
@@ -169,7 +169,7 @@ contractF x y v =
 
 -- | A voice leading that swaps the two voices by moving each away from the
 -- other.
-expandF :: forall m v. (KnownNat m, Ord v) => v -> v -> Vertical v (Note m) -> Vertical v (Note m)
+expandF :: forall m v. (KnownNat m) => Fin v -> Fin v -> Vertical v (Note m) -> Vertical v (Note m)
 expandF x y v =
   let ax = (getDeg $ noteDeg $ view (voice x) v, x)
       by = (getDeg $ noteDeg $ view (voice y) v, y)
@@ -196,9 +196,9 @@ invertAround2 fp1 fp2 = invertAround $ (deg fp1 + deg fp2) / 2
 
 neoriemannian
   :: forall s v
-   . (Enum v, Bounded v, Ord v, KnownNat s)
-  => v
-  -> v
+   . (KnownNat v, KnownNat s)
+  => Fin v
+  -> Fin v
   -> VoiceLeading (Vertical v) s
 neoriemannian v1 v2 = VoiceLeading $ selfDual $ \v -> do
   let sSize = scaleSize @s

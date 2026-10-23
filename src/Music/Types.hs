@@ -22,19 +22,6 @@ import Music.Types.Vertical
 import Prelude hiding (id, (.))
 
 
-data Dyad = Lo | Hi
-  deriving stock (Eq, Ord, Show, Enum, Bounded)
-
-data Triad = Root | Third | Fifth
-  deriving stock (Eq, Ord, Show, Enum, Bounded)
-
-data Quad = One | Two | Three | Four
-  deriving stock (Eq, Ord, Show, Enum, Bounded)
-
-data Fiver = Oner | Twoer | Threer | Fourer | Fiver
-  deriving stock (Eq, Ord, Show, Enum, Bounded)
-
-
 divModNote :: forall n. KnownNat n => Note n -> Reg (Note n)
 divModNote (Note d as)
   = uncurry Reg
