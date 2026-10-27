@@ -66,6 +66,9 @@ instance {-# OVERLAPPABLE #-} (E.ToMusic1 a, E.ToMusic1 b) => E.ToMusic1 (a, b) 
 instance (KnownNat v, E.ToMusic1 a) => E.ToMusic1 (Vertical v a) where
   toMusic1 = toMusicF toList
 
+instance E.ToMusic1 (SF i (Event (Timed o))) => E.ToMusic1 (Horizontal i (Event o)) where
+  toMusic1 = bindMusic $ \dur -> E.toMusic1 . E.note dur . horizontal
+
 instance E.ToMusic1 o => E.ToMusic1 (SF () (Event o)) where
   toMusic1 = bindMusic $ \dur v ->
     let go _ [] = E.rest 0

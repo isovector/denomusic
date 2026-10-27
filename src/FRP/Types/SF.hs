@@ -53,3 +53,9 @@ sample (Signal fa ((t0, sa) : as)) t =
         Step (Just a) _ -> a
     GT -> sample (Signal (step sa) as) t
 
+instance Foldable (SF ()) where
+  foldMap f = foldMap (f . snd) . observeV
+
+observeV :: SF () (a) -> [(Time, a)]
+observeV sf = values $ runSF sf (pure ())
+

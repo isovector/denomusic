@@ -56,13 +56,15 @@ data HState o = HState
   , h_end :: Event ()
     -- ^ The end of the Horizontal
   }
-  deriving stock (Eq, Ord, Show, Functor)
+  deriving stock (Eq, Ord, Show, Functor, Foldable)
 
 newtype Horizontal i o = Horizontal
   { unHorizontal :: SF i (HState o)
   }
   deriving stock (Generic, Functor)
   deriving (Applicative) via WrappedArrow Horizontal i
+
+deriving stock instance Foldable (Horizontal ())
 
 instance Category Horizontal where
   id = Horizontal $ proc a -> do
