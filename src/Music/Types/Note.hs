@@ -12,6 +12,7 @@ import Data.Bool
 import Data.Kind
 import Data.List (dropWhileEnd)
 import Data.Proxy
+import Data.Semigroup (Sum(..))
 import Data.These
 import GHC.Generics (Generic)
 import GHC.TypeLits
@@ -33,9 +34,21 @@ newtype Deg n = Deg
   deriving stock (Generic)
   deriving newtype (Eq, Ord, Show, Num, Enum, Real, Integral)
 
+newtype Octave = Octave
+  { getOct :: Int
+  }
+  deriving stock (Generic)
+  deriving newtype (Eq, Ord, Show, Num, Enum, Real, Integral)
+  deriving (Semigroup, Monoid) via Sum Int
 
 scaleSize :: forall n a. (KnownNat n, Num a) => a
 scaleSize = fromInteger $ natVal $ Proxy @n
+
+addOctave :: forall n. KnownNat n => Octave -> Note n -> Note n
+addOctave o n = n + fromIntegral (getOct o * scaleSize @n)
+
+inOctave :: forall n. KnownNat n => Octave -> Note n -> Note n
+inOctave o = addOctave o . normalizeNote
 
 
 pattern Note :: Deg n -> [Int] -> Note n

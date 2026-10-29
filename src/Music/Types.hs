@@ -5,12 +5,11 @@ module Music.Types
   , module Music.Types.Vertical
   ) where
 
-import Data.Functor
 import Control.Applicative
 import Control.Arrow
 import Control.Category
-import Control.Monad
 import Data.Coerce
+import Data.Functor
 import Data.Maybe (catMaybes)
 import Data.Semigroup
 import DenoMusic.Types (Reg(..))
