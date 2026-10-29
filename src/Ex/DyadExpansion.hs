@@ -17,24 +17,17 @@ holdAccum d0 = hold d0 <<< accum d0
 
 
 divergence :: Horizontal i (Event (VoiceLeading (Vertical 2) 7))
-divergence = resize 0.5 $ replicateH 12 $ foldMap dnote
+divergence = replicateH 12 $ foldMap dnote
   [ voiceLead 0 3
   , expand 0 1
   ]
 
 
 song :: SF () (Event (Timed (Vertical 2 (Note 7))))
-song = proc _ -> do
-  v <- holdAccum mempty
-   <<< arr (fmap (<>))
-   <<< offset 0.5
-   <<< getHorizontal divergence
-    -< ()
-  (| (horizontal . resize 0.5 . replicateH 12)
-   (do
-      ev <- with id -< v
-      returnA -< fmap (\vl -> applyVoiceLeading vl $ chord triad) ev
-   )|)
+song = horizontal $ resize 0.5 $ proc i -> do
+  vl <- liftH msumE <<< divergence -< i
+  ns <- replicateH 12 $ with id -< applyVoiceLeading vl $ chord triad
+  returnA -< ns
 
 
 main :: IO ()
