@@ -1,3 +1,5 @@
+{-# LANGUAGE MultiWayIf #-}
+
 module Music.Types
   ( module Music.Types
   , module Music.Types.Note
@@ -8,6 +10,7 @@ module Music.Types
 import Control.Applicative
 import Control.Arrow
 import Control.Category
+import Data.Bool (bool)
 import Data.Coerce
 import Data.Functor
 import Data.Maybe (catMaybes)
@@ -156,4 +159,40 @@ liftH :: SF a b -> Horizontal a b
 liftH sf = Horizontal $ proc a -> do
   b <- sf -< a
   returnA -< HState b NoEvent NoEvent
+
+dropShorterThan :: Time -> SF (Event a) (Event a)
+dropShorterThan dt = evByEv $ \(t, a) (t', _) ->
+  case t' - t >= dt of
+    True -> pure (t, a)
+    False -> mempty
+
+clampOctave :: KnownNat s => (Note s, Note s) -> Time -> SF (Event (Note s)) (Event (Note s))
+clampOctave (lo, hi) dt = proc e -> do
+  t <- localTime -< ()
+  ef <- futureE -< e
+  rec
+    eprev <- hold 0 <<< offset epsilon -< e'
+    oprev <- hold mempty <<< offset epsilon -< fmap fst eo
+    let eo = ef <&> \(n, fut) -> do
+          let window = fmap snd $ takeWhile ((<= t + dt) . fst) fut
+              n0 = addOctave oprev n
+              tryJump o' ok =
+                -- Only jump if no upcoming input note (within dt) would
+                -- cross back over the opposite bound under the new octave.
+                bool oprev o' $ all (ok . addOctave o') window
+              o | eprev <= hi && n0 > hi = tryJump (oprev <> Octave (-1)) (>= lo)
+                | eprev >= lo && n0 < lo = tryJump (oprev <> Octave 1)    (<= hi)
+                | otherwise              = oprev
+          (o, addOctave o n)
+        e' = fmap snd eo
+  returnA -< e'
+
+-- | Annotate each event with every input event strictly after it (lazily).
+-- Purely a reverse-time fold over the input, so it never depends on feedback.
+futureE :: SF (Event a) (Event (a, [(Time, a)]))
+futureE = proc e -> do
+  t <- localTime -< ()
+  rec
+    fut <- fhold [] -< fmap (\a -> (t, a) : fut) e
+  returnA -< fmap (, fut) e
 

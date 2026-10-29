@@ -27,7 +27,9 @@ song :: SF () (Event (Timed (Vertical 2 (Note 7))))
 song = horizontal $ resize 0.5 $ proc i -> do
   vl <- liftH msumE <<< divergence -< i
   ns <- replicateH 12 $ with id -< applyVoiceLeading vl $ chord triad
-  returnA -< ns
+  let (lo :> hi :> Nil) = toV ns
+  hi' <- liftH $ clampOctave (0, 7) 0.5 -< hi
+  returnA -< fromV $ lo :> hi' :> Nil
 
 
 main :: IO ()
