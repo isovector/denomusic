@@ -15,6 +15,25 @@ steps :: a -> [(Time, a)] -> SF x a
 steps a = SF . const . mkSteps a
 
 
+scanSteps :: (s -> Event a -> s) -> s -> Signal (Event a) -> [(Time, s)]
+scanSteps f s0
+  = drop 1
+  . scanl (\(_, s) (t, ea) -> (t, f s ea)) (undefined, s0)
+  . values
+
+scanE :: (s -> a -> (s, b)) -> s -> SF (Event a) (Event b)
+scanE f s0
+  = SF
+  $ mkDiscrete'
+  . fmap (fmap snd)
+  . scanSteps
+      (\(s, _) ea -> case ea of
+                       Event a -> fmap Event $ f s a
+                       NoEvent -> (s, NoEvent)
+                       )
+      (s0, NoEvent)
+
+
 ev2ev :: ([(Time, a)] -> [(Time, b)]) -> SF (Event a) (Event b)
 ev2ev f = SF $ \input ->
   unionClock input $ mkDiscrete $ f $ events input

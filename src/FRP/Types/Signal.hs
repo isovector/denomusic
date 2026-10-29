@@ -5,6 +5,7 @@ module FRP.Types.Signal
   , events
   , eventsTerminating
   , mkDiscrete
+  , mkDiscrete'
   , mkSteps
   , unionClock
   , invmapTime
@@ -111,7 +112,12 @@ eventsTerminating = mapMaybeTerminating (traverse eventToMaybe) . values
 
 -- | Build a 'Signal' out of discrete values.
 mkDiscrete :: [(Time, a)] -> Signal (Event a)
-mkDiscrete = Signal (const NoEvent) . fmap (fmap $ \a -> Step (Just $ Event a) $ pure NoEvent)
+mkDiscrete = mkDiscrete' . fmap (fmap Event)
+
+
+-- | Build a 'Signal' out of discrete values.
+mkDiscrete' :: [(Time, Event a)] -> Signal (Event a)
+mkDiscrete' = Signal (const NoEvent) . fmap (fmap $ \ea -> Step (event Nothing (pure . pure) ea) $ pure NoEvent)
 
 
 -- | Build a 'Signal' as a stepwise function.

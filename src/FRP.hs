@@ -1,3 +1,4 @@
+{-# LANGUAGE BlockArguments  #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module FRP
@@ -25,8 +26,12 @@ import FRP.Types
 import Prelude hiding (id, (.))
 
 
+
 hold :: a -> SF (Event a) a
-hold a0 = SF $ mkSteps a0 . events
+hold a0
+  = SF
+  $ mkSteps a0
+  . scanSteps (\a -> event a id) a0
 
 
 fhold :: a -> SF (Event a) a
@@ -73,7 +78,10 @@ localTime :: SF x Time
 localTime = SF $ const $ Signal id mempty
 
 replace :: [a] -> SF (Event b) (Event (b, a))
-replace as = ev2ev $ \bs -> zipWith (\(t, b) a -> (t, (b, a))) bs as
+replace = fmap join . scanE \as b ->
+  case as of
+    []  -> ([], NoEvent)
+    (a : as') -> (as', Event (b, a))
 
 partitionEvents :: (a -> Either b c) -> SF (Event a) (Event b, Event c)
 partitionEvents f = proc eva -> do
@@ -82,14 +90,19 @@ partitionEvents f = proc eva -> do
   returnA -< (evb, evc)
 
 
-filterE :: (a -> Bool) -> SF (Event a) (Event a)
-filterE f = ev2ev $ filter (f . snd)
+filterE :: Arrow p => (a -> Bool) -> p (Event a) (Event a)
+filterE f = arr $ \ea -> ea >>= \a ->
+  case f a of
+    True -> pure a
+    False -> NoEvent
 
 filterTimeE :: (Time -> Bool) -> SF (Event a) (Event a)
-filterTimeE f = ev2ev $ filter (f . fst)
+filterTimeE f = proc e -> do
+  t <- localTime -< e
+  fmap (fmap snd) $ filterE (f . fst) -< fmap (t, ) e
 
-mapMaybeE :: (a -> Maybe b) -> SF (Event a) (Event b)
-mapMaybeE = ev2ev . mapMaybe . traverse
+mapMaybeE :: Arrow p => (a -> Maybe b) -> p (Event a) (Event b)
+mapMaybeE f = arr $ (>>= maybe NoEvent Event . f)
 
 
 gate :: Bool -> Event a -> Event a
@@ -103,13 +116,19 @@ once :: SF (Event a) (Event a)
 once = takeE 1
 
 takeE :: Int -> SF (Event a) (Event a)
-takeE = ev2ev . take
+takeE = fmap join . scanE \n a ->
+  case n <= 0 of
+    True -> (0, NoEvent)
+    False -> (n - 1, Event a)
 
 dropE :: Int -> SF (Event a) (Event a)
-dropE = ev2ev . drop
+dropE = fmap join . scanE \n a ->
+  case n <= 0 of
+    True -> (0, Event a)
+    False -> (n - 1, NoEvent)
 
 accum :: a -> SF (Event (a -> a)) (Event a)
-accum a0 = ev2ev $ drop 1 . scanl (\(_, a) (t', f) -> (t', f a)) (undefined, a0)
+accum = scanE $ \a f -> let fa = f a in (fa, fa)
 
 onlyEvery :: Int -> SF (Event a) (Event a)
 onlyEvery n = proc ev -> do
