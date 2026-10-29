@@ -13,9 +13,6 @@ leading' = proc ed' -> do
   ed <- offset (0.000000001) <<< hold 0 -< ed'
   returnA -< fmap (lead ed) ed'
 
-msumE :: Monoid a => SF (Event a) a
-msumE = arr (fmap (<>)) >>> accum mempty >>> hold mempty
-
 
 toV :: (KnownNat v, Functor f) => f (Vertical v a) -> Vertical v (f a)
 toV = distribute

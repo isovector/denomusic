@@ -5,6 +5,7 @@ module Music.Types
   , module Music.Types.Vertical
   ) where
 
+import Data.Functor
 import Control.Applicative
 import Control.Arrow
 import Control.Category
@@ -114,14 +115,10 @@ replicateH = stimes
 
 
 holdH :: a -> Horizontal (Event a) a
-holdH a0 = Horizontal $ proc i -> do
-  a <- hold a0 -< i
-  returnA -< HState a NoEvent NoEvent
+holdH = liftH . hold
 
 accumH :: a -> Horizontal (Event (a -> a)) (Event a)
-accumH a0 = Horizontal $ proc i -> do
-  a <- accum a0 -< i
-  returnA -< HState a NoEvent NoEvent
+accumH = liftH . accum
 
 
 getHorizontal :: Horizontal i o -> SF i o
@@ -155,4 +152,9 @@ hitDyn = Horizontal $ proc i -> do
   (a, end) <- dynamicE -< i
   e <- now () -< i
   returnA -< HState (a <$ e) (e <> end) end
+
+liftH :: SF a b -> Horizontal a b
+liftH sf = Horizontal $ proc a -> do
+  b <- sf -< a
+  returnA -< HState b NoEvent NoEvent
 

@@ -193,3 +193,9 @@ continuation = proc es -> do
   es' <- inBetween -< es
   returnA -< fmap Right es <> fmap Left es'
 
+msumE :: Monoid a => SF (Event a) a
+msumE = foldMapE id
+
+foldMapE :: Monoid m => (a -> m) -> SF (Event a) m
+foldMapE f = arr (fmap $ (<>) . f) >>> accum mempty >>> hold mempty
+
