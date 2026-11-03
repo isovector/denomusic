@@ -161,7 +161,7 @@ fromZero (Signal a0 as) =
       case compare t 0 of
         LT -> fromZero (Signal (segment a) as')
         EQ -> as
-        GT -> (0, a) : as
+        GT -> (0, Segment Nothing a0) : as
 
 
 -- | Observe whether a computation would diverge, and if so, return 'Nothing'

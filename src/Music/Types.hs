@@ -93,7 +93,10 @@ instance Semigroup (Horizontal i o) where
   Horizontal x <> Horizontal y = Horizontal $
     switch
       (x >>> arr (\(HState o es e) -> ((HState o es e), e)))
-      $ const y
+      $ const $ proc i -> do
+        HState o es e <- y -< i
+        start <- now () -< i
+        returnA -< HState o (start <> es) e
 
 instance Monoid (Horizontal i (Event o)) where
   mempty = Horizontal $ proc a -> do
