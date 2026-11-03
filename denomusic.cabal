@@ -112,6 +112,7 @@ test-suite tests
       FRPSpec
       HarmonicSpec
       Harness
+      MusicTypesSpec
       SFSpec
       SignalSpec
       Paths_denomusic
