@@ -1,5 +1,5 @@
 module FRP.Types.Signal
-  ( Step(..)
+  ( Segment(..)
   , Signal(..)
   , values
   , events
@@ -25,17 +25,17 @@ import System.Timeout (timeout)
 
 -- | An interval of the real line. When 'stepVal' is 'Just', this interval has
 -- a closed left side. The right side is always open.
-data Step a = Step
-  { stepVal :: Maybe a
-  , step :: Time -> a
+data Segment a = Segment
+  { segVal :: Maybe a
+  , segment :: Time -> a
   }
   deriving stock Functor
 
 
 -- | Like 'liftA2' for 'Step', when we have a concrete time to sample at.
-combine :: Time -> (a -> b -> c) -> Step a -> Step b -> Step c
-combine t f (Step a fa) (Step b fb) =
-  Step
+combine :: Time -> (a -> b -> c) -> Segment a -> Segment b -> Segment c
+combine t f (Segment a fa) (Segment b fb) =
+  Segment
     (asum
       [ liftA2 f a b
       , fmap (f (fa t)) b
@@ -45,7 +45,7 @@ combine t f (Step a fa) (Step b fb) =
 
 
 -- | A piecewise function, built out of 'Step' intervals.
-data Signal a = Signal (Time -> a) [(Time, Step a)]
+data Signal a = Signal (Time -> a) [(Time, Segment a)]
   deriving stock Functor
 
 instance Applicative Signal where
@@ -53,7 +53,7 @@ instance Applicative Signal where
   liftA2 f (Signal a as) (Signal b bs) =
     Signal (liftA2 f a b)
       $ fmap (uncurry $ \t -> (t,) . uncurry (combine t f))
-      $ joining (Step Nothing a) (Step Nothing b) as bs
+      $ joining (Segment Nothing a) (Segment Nothing b) as bs
 
 
 -- | Specialized 'Data.Align.align' for sorted pairs.
@@ -68,7 +68,7 @@ merge xx@((tx, x) : xs) yy@((ty, y) : ys) =
 
 
 -- | Overlay two lists of sorted pairs.
-joining :: Ord a => Step b -> Step c -> [(a, Step b)] -> [(a, Step c)] -> [(a, (Step b, Step c))]
+joining :: Ord a => Segment b -> Segment c -> [(a, Segment b)] -> [(a, Segment c)] -> [(a, (Segment b, Segment c))]
 joining a0 b0 as bs =
   drop 1 $ scanl
     (\(_, (a, b)) (t, th) ->
@@ -78,8 +78,8 @@ joining a0 b0 as bs =
         These a' b' -> (t, (a', b'))
     ) (undefined, (a0, b0)) $ merge as bs
 
-open :: Step a -> Step a
-open (Step _ a) = Step Nothing a
+open :: Segment a -> Segment a
+open (Segment _ a) = Segment Nothing a
 
 mapMaybeTerminating :: (a -> Maybe b) -> [a] -> [b]
 mapMaybeTerminating f = go
@@ -97,7 +97,7 @@ mapMaybeTerminating f = go
 
 -- | Get the discrete (closed-endpoint) values of a 'Signal'.
 values :: Signal a -> [(Time, a)]
-values (Signal _ as) = mapMaybe (traverse stepVal) as
+values (Signal _ as) = mapMaybe (traverse segVal) as
 
 
 -- | Get the eventful values out of a 'Signal'.
@@ -117,12 +117,12 @@ mkDiscrete = mkDiscrete' . fmap (fmap Event)
 
 -- | Build a 'Signal' out of discrete values.
 mkDiscrete' :: [(Time, Event a)] -> Signal (Event a)
-mkDiscrete' = Signal (const NoEvent) . fmap (fmap $ \ea -> Step (event Nothing (pure . pure) ea) $ pure NoEvent)
+mkDiscrete' = Signal (const NoEvent) . fmap (fmap $ \ea -> Segment (event Nothing (pure . pure) ea) $ pure NoEvent)
 
 
 -- | Build a 'Signal' as a stepwise function.
 mkSteps :: a -> [(Time, a)] -> Signal a
-mkSteps a = Signal (const a) . fmap (fmap $ Step Nothing . const)
+mkSteps a = Signal (const a) . fmap (fmap $ Segment Nothing . const)
 
 
 -- | Use the values from the second signal while retaining update times from both.
@@ -139,7 +139,7 @@ invmapTime
   -> Signal a
   -> Signal a
 invmapTime co contra (Signal a as) =
-  Signal (a . contra) $ fmap (co *** \m -> m { step = step m . contra }) as
+  Signal (a . contra) $ fmap (co *** \m -> m { segment = segment m . contra }) as
 
 
 -- | @'spliceAt' s1 t s2@ replaces the portion of @s1@ that occurs after @t@
@@ -148,18 +148,18 @@ spliceAt :: Signal a -> Time -> Signal a -> Signal a
 spliceAt (Signal a as) t0 bs =
   Signal a $ mconcat
     [ takeWhile ((< t0) . fst) as
-    , fmap ((+ t0) *** \m -> m { step = step m . (subtract t0)}) $ fromZero bs
+    , fmap ((+ t0) *** \m -> m { segment = segment m . (subtract t0)}) $ fromZero bs
     ]
 
 
 -- | Keep only the stepwise components of a 'Signal' that begin at or after 0.
-fromZero :: Signal a -> [(Time, Step a)]
+fromZero :: Signal a -> [(Time, Segment a)]
 fromZero (Signal a0 as) =
   case as of
-    [] -> [(0, Step Nothing a0)]
+    [] -> [(0, Segment Nothing a0)]
     ((t, a) : as') ->
       case compare t 0 of
-        LT -> fromZero (Signal (step a) as')
+        LT -> fromZero (Signal (segment a) as')
         EQ -> as
         GT -> (0, a) : as
 

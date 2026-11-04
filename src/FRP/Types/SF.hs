@@ -49,9 +49,9 @@ sample (Signal fa ((t0, sa) : as)) t =
     LT -> fa t
     EQ ->
       case sa of
-        Step Nothing f -> f t
-        Step (Just a) _ -> a
-    GT -> sample (Signal (step sa) as) t
+        Segment Nothing f -> f t
+        Segment (Just a) _ -> a
+    GT -> sample (Signal (segment sa) as) t
 
 instance Foldable (SF ()) where
   foldMap f = foldMap (f . snd) . observeV
