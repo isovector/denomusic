@@ -24,14 +24,15 @@ scanSteps f s0
 scanE :: (s -> a -> (s, b)) -> s -> SF (Event a) (Event b)
 scanE f s0
   = SF
+  $ \input -> unionClock input
   $ mkDiscrete'
-  . fmap (fmap snd)
-  . scanSteps
+  $ fmap (fmap snd)
+  $ (scanSteps
       (\(s, _) ea -> case ea of
                        Event a -> fmap Event $ f s a
                        NoEvent -> (s, NoEvent)
                        )
-      (s0, NoEvent)
+      (s0, NoEvent)) input
 
 
 ev2ev :: ([(Time, a)] -> [(Time, b)]) -> SF (Event a) (Event b)
