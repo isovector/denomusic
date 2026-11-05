@@ -38,8 +38,8 @@ undivModNote (Reg n d) = d + fromIntegral (n * scaleSize @n)
 
 -- | Add a duration for each event that lasts until the next clocked time
 -- (regardless of whether that clocked time is 'Event' or 'NoEvent'.)
-extending :: SF (Event (), Event a) (Event (Span a))
-extending = proc (end, a) ->
+spanning :: SF (Event (), Event a) (Event (Span a))
+spanning = proc (end, a) ->
   ev2ev
     (\es -> catMaybes
       $ zipWith
@@ -48,7 +48,7 @@ extending = proc (end, a) ->
             Nothing -> Nothing
           )
           es
-      $ drop 1 es
+      $ drop 1 $ _
     ) -< fmap Just a <|> Nothing <$ end
 
 
@@ -130,7 +130,7 @@ getHorizontal :: Horizontal i o -> SF i o
 getHorizontal = fmap h_out . unHorizontal
 
 horizontal :: Horizontal i (Event o) -> SF i (Event (Span o))
-horizontal h = extending <<< fmap (h_evs &&& h_out) (unHorizontal h)
+horizontal h = spanning <<< fmap (h_evs &&& h_out) (unHorizontal h)
 
 rest :: Time -> Horizontal i (Event a)
 rest t = Horizontal $ proc i -> do
