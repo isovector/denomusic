@@ -27,6 +27,7 @@ dependencies:
 - QuickCheck
 - adjunctions
 - arrows
+- bifunctors
 - checkers
 - containers >= 0.5.9
 - deepseq

@@ -79,6 +79,7 @@ library
     , adjunctions
     , arrows
     , base >=4.7 && <5
+    , bifunctors
     , checkers
     , containers >=0.5.9
     , deepseq
@@ -138,6 +139,7 @@ test-suite tests
     , adjunctions
     , arrows
     , base >=4.7 && <5
+    , bifunctors
     , checkers
     , containers >=0.5.9
     , deepseq

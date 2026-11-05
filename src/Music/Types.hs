@@ -1,4 +1,6 @@
-{-# LANGUAGE MultiWayIf #-}
+{-# LANGUAGE ApplicativeDo   #-}
+{-# LANGUAGE MultiWayIf      #-}
+{-# LANGUAGE RoleAnnotations #-}
 
 module Music.Types
   ( module Music.Types
@@ -10,10 +12,14 @@ module Music.Types
 import Control.Applicative
 import Control.Arrow
 import Control.Category
+import Control.Monad.Cont
+import Data.Bifunctor
 import Data.Bool (bool)
 import Data.Coerce
 import Data.Functor
+import Data.Kind
 import Data.Maybe (catMaybes)
+import Data.Monoid (Ap(..))
 import Data.Semigroup
 import DenoMusic.Types (Reg(..))
 import FRP
@@ -52,116 +58,10 @@ spanning = proc (end, a) ->
     ) -< fmap Just a <|> Nothing <$ end
 
 
-data HState o = HState
-  { h_out :: o
-  , h_evs :: Event ()
-    -- ^ All start or stop events.
-  , h_end :: Event ()
-    -- ^ The end of the Horizontal
-  }
-  deriving stock (Eq, Ord, Show, Functor, Foldable)
-
-newtype Horizontal i o = Horizontal
-  { unHorizontal :: SF i (HState o)
-  }
-  deriving stock (Generic, Functor)
-  deriving (Applicative) via WrappedArrow Horizontal i
-
-deriving stock instance Foldable (Horizontal ())
-
-instance Category Horizontal where
-  id = Horizontal $ proc a -> do
-    e <- now () -< a
-    returnA -< HState a NoEvent e
-  Horizontal h2 . Horizontal h1 = Horizontal $ proc a -> do
-    (HState b es1 e1) <- h1 -< a
-    (HState c es2 e2) <- h2 -< b
-    e' <- latestOf -< e1 <> e2
-    returnA -< (HState c (es1 <> es2) e')
-
-instance Arrow Horizontal where
-  arr f = Horizontal $ proc a -> do
-    e <- now () -< a
-    returnA -< HState (f a) NoEvent e
-  Horizontal f *** Horizontal g = Horizontal $ proc (b, b') -> do
-    (HState c  es1 e1) <- f -< b
-    (HState c' es2 e2) <- g -< b'
-    e' <- latestOf -< e1 <> e2
-    returnA -< (HState (c, c') (es1 <> es2) e')
-
-instance Semigroup (Horizontal i o) where
-  Horizontal x <> Horizontal y = Horizontal $
-    switch
-      (x >>> arr (\(HState o es e) -> ((HState o es e), e)))
-      $ const $ proc i -> do
-        HState o es e <- y -< i
-        start <- now () -< i
-        returnA -< HState o (start <> es) e
-
-instance Monoid (Horizontal i (Event o)) where
-  mempty = Horizontal $ proc a -> do
-    e <- now () -< a
-    returnA -< HState NoEvent e e
-
-
 latestOf :: SF (Event a) (Event a)
 latestOf = ev2ev $ \case
   [] -> []
   xs -> [last xs]
-
-
-
-resize :: Rational -> Horizontal i o -> Horizontal i o
-resize dt (Horizontal sf) = Horizontal $ stretch dt sf
-
-
-replicateH :: Int -> Horizontal i (Event o) -> Horizontal i (Event o)
-replicateH = stimes
-
-
-holdH :: a -> Horizontal (Event a) a
-holdH = liftH . hold
-
-accumH :: a -> Horizontal (Event (a -> a)) (Event a)
-accumH = liftH . accum
-
-
-getHorizontal :: Horizontal i o -> SF i o
-getHorizontal = fmap h_out . unHorizontal
-
-horizontal :: Horizontal i (Event o) -> SF i (Event (Span o))
-horizontal h = spanning <<< fmap (h_evs &&& h_out) (unHorizontal h)
-
-rest :: Time -> Horizontal i (Event a)
-rest t = Horizontal $ proc i -> do
-  end <- at t () -< i
-  returnA -< HState NoEvent end end
-
-hit :: Time -> a -> Horizontal i (Event a)
-hit t = hitWith t . const
-
-dnote :: a -> Horizontal i (Event a)
-dnote = hit 1
-
-with :: (i -> a) -> Horizontal i (Event a)
-with = hitWith 1
-
-hitWith :: Time -> (i -> a) -> Horizontal i (Event a)
-hitWith t f = Horizontal $ proc i -> do
-  e0 <- now () -< i
-  end <- at t () -< i
-  returnA -< HState (f i <$ e0) (e0 <> end) end
-
-hitDyn :: Horizontal (Time, a) (Event a)
-hitDyn = Horizontal $ proc i -> do
-  (a, end) <- dynamicE -< i
-  e <- now () -< i
-  returnA -< HState (a <$ e) (e <> end) end
-
-liftH :: SF a b -> Horizontal a b
-liftH sf = Horizontal $ proc a -> do
-  b <- sf -< a
-  returnA -< HState b NoEvent NoEvent
 
 dropShorterThan :: Time -> SF (Event a) (Event a)
 dropShorterThan dt = evByEv $ \(t, a) (t', _) ->
@@ -198,4 +98,72 @@ futureE = proc e -> do
   rec
     fut <- fhold [] -< fmap (\a -> (t, a) : fut) e
   returnA -< fmap (, fut) e
+
+
+data HState a = HState
+  { hs_out :: a
+  , hs_starts :: Event ()
+  , hs_stops :: Event ()
+  }
+  deriving stock (Functor, Generic)
+  deriving (Semigroup, Monoid) via Generically (HState a)
+
+
+data Restful = HasRests
+
+type role Horizontal nominal representational representational
+type Horizontal :: Restful -> Type -> Type -> Type
+newtype Horizontal r o a = Horizontal
+  { unHorizontal :: forall b. (o -> b) -> Cont (Signal (HState b)) a
+  }
+
+deriving stock instance Functor (Horizontal r o)
+
+instance Applicative (Horizontal r o) where
+  pure a = Horizontal $ const $ pure a
+  liftA2 f (Horizontal a) (Horizontal b) = Horizontal $ \k -> liftA2 f (a k) (b k)
+
+instance Monad (Horizontal r o) where
+  Horizontal m >>= f = Horizontal $ \k -> m k >>= \a -> unHorizontal (f a) k
+
+deriving via Ap (Horizontal r o) a instance Semigroup a => Semigroup (Horizontal r o a)
+deriving via Ap (Horizontal r o) a instance Monoid a => Monoid (Horizontal r o a)
+
+mkHorizontal :: Signal o -> Time -> a -> Horizontal r o a
+mkHorizontal so t a = Horizontal $ \k -> cont $ switchS $ do
+  o <- so
+  start <- atS 0 ()
+  stop <- atS t ()
+  ea <- atS t a
+  return (HState (k o) start stop, ea)
+
+fill :: Time -> a -> Horizontal r a a
+fill t a = mkHorizontal (pure a) t a
+
+rest :: Time -> Horizontal HasRests a ()
+rest t = Horizontal $ const $ cont $ switchS $ do
+  stop <- atS 0 ()
+  ea <- atS t ()
+  return (HState (error "impossible: rest can't be sampled") NoEvent stop, ea)
+
+
+unsafeRunHorizontal :: Horizontal r o a -> (a -> Signal o) -> Signal (HState o)
+unsafeRunHorizontal (Horizontal f) k = runCont (f id) $ fmap (\o -> HState o NoEvent NoEvent) . k
+
+getHorizontal :: (forall r. Horizontal r o a) -> (a -> Signal o) -> Signal (HState o)
+getHorizontal h = unsafeRunHorizontal h
+
+horizontal :: Horizontal r o a -> Signal (Event (Span o))
+horizontal h
+  = flip runSF (unsafeRunHorizontal h $ const $ error "impossible: horizontal sampled too late")
+  $ proc (HState o starts stops) -> spanning -< (stops, o <$ starts)
+
+instance Bifunctor (Horizontal r) where
+  bimap f g (Horizontal y) = Horizontal $ \k -> fmap g $ y $ k . f
+
+newtype HM r o = HM { unHM :: Horizontal r o () }
+  deriving newtype (Semigroup, Monoid)
+
+instance Functor (HM r) where
+  fmap f = HM . bimap f id . unHM
 
