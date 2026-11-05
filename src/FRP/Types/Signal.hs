@@ -15,8 +15,9 @@ module FRP.Types.Signal
 import Control.Applicative
 import Control.Arrow
 import Control.Exception (evaluate)
-import Data.These
 import Data.Maybe
+import Data.Monoid (Ap(..))
+import Data.These
 import FRP.Types.Event
 import FRP.Types.Time
 import System.IO.Unsafe (unsafePerformIO)
@@ -47,6 +48,7 @@ combine t f (Segment a fa) (Segment b fb) =
 -- | A piecewise function, built out of 'Step' intervals.
 data Signal a = Signal (Time -> a) [(Time, Segment a)]
   deriving stock Functor
+  deriving (Semigroup, Monoid) via Ap Signal a
 
 instance Applicative Signal where
   pure a = Signal (pure a) mempty
@@ -54,6 +56,7 @@ instance Applicative Signal where
     Signal (liftA2 f a b)
       $ fmap (uncurry $ \t -> (t,) . uncurry (combine t f))
       $ joining (Segment Nothing a) (Segment Nothing b) as bs
+
 
 
 -- | Specialized 'Data.Align.align' for sorted pairs.
