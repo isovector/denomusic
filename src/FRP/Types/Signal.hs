@@ -10,6 +10,8 @@ module FRP.Types.Signal
   , unionClock
   , invmapTime
   , spliceAt
+  , atS
+  , neverS
   ) where
 
 import Control.Applicative
@@ -174,4 +176,10 @@ fromZero (Signal a0 as) =
 -- This is implemented by terminating after 10ms of trying.
 terminating :: a -> Maybe a
 terminating a = unsafePerformIO (timeout 100_000 (evaluate a))
+
+atS :: Time -> a -> Signal (Event a)
+atS t a = mkDiscrete [(t, a)]
+
+neverS :: Signal (Event a)
+neverS = mkDiscrete mempty
 

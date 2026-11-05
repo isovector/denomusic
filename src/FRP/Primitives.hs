@@ -71,6 +71,11 @@ switch (SF f) k = SF $ \sig -> do
         invmapTime (subtract t0) (+ t0) sig
     Nothing -> sig'1
 
+constS :: Signal a -> SF x a
+constS = SF . const
+
+switchS :: Signal (a, Event b) -> (b -> Signal a) -> Signal a
+switchS s k = runSF (switch (constS s) $ constS . k) $ pure ()
 
 export
     :: (Time, Time)
