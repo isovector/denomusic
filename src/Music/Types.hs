@@ -48,7 +48,7 @@ spanning = proc (end, a) ->
             Nothing -> Nothing
           )
           es
-      $ drop 1 $ _
+      $ drop 1 es
     ) -< fmap Just a <|> Nothing <$ end
 
 
