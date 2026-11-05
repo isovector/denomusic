@@ -23,7 +23,7 @@ divergence = replicateH 12 $ foldMap dnote
   ]
 
 
-song :: SF () (Event (Timed (Vertical 2 (Note 7))))
+song :: SF () (Event (Span (Vertical 2 (Note 7))))
 song = horizontal $ resize 0.5 $ proc i -> do
   vl <- liftH msumE <<< divergence -< i
   ns <- replicateH 12 $ with id -< applyVoiceLeading vl $ chord triad

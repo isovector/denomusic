@@ -74,10 +74,10 @@ switch (SF f) k = SF $ \sig -> do
 
 export
     :: (Time, Time)
-    -> SF () (Event (Timed a))
+    -> SF () (Event (Span a))
     -> [(Interval Time, a)]
 export (lo, hi)
-  = fmap (\(time, Timed d o) -> do
+  = fmap (\(time, Span d o) -> do
       let t = time - lo
       (Interval t $ t + d, o)
         )

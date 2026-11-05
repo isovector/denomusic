@@ -21,7 +21,7 @@ tr = 0 :> 4 :> 7 :> Nil
 dd :: Vertical 2 (Note 3)
 dd = -2 :> -1 :> Nil
 
-song :: SF () (Event (Timed (Note 12)), Event (Timed (Note 12)), Event (Timed (Vertical 2 (Note 12))))
+song :: SF () (Event (Span (Note 12)), Event (Span (Note 12)), Event (Span (Vertical 2 (Note 12))))
 song = proc _ -> do
   v <-
     (| (horizontal (mconcat $ take 10 $ do
@@ -33,7 +33,7 @@ song = proc _ -> do
       (vl, d) <- zip (scanl (<>) mempty $ cycle [voiceLead 0 1, voiceLead 0 1, chordalSteps 1]) $ cycle [0.5, 0.25, 0.25]
       pure $ hit d $ applyVoiceLeading vl dd
       )) |)
-  vc <- hold tr -< fmap unTimed v
+  vc <- hold tr -< fmap getSpan v
   s <- horizontal $ accumH 0 <<< something -< ()
   m <- horizontal motive -< ()
   returnA -< intrinsic vc $ \_ sc _ ->

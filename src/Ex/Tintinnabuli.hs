@@ -34,10 +34,10 @@ harmonized = proc i -> do
 
 
 
--- song :: Vertical 2 (SF () (Event (Timed (Note 7))))
+-- song :: Vertical 2 (SF () (Event (Span (Note 7))))
 -- song = fmap horizontal $ toV $ harmonized
 
-song :: SF () (Event (Timed (Vertical 2 (Note 7))))
+song :: SF () (Event (Span (Vertical 2 (Note 7))))
 song = horizontal $ fmap fromV harmonized
 
 

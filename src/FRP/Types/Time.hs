@@ -25,20 +25,20 @@ instance Monoid Time where
   mempty = 0
 
 
-data Timed a = Timed
+data Span a = Span
   { duration :: Time
-  , unTimed :: a
+  , getSpan :: a
   }
   deriving stock (Eq, Ord, Show, Functor, Foldable, Traversable, Generic)
 
 -- | Sequential composition; takes the sum of the two durations.
-instance Semigroup a => Semigroup (Timed a) where
-  Timed t1 a <> Timed t2 b = Timed (t1 + t2) (a <> b)
+instance Semigroup a => Semigroup (Span a) where
+  Span t1 a <> Span t2 b = Span (t1 + t2) (a <> b)
 
-instance Monoid a => Monoid (Timed a) where
-  mempty = Timed 0 mempty
+instance Monoid a => Monoid (Span a) where
+  mempty = Span 0 mempty
 
 -- | Parallel composition; takes the max of the two durations.
-instance Applicative Timed where
-  pure = Timed 0
-  liftA2 f (Timed ta a) (Timed tb b) = Timed (max ta tb) $ f a b
+instance Applicative Span where
+  pure = Span 0
+  liftA2 f (Span ta a) (Span tb b) = Span (max ta tb) $ f a b

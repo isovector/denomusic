@@ -39,14 +39,14 @@ motive = drop 1 $ scanl (+) 0
   ]
 
 
-song :: SF () (Event (Timed (Note 7)))
+song :: SF () (Event (Span (Note 7)))
 song = proc _ -> do
   vls <- msumE <<< leading' @3 <<< harmony -< ()
   let sc = apply vls triad
   bs <- beatsOf time4'4 -< ()
   bs' <- replace (0 : cycle motive) -< bs
 
-  returnA -< fmap (\(bb, n) -> Timed (bduration bb) $ applyScale sc n) bs'
+  returnA -< fmap (\(bb, n) -> Span (bduration bb) $ applyScale sc n) bs'
 
 
 main :: IO ()

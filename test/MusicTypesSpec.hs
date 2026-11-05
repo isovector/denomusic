@@ -17,6 +17,6 @@ spec =
         `shouldBe` [(0, 0), (Time $ 1 % 2, 1)]
       observe (horizontal song)
         `shouldBe`
-          [ (0, Timed (Time $ 1 % 4) 0)
-          , (Time $ 1 % 2, Timed (Time $ 1 % 4) 1)
+          [ (0, Span (Time $ 1 % 4) 0)
+          , (Time $ 1 % 2, Span (Time $ 1 % 4) 1)
           ]

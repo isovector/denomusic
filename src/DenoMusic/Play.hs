@@ -33,8 +33,8 @@ instance {-# OVERLAPPING #-} E.ToMusic1 a => E.ToMusic1 (Interval Time, a) where
   toMusic1 = bindMusic $ \dur (Interval lo hi, a) ->
     E.rest (unTime lo) E.:+: E.toMusic1 (E.note (unTime (hi - lo) * dur) a)
 
-instance E.ToMusic1 a => E.ToMusic1 (Timed a) where
-  toMusic1 = bindMusic $ \dur (Timed t a) ->
+instance E.ToMusic1 a => E.ToMusic1 (Span a) where
+  toMusic1 = bindMusic $ \dur (Span t a) ->
     E.toMusic1 $ E.note (dur * unTime t) a
 
 instance E.ToMusic1 a => E.ToMusic1 (Set a) where
@@ -66,7 +66,7 @@ instance {-# OVERLAPPABLE #-} (E.ToMusic1 a, E.ToMusic1 b) => E.ToMusic1 (a, b) 
 instance (KnownNat v, E.ToMusic1 a) => E.ToMusic1 (Vertical v a) where
   toMusic1 = toMusicF toList
 
-instance E.ToMusic1 (SF i (Event (Timed o))) => E.ToMusic1 (Horizontal i (Event o)) where
+instance E.ToMusic1 (SF i (Event (Span o))) => E.ToMusic1 (Horizontal i (Event o)) where
   toMusic1 = bindMusic $ \dur -> E.toMusic1 . E.note dur . horizontal
 
 instance E.ToMusic1 o => E.ToMusic1 (SF () (Event o)) where
@@ -91,7 +91,7 @@ instance (E.ToMusic1 (SF i a), E.ToMusic1 (SF i b), E.ToMusic1 (SF i c)) => E.To
 
 deriving anyclass instance NFData (Deg n)
 deriving anyclass instance NFData (Note n)
-deriving anyclass instance NFData a => NFData (Timed a)
+deriving anyclass instance NFData a => NFData (Span a)
 deriving anyclass instance NFData Time
 
 

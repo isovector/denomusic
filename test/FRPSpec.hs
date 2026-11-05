@@ -15,5 +15,5 @@ spec = do
     shouldBe
       ( observe $ horizontal $ hit t1 note1 <> (proc _ -> hitDyn -< (t2, note2))
       )
-      [(0, Timed t1 note1), (t1 , Timed t2 note2)]
+      [(0, Span t1 note1), (t1 , Span t2 note2)]
 
