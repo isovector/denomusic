@@ -140,6 +140,9 @@ mkHorizontal so t a = Horizontal $ \k -> cont $ switchS $ do
 fill :: Time -> a -> Horizontal r a a
 fill t a = mkHorizontal (pure a) t a
 
+hit :: Time -> a -> Horizontal r a ()
+hit t = void . fill t
+
 rest :: Time -> Horizontal HasRests a ()
 rest t = Horizontal $ const $ cont $ switchS $ do
   stop <- atS 0 ()
@@ -150,16 +153,25 @@ rest t = Horizontal $ const $ cont $ switchS $ do
 unsafeRunHorizontal :: Horizontal r o a -> (a -> Signal o) -> Signal (HState o)
 unsafeRunHorizontal (Horizontal f) k = runCont (f id) $ fmap (\o -> HState o NoEvent NoEvent) . k
 
-getHorizontal :: (forall r. Horizontal r o a) -> (a -> Signal o) -> Signal (HState o)
-getHorizontal h = unsafeRunHorizontal h
+switchHorizontal :: (forall r. Horizontal r o a) -> (a -> Signal o) -> Signal (HState o)
+switchHorizontal h = unsafeRunHorizontal h
+
+getHorizontal :: Horizontal r o a -> Signal (Event o)
+getHorizontal h
+  = flip runSF (unsafeRunHorizontal h $ const $ pure $ error "impossible: getHorizontal sampled too late")
+  $ proc (HState o starts _) -> returnA -< o <$ starts
 
 horizontal :: Horizontal r o a -> Signal (Event (Span o))
 horizontal h
-  = flip runSF (unsafeRunHorizontal h $ const $ error "impossible: horizontal sampled too late")
+  = flip runSF (unsafeRunHorizontal h $ const $ pure $ error "impossible: horizontal sampled too late")
   $ proc (HState o starts stops) -> spanning -< (stops, o <$ starts)
 
 instance Bifunctor (Horizontal r) where
   bimap f g (Horizontal y) = Horizontal $ \k -> fmap g $ y $ k . f
+
+mapOut :: (o -> o') -> Horizontal r o a -> Horizontal r o' a
+mapOut f = bimap f id
+
 
 newtype HM r o = HM { unHM :: Horizontal r o () }
   deriving newtype (Semigroup, Monoid)

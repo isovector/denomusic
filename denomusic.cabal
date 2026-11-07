@@ -36,9 +36,6 @@ library
       DenoMusic.Types
       Ex.AutomaticVoiceLeading
       Ex.DyadExpansion
-      Ex.Music
-      Ex.RhythmApply
-      Ex.Test
       Ex.Tintinnabuli
       FRP
       FRP.Primitives
@@ -110,7 +107,6 @@ test-suite tests
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
-      FRPSpec
       HarmonicSpec
       Harness
       MusicTypesSpec

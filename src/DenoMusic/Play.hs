@@ -4,14 +4,13 @@
 
 module DenoMusic.Play (play) where
 
-import Control.Lens (_1, _2, _3, view)
-import FRP.Primitives
 import Control.DeepSeq (NFData)
+import Control.Lens (_1, _2, _3, view)
 import Data.Foldable
 import Data.Set (Set)
 import Euterpea qualified as E
+import FRP (stretchS)
 import FRP.Types
-import FRP (stretch)
 import Music.Harmony
 import Music.Types
 
@@ -66,23 +65,23 @@ instance {-# OVERLAPPABLE #-} (E.ToMusic1 a, E.ToMusic1 b) => E.ToMusic1 (a, b) 
 instance (KnownNat v, E.ToMusic1 a) => E.ToMusic1 (Vertical v a) where
   toMusic1 = toMusicF toList
 
-instance E.ToMusic1 (SF i (Event (Span o))) => E.ToMusic1 (Horizontal i (Event o)) where
+instance E.ToMusic1 (Signal (Event (Span o))) => E.ToMusic1 (Horizontal r o a) where
   toMusic1 = bindMusic $ \dur -> E.toMusic1 . E.note dur . horizontal
 
-instance E.ToMusic1 o => E.ToMusic1 (SF () (Event o)) where
+instance E.ToMusic1 o => E.ToMusic1 (Signal (Event o)) where
   toMusic1 = bindMusic $ \dur v ->
     let go _ [] = E.rest 0
         go now ((t, a) : es) =
           let onset = unTime t
               m     = E.toMusic1 (E.note dur a)
            in (E.rest (onset - now) E.:+: m) E.:+: go (onset + E.dur m) es
-     in go 0 $ observe $ stretch dur v
+     in go 0 $ events $ stretchS dur v
 
-instance (E.ToMusic1 (SF i a), E.ToMusic1 (SF i b)) => E.ToMusic1 (SF i (a, b)) where
+instance (E.ToMusic1 (Signal a), E.ToMusic1 (Signal b)) => E.ToMusic1 (Signal (a, b)) where
   toMusic1 = bindMusic $ \dur sf ->
     E.toMusic1 (E.note dur $ fmap fst sf) E.:=: E.toMusic1 (E.note dur $ fmap snd sf)
 
-instance (E.ToMusic1 (SF i a), E.ToMusic1 (SF i b), E.ToMusic1 (SF i c)) => E.ToMusic1 (SF i (a, b, c)) where
+instance (E.ToMusic1 (Signal a), E.ToMusic1 (Signal b), E.ToMusic1 (Signal c)) => E.ToMusic1 (Signal (a, b, c)) where
   toMusic1 = bindMusic $ \dur sf ->
     E.toMusic1 (E.note dur $ fmap (view _1) sf)
       E.:=: E.toMusic1 (E.note dur $ fmap (view _2) sf)

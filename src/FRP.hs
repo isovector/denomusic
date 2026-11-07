@@ -64,6 +64,9 @@ warpSignal (fromRational -> r) = SF $ invmapTime (* r) (/ r)
 stretch :: Rational -> SF a b -> SF a b
 stretch t sf = warpSignal (recip t) >>> sf >>> warpSignal t
 
+stretchS :: Rational -> Signal a -> Signal a
+stretchS (fromRational -> r) = invmapTime (* r) (/ r)
+
 now :: a -> SF x (Event a)
 now = at 0
 

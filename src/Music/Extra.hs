@@ -2,7 +2,6 @@
 
 module Music.Extra where
 
-import Data.Functor.Compose
 import FRP
 import Music.Harmony
 import Music.Types
@@ -20,11 +19,4 @@ toV = distribute
 
 fromV :: (KnownNat v, Applicative f) => Vertical v (f a) -> f (Vertical v a)
 fromV = sequenceA
-
-
-applyVoiceLeadingH
-    :: VoiceLeading (Compose (Horizontal i) f) s
-    -> Horizontal i (f (Note s))
-    -> Horizontal i (f (Note s))
-applyVoiceLeadingH vl = getCompose . applyVoiceLeading vl . Compose
 

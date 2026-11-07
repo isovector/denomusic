@@ -1,5 +1,6 @@
 module Ex.Tintinnabuli where
 
+import Control.Monad (void)
 import Control.Lens hiding ((:>))
 import DenoMusic.Play
 import FRP
@@ -22,23 +23,17 @@ tintinnabuli :: Scale c s -> Note c -> Note s -> Note s
 tintinnabuli sc c = scaleIso (opScale sc) %~ (+ c) . dropMod
 
 
-melody :: Horizontal i (Event (Note 7))
-melody = resize 0.25 $ foldMap dnote $
-  fmap fromInteger [-12 .. 12]
+melody :: Horizontal r (Note 7) ()
+melody = foldMap (hit 0.25) $ fmap fromInteger [-12 .. 12]
 
-harmonized :: Horizontal i (Vertical 2 (Event (Note 7)))
-harmonized = proc i -> do
-  m <- melody -< i
-  let t = fmap (tintinnabuli triad 2) m
-  returnA -< m :> t :> Nil
+harmonized :: Horizontal r (Vertical 2 (Note 7)) ()
+harmonized = flip mapOut melody $ \m -> do
+  let t = tintinnabuli triad 2 m
+  m :> t :> Nil
 
 
-
--- song :: Vertical 2 (SF () (Event (Span (Note 7))))
--- song = fmap horizontal $ toV $ harmonized
-
-song :: SF () (Event (Span (Vertical 2 (Note 7))))
-song = horizontal $ fmap fromV harmonized
+song :: Signal (Event (Span (Vertical 2 (Note 7))))
+song = horizontal harmonized
 
 
 main :: IO ()

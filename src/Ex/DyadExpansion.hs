@@ -7,29 +7,29 @@ import FRP
 import Music.Extra
 import Music.Harmony
 import Music.Types
+import Data.Semigroup
 
 
-dyad :: Scale 2 7
-dyad = mkScale $ S.fromList [0, 2]
-
-holdAccum :: c -> SF (Event (c -> c)) c
-holdAccum d0 = hold d0 <<< accum d0
-
-
-divergence :: Horizontal i (Event (VoiceLeading (Vertical 2) 7))
-divergence = replicateH 12 $ foldMap dnote
+divergence :: Horizontal r (VoiceLeading (Vertical 2) 7) ()
+divergence = stimes 12 $ foldMap (hit 0.25)
   [ voiceLead 0 3
   , expand 0 1
   ]
 
 
-song :: SF () (Event (Span (Vertical 2 (Note 7))))
-song = horizontal $ resize 0.5 $ proc i -> do
-  vl <- liftH msumE <<< divergence -< i
-  ns <- replicateH 12 $ with id -< applyVoiceLeading vl $ chord triad
-  let (lo :> hi :> Nil) = toV ns
-  hi' <- liftH $ clampOctave (0, 7) 0.5 -< hi
-  returnA -< fromV $ lo :> hi' :> Nil
+routing :: SF () a -> Signal a
+routing sf = runSF sf $ pure ()
+
+
+song :: Signal (Event (Span (Vertical 2 (Note 7))))
+song = routing $ proc i -> do
+  vl <- msumE <<< constS (getHorizontal divergence) -< i
+  b <- constS (fmap (fmap getSpan) $ horizontal $ stimes 12 $ hit 0.25 ()) -< ()
+  let ns = applyVoiceLeading vl (chord triad)
+  let (lo :> hi :> Nil) = ns
+  ehi' <- clampOctave (0, 7) 0.5 -< hi <$ b
+  elo' <- clampOctave (-9, 0) 0.5 -< lo <$ b
+  returnA -< fmap (\(lo', hi') -> Span 0.25 $ lo' :> hi' :> Nil) $ liftA2 (,) elo' ehi'
 
 
 main :: IO ()
