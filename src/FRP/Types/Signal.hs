@@ -59,6 +59,8 @@ instance Applicative Signal where
       $ fmap (uncurry $ \t -> (t,) . uncurry (combine t f))
       $ joining (Segment Nothing a) (Segment Nothing b) as bs
 
+instance Foldable Signal where
+  foldMap f = foldMap f . fmap snd . values
 
 
 -- | Specialized 'Data.Align.align' for sorted pairs.
