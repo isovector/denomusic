@@ -34,6 +34,6 @@ song = routing $ proc i -> do
 
 main :: IO ()
 main = do
-  toPdf $ toV $ fmap (toV . fmap toV) song
+  toPdf defaultNotationOptions $ toV $ fmap (toV . fmap toV) song
   play song
 

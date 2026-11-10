@@ -1,7 +1,16 @@
 {-# OPTIONS_GHC -fno-warn-deprecations  #-}
 {-# OPTIONS_GHC -fno-warn-orphans       #-}
 
-module DenoMusic.NotationBackend (finalizeLily, makeScore, header, footer, pPrint, toPitch) where
+module DenoMusic.NotationBackend
+  ( NotationOptions (..)
+  , defaultNotationOptions
+  , finalizeLily
+  , makeScore
+  , header
+  , footer
+  , pPrint
+  , toPitch
+  ) where
 
 import Data.Ratio (denominator)
 import Data.Bits ((.&.))
@@ -16,6 +25,25 @@ import Data.Ord (Down (..))
 import DenoMusic.Types
 import Euterpea qualified as E
 import Text.PrettyPrint.HughesPJClass (pPrint)
+
+
+--------------------------------------------------------------------------------
+-- Options
+--------------------------------------------------------------------------------
+
+-- | Options controlling how music is notated.
+data NotationOptions = NotationOptions
+  { no_timesignature :: Maybe ()
+    -- ^ When 'Nothing', every voice is put in @\\cadenzaOn@ mode and no
+    -- barline\/beat-based tying or rest splitting is performed.
+  }
+  deriving (Eq, Show)
+
+defaultNotationOptions :: NotationOptions
+defaultNotationOptions = NotationOptions {no_timesignature = Just ()}
+
+metered :: NotationOptions -> Bool
+metered = isJust . no_timesignature
 
 
 --------------------------------------------------------------------------------
@@ -365,16 +393,18 @@ normalizeVoice = fillRests . sortSpans
 -- | Compile a normalized span list all the way down to a lilypond expression,
 -- splitting over-long durations, generating tuplets, and tying everything into
 -- notatable note values.
-spansToScore :: [Span] -> Score
-spansToScore =
+spansToScore :: NotationOptions -> [Span] -> Score
+spansToScore opts =
     tieLengths
   . splitRests
   . makeTuplets
   . Sequential
   . fmap spanToScore
-  . insertBarlines
-  . splitBeats
-  . splitBars
+  . metricSplitting
+  where
+    metricSplitting
+      | metered opts = insertBarlines . splitBeats . splitBars
+      | otherwise    = id
 
 -- | Insert a zero-width 'BarCheck' control at every barline that coincides with
 -- a span boundary. These markers do nothing for ordinary notation, but they
@@ -528,14 +558,20 @@ voiceSetter n =
 -- so that @\\autoChange@ can distribute its notes between the two staves of the
 -- piano. The @\\fixed c'@ block establishes the octave reference that our
 -- absolute pitches are notated against.
-wrapVoice :: Int -> Score -> Score
-wrapVoice n music =
+wrapVoice :: NotationOptions -> Int -> Score -> Score
+wrapVoice opts n music =
   New "Voice" Nothing $
-    Sequential
-      [ voiceSetter n
-      , Command "autoChange"
-      , Fixed (Pitch (L.C, 0, 4)) music
-      ]
+    Sequential $
+      [ voiceSetter n ]
+        <> concat
+             [ [ Command "omit Staff.TimeSignature"
+               , Command "cadenzaOn"
+               ]
+             | not (metered opts)
+             ]
+        <> [ Command "autoChange"
+           , Fixed (Pitch (L.C, 0, 4)) music
+           ]
 
 -- | Approximate absolute height of a single pitch, in semitones, used only to
 -- compare voices against one another.
@@ -569,13 +605,13 @@ voiceOrder = interleave . sortOn (Down . voiceHeight)
 
 -- | The upper staff. Every voice lives here; @\\autoChange@ relocates the low
 -- notes to the "down" staff automatically.
-upStaff :: [Score] -> Score
-upStaff voices =
+upStaff :: NotationOptions -> [Score] -> Score
+upStaff opts voices =
   New "Staff" (Just "up") $
     Simultaneous False $
       [ Command "accidentalStyle piano-cautionary"
       ]
-        <> zipWith wrapVoice [0 ..] voices
+        <> zipWith (wrapVoice opts) [0 ..] voices
 
 -- | The lower staff. It holds no music of its own; @\\autoChange@ fills it in.
 downStaff :: Score
@@ -586,11 +622,11 @@ downStaff =
       , Command "accidentalStyle piano-cautionary"
       ]
 
-makeScore :: E.Music (Reg PitchClass) -> Score
-makeScore music =
+makeScore :: NotationOptions -> E.Music (Reg PitchClass) -> Score
+makeScore opts music =
   New "PianoStaff" Nothing $
     Simultaneous False
-      [ upStaff (fmap spansToScore sharedVoices)
+      [ upStaff opts (fmap (spansToScore opts) sharedVoices)
       , downStaff
       ]
   where
