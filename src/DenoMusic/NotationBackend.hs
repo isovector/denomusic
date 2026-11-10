@@ -3,10 +3,12 @@
 
 module DenoMusic.NotationBackend
   ( NotationOptions (..)
+  , Staves (..)
   , defaultNotationOptions
   , finalizeLily
   , makeScore
   , header
+  , preamble
   , footer
   , pPrint
   , toPitch
@@ -36,11 +38,28 @@ data NotationOptions = NotationOptions
   { no_timesignature :: Maybe ()
     -- ^ When 'Nothing', every voice is put in @\\cadenzaOn@ mode and no
     -- barline\/beat-based tying or rest splitting is performed.
+  , no_staves :: Staves
+    -- ^ How to lay the music out onto staves.
   }
   deriving (Eq, Show)
 
+-- | Staff layouts.
+data Staves
+  = -- | A grand staff; notes are distributed between the upper and lower
+    -- staves by @\\autoChange@.
+    PianoStaff
+  | -- | A single staff, using whichever of treble or bass clef fits more
+    -- notes within its lines.
+    DiatonicStaff
+  | IntrinsicStaff Int
+  deriving (Eq, Show)
+
 defaultNotationOptions :: NotationOptions
-defaultNotationOptions = NotationOptions {no_timesignature = Just ()}
+defaultNotationOptions =
+  NotationOptions
+    { no_timesignature = Just ()
+    , no_staves = PianoStaff
+    }
 
 metered :: NotationOptions -> Bool
 metered = isJust . no_timesignature
@@ -569,9 +588,8 @@ wrapVoice opts n music =
                ]
              | not (metered opts)
              ]
-        <> [ Command "autoChange"
-           , Fixed (Pitch (L.C, 0, 4)) music
-           ]
+        <> [ Command "autoChange" | no_staves opts == PianoStaff ]
+        <> [ Fixed (Pitch (L.C, 0, 4)) music ]
 
 -- | Approximate absolute height of a single pitch, in semitones, used only to
 -- compare voices against one another.
@@ -622,14 +640,52 @@ downStaff =
       , Command "accidentalStyle piano-cautionary"
       ]
 
+-- | A single staff holding every voice, beginning with the given clef command.
+singleStaff :: NotationOptions -> Score -> [Score] -> Score
+singleStaff opts clef voices =
+  New "Staff" Nothing $
+    Simultaneous False $
+      [ Sequential
+          [ clef
+          , Command "accidentalStyle modern-cautionary"
+          ]
+      ]
+        <> zipWith (wrapVoice opts) [0 ..] voices
+
+-- | Diatonic step of a pitch, counting from C0 (so middle C, @Reg 4 C@, is 28).
+diatonicStep :: Reg PitchClass -> Int
+diatonicStep (Reg o pc) =
+  o * 7 + fromEnum (fst (pitchClassToPitchAndAccidental pc))
+
+-- | Pick whichever of treble (E4..F5) or bass (G2..A3) clef places more of the
+-- given notes within the staff lines. Ties go to treble.
+chooseClef :: [[Span]] -> Clef
+chooseClef voices =
+  if inRange 18 26 > inRange 30 38 then Bass else Treble
+  where
+    steps =
+      [ diatonicStep p
+      | v <- voices
+      , Span _ _ (Notes _ ps) <- v
+      , p <- ps
+      ]
+    inRange lo hi = length (filter (\s -> lo <= s && s <= hi) steps)
+
 makeScore :: NotationOptions -> E.Music (Reg PitchClass) -> Score
 makeScore opts music =
-  New "PianoStaff" Nothing $
-    Simultaneous False
-      [ upStaff opts (fmap (spansToScore opts) sharedVoices)
-      , downStaff
-      ]
+  case no_staves opts of
+    PianoStaff ->
+      New "PianoStaff" Nothing $
+        Simultaneous False
+          [ upStaff opts scores
+          , downStaff
+          ]
+    DiatonicStaff ->
+      singleStaff opts (Clef (chooseClef sharedVoices)) scores
+    IntrinsicStaff _ ->
+      singleStaff opts (Command "intrinsicClef") scores
   where
+    scores = fmap (spansToScore opts) sharedVoices
     sharedVoices =
       shareRests (fmap normalizeVoice (voiceOrder (musicToVoices music)))
 
@@ -647,6 +703,26 @@ header =
     [ "\\header { tagline = \"\" }"
     , "\\absolute"
     ]
+
+-- | Top-level definitions required by the chosen 'NotationOptions'; must be
+-- emitted before the score.
+preamble :: NotationOptions -> String
+preamble opts = case no_staves opts of
+  IntrinsicStaff n ->
+    unlines
+      [ "intrinsicClef = {"
+      , "  \\override Staff.Clef.stencil = #ly:text-interface::print"
+      , ""
+      , "  \\override Staff.Clef.text = \\markup {"
+      , "    \\vcenter \\fontsize #6 \\bold \"" <> show n <> "\""
+      , "  }"
+      , ""
+      , "  \\set Staff.clefPosition = 0"
+      , ""
+      , "  \\set Staff.middleCPosition = 0"
+      , "}"
+      ]
+  _ -> ""
 
 footer :: String
 footer =

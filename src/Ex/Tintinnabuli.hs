@@ -38,6 +38,6 @@ song = horizontal harmonized
 
 main :: IO ()
 main = do
-  toPdf defaultNotationOptions song
-  play song
+  toPdf defaultNotationOptions {no_timesignature = Nothing, no_staves = IntrinsicStaff 6} song
+  -- play song
 

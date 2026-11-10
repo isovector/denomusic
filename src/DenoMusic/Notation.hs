@@ -5,13 +5,14 @@ module DenoMusic.Notation
   , makeScore
   , Score
   , NotationOptions (..)
+  , Staves (..)
   , defaultNotationOptions
   , toPdf
   ) where
 
 import DenoMusic.Types (Reg(..), PitchClass(..))
 import Euterpea qualified as E
-import DenoMusic.NotationBackend (NotationOptions (..), defaultNotationOptions, finalizeLily, header, footer, makeScore)
+import DenoMusic.NotationBackend (NotationOptions (..), Staves (..), defaultNotationOptions, finalizeLily, header, preamble, footer, makeScore)
 import Data.Lilypond (Score)
 import System.Cmd (rawSystem)
 
@@ -47,7 +48,7 @@ fromStupidEuterpeaPitchClass _ = error "stupid"
 toPdf :: E.ToMusic1 a => NotationOptions -> a -> IO ()
 toPdf opts m = do
   let lp = finalizeLily $ makeScore opts $ fmap ((\(pc, o) -> Reg o $ fromStupidEuterpeaPitchClass pc) . fst) $ E.toMusic1 $ E.note 1 m
-  writeFile "/tmp/out.lily" $ header <> lp <> footer
+  writeFile "/tmp/out.lily" $ preamble opts <> header <> lp <> footer
   _ <- rawSystem "lilypond" ["-o", "/tmp/song", "/tmp/out.lily"]
   pure ()
 
