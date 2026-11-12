@@ -84,6 +84,6 @@ invertible vl c = do
   shouldBe (applyVoiceLeading (invert vl <> vl) c) c
 
 instance Arbitrary (Note n) where
-  arbitrary = fmap (flip Note [] . Deg) arbitrary
-  shrink = fmap (flip Note [] . Deg) . shrink . getDeg . noteDeg
+  arbitrary = fmap (flip Note mempty . Deg) arbitrary
+  shrink = fmap (flip Note mempty . Deg) . shrink . getDeg . noteDeg
 

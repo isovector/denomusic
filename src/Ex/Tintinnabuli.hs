@@ -1,6 +1,7 @@
 module Ex.Tintinnabuli where
 
 import Control.Monad (void)
+import Data.IntMap qualified as IM
 import Control.Lens hiding ((:>))
 import DenoMusic.Play
 import FRP
@@ -11,12 +12,10 @@ import DenoMusic.Notation
 
 
 dropMod :: Note s -> Note s
-dropMod (Note n []) = Note n []
-dropMod (Note n (x:xs)) =
-  case compare x 0 of
-    LT -> Note (n - 1) []
-    EQ -> dropMod $ Note n xs
-    GT -> Note n []
+dropMod (Note n (Ornaments os)) =
+  case IM.lookupMin os of
+    Just (_, x) | x < 0 -> Note (n - 1) mempty
+    _ -> Note n mempty
 
 
 tintinnabuli :: Scale c s -> Note c -> Note s -> Note s

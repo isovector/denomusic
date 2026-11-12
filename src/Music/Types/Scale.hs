@@ -1,12 +1,14 @@
 module Music.Types.Scale where
 
-import Data.Set qualified as S
-import Data.Set (Set)
-import Data.Iso
-import Control.Lens
+import Control.Lens (view, from)
 import Data.Bool
+import Data.IntMap qualified as IM
+import Data.Iso
 import Data.List (minimumBy)
+import Data.Maybe (fromMaybe)
 import Data.Ord (comparing, Down(..))
+import Data.Set (Set)
+import Data.Set qualified as S
 import GHC.TypeLits
 import Music.Types.Note
 import Prelude hiding (id, (.))
@@ -29,9 +31,28 @@ applyScale s = view $ scaleIso s
 invertScale :: Scale a b -> Note b -> Note a
 invertScale = applyScale . opScale
 
-elim :: (Deg a -> Note b) -> Note a -> Note b
-elim f (Note a []) = f a
-elim f (Note a (j : js)) = f a + Note (Deg j) js
+elim
+  :: forall a b
+   . (KnownNat a, KnownNat b)
+  => (Deg a -> Note b) -> Note a -> Note b
+elim f (Note a (Ornaments os)) = do
+  let lo = scaleSize @a
+      hi = scaleSize @b
+      (below, mhere, above) = IM.splitLookup hi os
+      own
+        | lo < hi = IM.findWithDefault 0 lo below
+        | otherwise = 0
+      stale = IM.filterWithKey (\k _ -> k /= lo || lo == hi) below
+  case IM.keys stale of
+    [] -> f (a + Deg own) + Note (Deg $ fromMaybe 0 mhere) (Ornaments above)
+    ks -> error $ unwords
+      [ "elim: ornament levels"
+      , show ks
+      , "skipped by scale"
+      , show lo
+      , "->"
+      , show hi
+      ]
 
 
 -- | Generate a scale from a set of "generalized pitch classes." In particular,
@@ -64,7 +85,7 @@ mkExoticScale ds' = do
                   (k, d) <- zip [0 ..] ds'
                   let sDeg = fromIntegral (noteDeg d) + qq * o
                   pure (qq * n + k, i - sDeg)
-            Note (Deg cd) (cr : mods)
+            Note (Deg cd) (ornament @s cr <> mods)
     False -> error $ unwords
       [ "mkExoticScale: declared as chord size"
       , show $ scaleSize @c

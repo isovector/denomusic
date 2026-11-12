@@ -81,7 +81,7 @@ lead (Deg from) (Deg to) =
    in T (fromIntegral sTrans) $ fromIntegral tLevel
 
 apply :: T c s -> Scale c s -> Scale c s
-apply (T (flip MkNote [] -> i) (flip MkNote [] -> o)) (Scale f) = Scale $
+apply (T (flip Note mempty -> i) (flip Note mempty -> o)) (Scale f) = Scale $
   iso (+ i) (subtract i) . f . iso (+ o) (subtract o)
 
 

@@ -7,21 +7,44 @@ module Music.Types.Note
   ) where
 
 import Control.Category
-import Data.Align
-import Data.Bool
+import Data.Function (on)
+import Data.IntMap (IntMap)
+import Data.IntMap qualified as IM
+import Data.IntMap.Monoidal (MonoidalIntMap(..))
 import Data.Kind
-import Data.List (dropWhileEnd)
 import Data.Proxy
 import Data.Semigroup (Sum(..))
-import Data.These
 import GHC.Generics (Generic)
 import GHC.TypeLits
 import Prelude hiding (id, (.))
 
 
+newtype Ornaments a = Ornaments
+  { getOrnaments :: IntMap a
+  }
+  deriving stock (Generic, Functor)
+  deriving newtype (Show)
+  deriving (Semigroup, Monoid) via MonoidalIntMap (Sum a)
+
+instance (Eq a, Num a) => Eq (Ornaments a) where
+  (==) = on (==) (getOrnaments . normalizeOrnaments)
+
+instance (Ord a, Num a) => Ord (Ornaments a) where
+  compare = on compare (getOrnaments . normalizeOrnaments)
+
+getOrnament :: forall n. KnownNat n => Ornaments Int -> Deg n
+getOrnament = maybe 0 Deg . IM.lookup (scaleSize @n) . getOrnaments
+
+ornament :: forall n a. KnownNat n => a -> Ornaments a
+ornament k = Ornaments $ IM.singleton (scaleSize @n) k
+
+normalizeOrnaments :: (Num a, Eq a) => Ornaments a -> Ornaments a
+normalizeOrnaments (Ornaments m) = Ornaments $ IM.filter (/= 0) m
+
+
 type Note :: Nat -> Type
-data Note n = MkNote (Deg n) [Int]
-  deriving stock Generic
+data Note n = Note (Deg n) (Ornaments Int)
+  deriving stock (Generic, Eq, Ord)
 
 noteDeg :: Note n -> Deg n
 noteDeg (Note d _) = d
@@ -51,57 +74,31 @@ inOctave :: forall n. KnownNat n => Octave -> Note n -> Note n
 inOctave o = addOctave o . normalizeNote
 
 
-pattern Note :: Deg n -> [Int] -> Note n
-pattern Note a as <- MkNote a (dropWhileEnd (== 0) -> as)
-  where
-    Note a = MkNote a . dropWhileEnd (== 0)
-{-# COMPLETE Note #-}
+stepIn :: forall c n. KnownNat c => Int -> Note n -> Note n
+stepIn k (Note a as) = Note a $ as <> ornament @c k
 
-infixl 6 /:
-(/:) :: Deg n -> [Int] -> Note n
-(/:) = MkNote
-
-infixl 6 /+
-(/+) :: Note n -> Int -> Note n
-a /+ b = a + Note 0 [b]
-
-infixl 6 //+
-(//+) :: Note n -> Int -> Note n
-a //+ b = a + Note 0 [0, b]
-
-infixl 6 /-
-(/-) :: Note n -> Int -> Note n
-a /- b = a - Note 0 [b]
-
-infixl 6 //-
-(//-) :: Note n -> Int -> Note n
-a //- b = a - Note 0 [0, b]
+stepsIn :: [(Int, Int)] -> Note n -> Note n
+stepsIn ks (Note a as) = Note a $ as <> Ornaments (IM.fromListWith (+) ks)
 
 
 normalizeNote :: forall n. KnownNat n => Note n -> Note n
 normalizeNote (Note (Deg a) as) = Note (Deg $ mod a $ scaleSize @n) as
 
-
-instance Eq (Note n) where
-  Note a as == Note b bs = a == b && as == bs
-
-instance Ord (Note n) where
-  compare (Note (Deg a) as) (Note (Deg b) bs)
-    = foldMap
-        (these (flip compare 0) (compare 0) compare)
-    $ align (a : as) (b : bs)
-
 instance Num (Note n) where
-  fromInteger n = Note (fromInteger n) []
-  Note a as + Note b bs = Note (a + b) $ alignWith (these id        id        (+)) as bs
-  Note a as - Note b bs = Note (a - b) $ alignWith (these id        negate    (-)) as bs
-  Note a as * Note b bs = Note (a * b) $ alignWith (these (const 0) (const 0) (*)) as bs
+  fromInteger n = Note (fromInteger n) mempty
+  Note a as + Note b bs = Note (a + b) $ as <> bs
+  Note a as - Note b bs = Note (a - b) $ as <> fmap negate bs
+  Note a (Ornaments as) * Note b (Ornaments bs) =
+    Note (a * b) $ Ornaments $ IM.intersectionWith (*) as bs
   abs    (Note a as) = Note (abs a)    $ fmap abs    as
   signum (Note a as) = Note (signum a) $ fmap signum as
 
 instance Show (Note n) where
-  showsPrec p (Note n []) = showsPrec p n
-  showsPrec p (Note n [a]) = showParen (p >= 11) $ showsPrec 11 n . showString (bool ("/-") ("/+") (a >= 0)) . showsPrec 11 (abs a)
-  showsPrec p (Note n [0, a]) = showParen (p >= 11) $ showsPrec 11 n . showString (bool ("//-") ("//+") (a >= 0)) . showsPrec 11 (abs a)
-  showsPrec p (Note n ns) = showParen (p >= 11) $ showsPrec 11 n . showString "/:" . showsPrec 11 ns
+  showsPrec p (Note n (Ornaments m))
+    | IM.null m = showsPrec p n
+    | otherwise = showParen (p >= 11)
+        $ showString "stepsIn "
+        . showsPrec 11 (IM.toList m)
+        . showChar ' '
+        . showsPrec 11 n
 

@@ -22,8 +22,8 @@ motive :: [Note 3]
 motive = drop 1 $ scanl (+) 0
   [ 2
   , 2
-  , 0 //- 1
-  , 0 //+ 1
+  , stepIn @12 (-1) 0
+  , stepIn @12 1 0
   , -1
   , -1
   , 1

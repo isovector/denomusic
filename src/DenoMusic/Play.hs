@@ -89,6 +89,7 @@ instance (E.ToMusic1 (Signal a), E.ToMusic1 (Signal b), E.ToMusic1 (Signal c)) =
 
 
 deriving anyclass instance NFData (Deg n)
+deriving anyclass instance NFData a => NFData (Ornaments a)
 deriving anyclass instance NFData (Note n)
 deriving anyclass instance NFData a => NFData (Span a)
 deriving anyclass instance NFData Time
