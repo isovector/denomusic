@@ -5,11 +5,12 @@
 module Music.Types
   ( module Music.Types
   , module Music.Types.Note
+  , module Music.Types.Deg
+  , module Music.Types.Ornaments
   , module Music.Types.Scale
   , module Music.Types.Vertical
   ) where
 
-import Data.Functor.Compose
 import Control.Applicative
 import Control.Arrow
 import Control.Category
@@ -18,6 +19,7 @@ import Data.Bifunctor
 import Data.Bool (bool)
 import Data.Coerce
 import Data.Functor
+import Data.Functor.Compose
 import Data.Kind
 import Data.Maybe (catMaybes)
 import Data.Monoid (Ap(..))
@@ -26,7 +28,9 @@ import DenoMusic.Types (Reg(..))
 import FRP
 import GHC.Generics
 import Music.Harmony
+import Music.Types.Deg
 import Music.Types.Note
+import Music.Types.Ornaments
 import Music.Types.Scale
 import Music.Types.Vertical
 import Prelude hiding (id, (.))

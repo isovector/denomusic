@@ -10,7 +10,9 @@ import Data.Ord (comparing, Down(..))
 import Data.Set (Set)
 import Data.Set qualified as S
 import GHC.TypeLits
+import Music.Types.Deg
 import Music.Types.Note
+import Music.Types.Ornaments
 import Prelude hiding (id, (.))
 
 

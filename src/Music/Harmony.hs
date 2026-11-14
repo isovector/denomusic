@@ -21,6 +21,7 @@ import Data.Proxy
 import Data.Ratio
 import Data.Set qualified as S
 import GHC.TypeLits
+import Music.Types.Deg
 import Music.Types.Note
 import Music.Types.Scale
 import Music.Types.Vertical

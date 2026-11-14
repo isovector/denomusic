@@ -49,7 +49,9 @@ library
       Music.Harmony
       Music.TimeSig
       Music.Types
+      Music.Types.Deg
       Music.Types.Note
+      Music.Types.Ornaments
       Music.Types.Scale
       Music.Types.Vertical
   other-modules:
