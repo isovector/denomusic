@@ -24,6 +24,7 @@ module Data.Vec
   , module Data.Vec
   ) where
 
+import Data.Typeable
 import Data.Fin
 import Data.SNat
 #if __GLASGOW_HASKELL__ >= 914
@@ -35,7 +36,6 @@ import Data.Distributive
 import Data.Functor.Rep
 import qualified Data.Foldable    as F
 import Data.Kind                  (Type)
-import Data.Proxy                 (Proxy (..))
 import GHC.TypeLits               (KnownNat, Nat, type (+), type (-), type (*),
                                    type (<=), natVal)
 import Prelude                    hiding ((++), (!!), concat, concatMap, drop,
@@ -220,11 +220,11 @@ imap f = withSNat @n $ \snat -> withInduction (toUNat snat) $ go 0
     go _ Nil           = Nil
     go n (x `Cons` xs) = f (unsafeFromNum n) x `Cons` go (n+1) xs
 
-withInduction :: KnownNat n => UNat n -> (Induction n => r) -> r
+withInduction :: forall n r. KnownNat n => UNat n -> (Induction n => r) -> r
 withInduction UZero k = k
-withInduction (USucc n) k =
-  case fromUNat n of
-    SNat -> withInduction n k
+withInduction (USucc (p :: UNat p)) k =
+  case fromUNat p of
+    SNat -> withInduction p $ inductionSucc @p k
 
 
 izipWith :: KnownNat n => (Fin n -> a -> b -> c) -> Vec n a -> Vec n b -> Vec n c

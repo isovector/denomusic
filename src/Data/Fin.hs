@@ -10,12 +10,14 @@ module Data.Fin
   , isMin
   , unsafeFromNum
   , Induction(..)
+  , inductionSucc
   , toNatural
   ) where
 
 import Control.DeepSeq (NFData (..))
 import Data.Kind
 import Data.Proxy (Proxy (..))
+import Data.Type.Equality ((:~:) (..), type (==))
 import Data.Typeable (Typeable)
 import GHC.Exception (ArithException (..), throw)
 import GHC.TypeLits hiding (SNat)
@@ -51,13 +53,37 @@ instance Show (Fin n) where
 
 type Induction :: Nat -> Constraint
 class KnownNat n => Induction n where
-  induction :: f 0 -> (forall m. (KnownNat m, Induction m) => f m -> f (m + 1)) -> f n
+  induction :: f 0 -> (forall m. Induction m => f m -> f (m + 1)) -> f n
 
-instance {-# INCOHERENT #-} Induction 0 where
-  induction n _ = n
+-- | Dispatch on whether @n == 0@, so that the instances never overlap.
+instance (KnownNat n, InductionCase (n == 0) n) => Induction n where
+  induction = inductionCase @(n == 0)
 
-instance {-# OVERLAPPABLE #-} (m ~ n + 1, Induction n, KnownNat m) => Induction m where
-  induction n c = c (induction n c)
+type InductionCase :: Bool -> Nat -> Constraint
+class InductionCase b n where
+  inductionCase
+    :: f 0
+    -> (forall m. Induction m => f m -> f (m + 1))
+    -> f n
+
+instance (n ~ 0) => InductionCase 'True n where
+  inductionCase z _ = z
+
+instance (Induction (n - 1), 1 <= n) => InductionCase 'False n where
+  inductionCase z c = c (induction @(n - 1) z c)
+
+-- | Given @Induction n@, produce @Induction (n + 1)@. GHC can't prove the
+-- arithmetic facts @(n + 1 == 0) ~ 'False@ and @(n + 1) - 1 ~ n@ on its own,
+-- so we assert them.
+inductionSucc
+    :: forall n r
+     . Induction n
+    => (Induction (n + 1) => r)
+    -> r
+inductionSucc k =
+  case unsafeCoerce (Refl @'False) :: ((n + 1) == 0) :~: 'False of
+    Refl -> case unsafeCoerce (Refl @n) :: ((n + 1) - 1) :~: n of
+      Refl -> k
 
 -- | Operations module @n@.
 --
