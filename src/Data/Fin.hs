@@ -11,6 +11,7 @@ module Data.Fin
   , unsafeFromNum
   , Induction(..)
   , inductionSucc
+  , knownInduction
   , toNatural
   ) where
 
@@ -84,6 +85,19 @@ inductionSucc k =
   case unsafeCoerce (Refl @'False) :: ((n + 1) == 0) :~: 'False of
     Refl -> case unsafeCoerce (Refl @n) :: ((n + 1) - 1) :~: n of
       Refl -> k
+
+-- | Every 'KnownNat' supports 'Induction'. Recurses on the runtime value of
+-- @s@, rebuilding the dictionary one 'inductionSucc' at a time.
+knownInduction :: forall s r. KnownNat s => (Induction s => r) -> r
+knownInduction k =
+  case natVal (Proxy @s) of
+    0 -> case unsafeCoerce (Refl @0) :: s :~: 0 of
+      Refl -> k
+    s -> case someNatVal (s - 1) of
+      Just (SomeNat (_ :: Proxy p)) ->
+        case unsafeCoerce (Refl @s) :: s :~: (p + 1) of
+          Refl -> knownInduction @p (inductionSucc @p k)
+      Nothing -> error "knownInduction: impossible"
 
 -- | Operations module @n@.
 --
