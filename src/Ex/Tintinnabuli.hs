@@ -1,11 +1,9 @@
 module Ex.Tintinnabuli where
 
-import Control.Monad (void)
 import Data.IntMap qualified as IM
 import Control.Lens hiding ((:>))
 import DenoMusic.Play
 import FRP
-import Music.Extra
 import Music.Harmony
 import Music.Types
 import DenoMusic.Notation
@@ -37,6 +35,6 @@ song = horizontal harmonized
 
 main :: IO ()
 main = do
-  toPdf defaultNotationOptions {no_timesignature = Nothing, no_staves = IntrinsicStaff 6} song
-  -- play song
+  toPdf defaultNotationOptions song
+  play song
 

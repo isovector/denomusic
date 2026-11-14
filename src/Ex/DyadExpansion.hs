@@ -1,6 +1,5 @@
 module Ex.DyadExpansion where
 
-import Data.Set qualified as S
 import DenoMusic.Notation
 import DenoMusic.Play
 import FRP
