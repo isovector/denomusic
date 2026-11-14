@@ -176,17 +176,9 @@ instance (Induction n) => Enum (Fin n) where
 
   toEnum = unsafeFromNum @n @Int
 
-instance (n ~ 1 + m, Induction m) => Bounded (Fin n) where
+instance (1 <= n, Induction n) => Bounded (Fin n) where
   minBound = FZ
-  maxBound = getMaxBound $ induction
-    (MaxBound FZ)
-    (MaxBound . FS . getMaxBound)
-
-newtype MaxBound n = MaxBound { getMaxBound :: Fin (1 + n) }
-
-instance NFData (Fin n) where
-  rnf FZ     = ()
-  rnf (FS n) = rnf n
+  maxBound = unsafeFromNum (natVal (Proxy @n) - 1)
 
 -------------------------------------------------------------------------------
 -- QuickCheck
