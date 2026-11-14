@@ -1,6 +1,7 @@
-{-# LANGUAGE AllowAmbiguousTypes #-}
-{-# LANGUAGE TypeAbstractions    #-}
-{-# LANGUAGE ViewPatterns        #-}
+{-# LANGUAGE AllowAmbiguousTypes           #-}
+{-# LANGUAGE TypeAbstractions              #-}
+{-# LANGUAGE ViewPatterns                  #-}
+{-# OPTIONS_GHC -Wno-redundant-constraints #-}
 
 module Music.Harmony
   ( module Music.Harmony
@@ -8,8 +9,10 @@ module Music.Harmony
   , Group(..)
   ) where
 
+import Data.Constraint (Dict(..))
 import Control.Lens ((+~), (&), view, (-~), (.~))
 import Data.Bool
+import Data.Fin (knownInduction, Induction)
 import Data.Foldable
 import Data.Functor.Compose
 import Data.IntMap qualified as IM
@@ -20,12 +23,14 @@ import Data.Monoid
 import Data.Proxy
 import Data.Ratio
 import Data.Set qualified as S
+import Data.Type.Ord
 import GHC.TypeLits
 import Music.Types.Deg
 import Music.Types.Note
 import Music.Types.Scale
 import Music.Types.Vertical
 import Prelude hiding (id, (.))
+import Unsafe.Coerce
 
 
 triad :: Scale 3 7
@@ -81,24 +86,32 @@ lead (Deg from) (Deg to) =
       sTrans = negate $ round (fromIntegral tLevel * angle_offset)
    in T (fromIntegral sTrans) $ fromIntegral tLevel
 
-apply :: T c s -> Scale c s -> Scale c s
-apply (T (flip Note mempty -> i) (flip Note mempty -> o)) (Scale f) = Scale $
-  iso (+ i) (subtract i) . f . iso (+ o) (subtract o)
+
+applyT :: T c s -> Scale c s -> Note c -> Note s
+applyT (T i e) sc n = applyScale sc (n + Note i mempty) + Note e mempty
 
 
 getIntrinsicScale
   :: forall f c r
    . (Foldable f, KnownNat c)
   => f (Note c)
-  -> (forall ins. KnownNat ins => Proxy ins -> Scale ins c -> r)
+  -> (forall ins. (Induction ins, ins <= c) => Proxy ins -> Scale ins c -> r)
   -> r
 getIntrinsicScale voiced k = do
   let notes = S.map normalizeNote $ S.fromList $ toList voiced
   withSomeSNat (fromIntegral $ length notes) $ \case
     Just (snat :: SNat ins) -> do
       withKnownNat snat $ do
-        let sc = mkScale @ins notes
-        k Proxy sc
+        case cmpNat (Proxy @ins) (Proxy @c) of
+          LTI ->
+            knownInduction @ins $ do
+              let sc = mkScale @ins notes
+              k Proxy sc
+          EQI ->
+            knownInduction @ins $ do
+              let sc = mkScale @ins notes
+              k Proxy sc
+          GTI -> error "impossible!"
     Nothing -> error "impossible"
 
 
@@ -106,11 +119,20 @@ intrinsic
   :: forall f c r
    . (Foldable f, Functor f, KnownNat c)
   => f (Note c)
-  -> (forall ins. KnownNat ins => Proxy ins -> Scale ins c -> f (Note ins) -> r)
+  -> (forall ins. (Induction ins, ins <= c) => Proxy ins -> Scale ins c -> f (Note ins) -> r)
   -> r
 intrinsic voiced k =
-  getIntrinsicScale voiced $ \p sc ->
-    k p sc $ fmap (invertScale sc) voiced
+  getIntrinsicScale voiced $ \(p :: Proxy ins) sc ->
+    case cmpNat (Proxy @0) (Proxy @ins) of
+      LTI -> hoistCompare @ins $ k p sc $ knownInduction @c $ fmap (applyScale $ invertScaleNearest sc) voiced
+      EQI -> k p sc $ error "impossible: empty functor!" <$ voiced
+      GTI -> error "impossible!"
+
+
+hoistCompare :: forall a r. Compare 0 a ~ LT => ((1 <= a) => r) -> r
+hoistCompare k =
+  case unsafeCoerce (Dict @(1 <= 1)) :: Dict (1 <= a) of
+    Dict -> k
 
 
 newtype VoiceLeading f s = VoiceLeading
@@ -139,12 +161,12 @@ voiceLead from to = VoiceLeading $
     ( \voiced ->
       intrinsic voiced $ \(Proxy @ins) sc v' -> do
         let t = lead @ins from to
-        fmap (applyScale $ apply t sc) v'
+        fmap (applyT t sc) v'
     )
     ( \voiced ->
       intrinsic voiced $ \(Proxy @ins) sc v' -> do
         let t = lead @ins to from
-        fmap (applyScale $ apply t sc) v'
+        fmap (applyT t sc) v'
     )
 
 -- TODO(sandy): It's not immediately clear to me whether the inverse direction here is correct
@@ -202,7 +224,7 @@ neoriemannian
   -> Fin v
   -> VoiceLeading (Vertical v) s
 neoriemannian v1 v2 = VoiceLeading $ selfDual $ \v -> do
-  let sSize = scaleSize @s
+  let sSize = scaleSize @s @Int
       fp1 = view (voice v1) v
       fp2 = view (voice v2) v
       pcs = foldMap (S.singleton . normalizeNote) v
@@ -222,7 +244,7 @@ neoriemannian v1 v2 = VoiceLeading $ selfDual $ \v -> do
     False ->
       -- Convert the chord into an intrinsic scale. We don't care about the
       -- transformation to get back, since we will compute our own.
-      intrinsic v $ \(Proxy @ins) _ -> do
+      intrinsic v $ \(Proxy @ins) _ -> knownInduction @ins $ do
         let insSize = scaleSize @ins
             ins = S.toList $ S.map inv pcs
             (hiX, loOffset) = locate min

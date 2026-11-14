@@ -15,7 +15,6 @@ module Data.Fin
   , toNatural
   ) where
 
-import Control.DeepSeq (NFData (..))
 import Data.Kind
 import Data.Proxy (Proxy (..))
 import Data.Type.Equality ((:~:) (..), type (==))

@@ -54,6 +54,10 @@ stepsIn :: [(Int, Int)] -> Note n -> Note n
 stepsIn ks (Note a as) = Note a $ as <> Ornaments (IM.fromListWith (+) ks)
 
 
+dropOrnament :: forall c n. KnownNat c => Note n -> Note n
+dropOrnament (Note n o) = Note n $ fst $ decompOrnament @c o
+
+
 newtype Octave = Octave
   { getOct :: Int
   }

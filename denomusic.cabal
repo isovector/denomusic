@@ -80,6 +80,7 @@ library
     , base >=4.7 && <5
     , bifunctors
     , checkers
+    , constraints
     , containers >=0.5.9
     , deepseq
     , distributive
@@ -139,6 +140,7 @@ test-suite tests
     , base >=4.7 && <5
     , bifunctors
     , checkers
+    , constraints
     , containers >=0.5.9
     , deepseq
     , denomusic

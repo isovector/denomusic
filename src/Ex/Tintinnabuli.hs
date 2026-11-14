@@ -1,7 +1,7 @@
 module Ex.Tintinnabuli where
 
+import GHC.TypeLits
 import Data.IntMap qualified as IM
-import Control.Lens hiding ((:>))
 import DenoMusic.Play
 import FRP
 import Music.Harmony
@@ -16,8 +16,8 @@ dropMod (Note n (Ornaments os)) =
     _ -> Note n mempty
 
 
-tintinnabuli :: Scale c s -> Note c -> Note s -> Note s
-tintinnabuli sc c = scaleIso (opScale sc) %~ (+ c) . dropMod
+tintinnabuli :: forall c s. (KnownNat s, 1 <= c) => Scale c s -> Note c -> Note s -> Note s
+tintinnabuli sc c = applyScale sc . (+ c) . dropOrnament @s . applyScale (invertScaleAbove sc)
 
 
 melody :: Horizontal r (Note 7) ()

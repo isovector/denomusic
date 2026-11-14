@@ -52,6 +52,7 @@ dependencies:
 - these
 - transformers
 - witherable
+- constraints
 
 default-extensions:
 - Arrows
