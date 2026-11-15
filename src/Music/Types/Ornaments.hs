@@ -20,6 +20,9 @@ newtype Ornaments a = Ornaments
   deriving newtype (Show)
   deriving (Semigroup, Monoid) via MonoidalIntMap (Sum a)
 
+normalizeOrnaments :: (Num a, Eq a) => Ornaments a -> Ornaments a
+normalizeOrnaments = Ornaments . IM.filter (/= 0) . getOrnaments
+
 instance (Eq a, Num a) => Eq (Ornaments a) where
   (==) = on (==) (getOrnaments . normalizeOrnaments)
 
@@ -42,8 +45,5 @@ getOrnament :: forall n. KnownNat n => Ornaments Int -> Deg n
 getOrnament = snd . decompOrnament
 
 ornament :: forall n a. KnownNat n => a -> Ornaments a
-ornament k = Ornaments $ IM.singleton (scaleSize @n) k
-
-normalizeOrnaments :: (Num a, Eq a) => Ornaments a -> Ornaments a
-normalizeOrnaments (Ornaments m) = Ornaments $ IM.filter (/= 0) m
+ornament = Ornaments . IM.singleton (scaleSize @n)
 

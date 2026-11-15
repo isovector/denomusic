@@ -76,7 +76,7 @@ invertScale
         let (Note (Deg db) os) = f a
         let (o, pc) = divMod db $ scaleSize @b
         let b = toEnum @(Fin b) pc
-        pure (b, Note (fromIntegral a + Deg (scaleSize @a * o)) os)
+        pure (b, Note (fromIntegral a - Deg (scaleSize @a * o)) $ fmap negate os)
   Scale $ \b ->
     case lookup b img of
       Just a -> a

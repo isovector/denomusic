@@ -46,8 +46,11 @@ normalizeNote :: forall n. KnownNat n => Note n -> Note n
 normalizeNote (Note (Deg a) as) = Note (Deg $ mod a $ scaleSize @n) as
 
 
-stepIn :: forall c n. KnownNat c => Int -> Note n -> Note n
-stepIn k (Note a as) = Note a $ as <> ornament @c k
+stepIn :: forall c n. (KnownNat c, KnownNat n) => Int -> Note n -> Note n
+stepIn k (Note a as) =
+  case scaleSize @c == scaleSize @n of
+    True -> Note (a + Deg k) as
+    False -> Note a $ as <> ornament @c k
 
 
 stepsIn :: [(Int, Int)] -> Note n -> Note n
