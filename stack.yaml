@@ -7,6 +7,7 @@ ghc-options:
 
 packages:
 - .
+- proc-unit-pp
 
 notify-if-nix-on-path: false
 

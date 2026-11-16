@@ -1,0 +1,51 @@
+cabal-version: 2.2
+
+-- This file has been generated from package.yaml by hpack version 0.38.1.
+--
+-- see: https://github.com/sol/hpack
+
+name:           proc-unit-pp
+version:        0.1.0.0
+synopsis:       Preprocessor: rewrite `x <- cmd` to `x <- cmd -< ()` in proc blocks
+author:         Sandy Maguire
+maintainer:     music@sandymaguire.me
+license:        BSD-3-Clause
+build-type:     Simple
+
+library
+  exposed-modules:
+      Preprocessor.ProcUnit
+  other-modules:
+      Paths_proc_unit_pp
+  autogen-modules:
+      Paths_proc_unit_pp
+  hs-source-dirs:
+      src
+  default-extensions:
+      LambdaCase
+      DerivingStrategies
+  ghc-options: -Wall
+  build-depends:
+      base >=4.7 && <5
+    , containers
+    , megaparsec
+  default-language: GHC2021
+
+executable proc-unit-pp
+  main-is: Main.hs
+  other-modules:
+      Paths_proc_unit_pp
+  autogen-modules:
+      Paths_proc_unit_pp
+  hs-source-dirs:
+      app
+  default-extensions:
+      LambdaCase
+      DerivingStrategies
+  ghc-options: -Wall
+  build-depends:
+      base >=4.7 && <5
+    , containers
+    , megaparsec
+    , proc-unit-pp
+  default-language: GHC2021

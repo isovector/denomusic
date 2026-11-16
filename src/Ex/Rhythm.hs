@@ -27,9 +27,9 @@ beats = mop (\_ _ -> ((), rstack 3 <.> lfan 3)) vls
 
 song :: Signal (Event (Span (Vertical 3 (Note 7))))
 song = spanner $ routing $ proc _ -> do
-  evl <- constS vls -< ()
+  evl <- constS vls
   vl <- hold mempty -< evl
-  e <- constS beats -< ()
+  e <- constS beats
   returnA -< applyVoiceLeading vl (chord triad) <$ (e <|> void evl)
 
 spanner :: Signal (Event a) -> Signal (Event (Span a))

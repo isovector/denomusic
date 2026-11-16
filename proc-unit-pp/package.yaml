@@ -1,0 +1,29 @@
+name:                proc-unit-pp
+version:             0.1.0.0
+license:             BSD-3-Clause
+author:              "Sandy Maguire"
+maintainer:          "music@sandymaguire.me"
+synopsis:            "Preprocessor: rewrite `x <- cmd` to `x <- cmd -< ()` in proc blocks"
+language:            GHC2021
+
+dependencies:
+- base >= 4.7 && < 5
+- containers
+- megaparsec
+
+default-extensions:
+- LambdaCase
+- DerivingStrategies
+
+ghc-options:
+- -Wall
+
+library:
+  source-dirs: src
+
+executables:
+  proc-unit-pp:
+    main:         Main.hs
+    source-dirs:  app
+    dependencies:
+    - proc-unit-pp

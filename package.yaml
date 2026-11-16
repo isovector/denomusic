@@ -75,10 +75,14 @@ ghc-options:
 - -Wno-type-defaults
 - -fplugin GHC.TypeLits.Normalise
 - -fplugin GHC.TypeLits.KnownNat.Solver
+- -F
+- -pgmF=proc-unit-pp
 
 
 library:
   source-dirs: src
+  build-tools:
+  - proc-unit-pp:proc-unit-pp
 
 tests:
   tests:
@@ -88,6 +92,8 @@ tests:
     - -threaded
     - -rtsopts
     - -with-rtsopts=-N
+    build-tools:
+    - proc-unit-pp:proc-unit-pp
     dependencies:
     - denomusic
     - hspec
