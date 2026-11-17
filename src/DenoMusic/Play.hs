@@ -65,8 +65,9 @@ instance {-# OVERLAPPABLE #-} (E.ToMusic1 a, E.ToMusic1 b) => E.ToMusic1 (a, b) 
 instance (KnownNat v, E.ToMusic1 a) => E.ToMusic1 (Vertical v a) where
   toMusic1 = toMusicF toList
 
-instance E.ToMusic1 (Signal (Event (Span o))) => E.ToMusic1 (Horizontal r o a) where
+instance E.ToMusic1 (SF i (Event (Span o))) => E.ToMusic1 (Horizontal r i o a) where
   toMusic1 = bindMusic $ \dur -> E.toMusic1 . E.note dur . horizontal
+
 
 instance E.ToMusic1 o => E.ToMusic1 (Signal (Event o)) where
   toMusic1 = bindMusic $ \dur v ->
@@ -76,6 +77,9 @@ instance E.ToMusic1 o => E.ToMusic1 (Signal (Event o)) where
               m     = E.toMusic1 (E.note dur a)
            in (E.rest (onset - now) E.:+: m) E.:+: go (onset + E.dur m) es
      in go 0 $ events $ stretchS dur v
+
+instance (E.ToMusic1 (Signal a)) => E.ToMusic1 (SF () a) where
+  toMusic1 = E.toMusic1 . fmap (flip runSF $ pure ())
 
 instance (E.ToMusic1 (Signal a), E.ToMusic1 (Signal b)) => E.ToMusic1 (Signal (a, b)) where
   toMusic1 = bindMusic $ \dur sf ->

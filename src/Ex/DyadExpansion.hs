@@ -9,21 +9,18 @@ import Music.Types
 import Data.Semigroup
 
 
-divergence :: Horizontal r (VoiceLeading (Vertical 2) 7) ()
+divergence :: Horizontal r i (VoiceLeading (Vertical 2) 7) ()
 divergence = stimes 12 $ foldMap (hit 0.25)
   [ voiceLead 0 3
   , expand 0 1
   ]
 
 
-routing :: SF () a -> Signal a
-routing sf = runSF sf $ pure ()
 
-
-song :: Signal (Event (Span (Vertical 2 (Note 7))))
-song = routing $ proc i -> do
-  vl <- msumE <<< constS (getHorizontal divergence) -< i
-  b <- constS (fmap (fmap getSpan) $ horizontal $ stimes 12 $ hit 0.25 ()) -< ()
+song :: SF () (Event (Span (Vertical 2 (Note 7))))
+song = proc _ -> do
+  vl <- msumE <<< getHorizontal divergence
+  b <- fmap (fmap getSpan) $ horizontal $ stimes 12 $ hit 0.25 ()
   let ns = applyVoiceLeading vl (chord triad)
   let (lo :> hi :> Nil) = ns
   ehi' <- clampOctave (0, 7) 0.5 -< hi <$ b

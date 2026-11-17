@@ -134,54 +134,59 @@ instance Bifunctor (Yo f) where
 
 data Restful = HasRests
 
-type role Horizontal nominal representational representational
-type Horizontal :: Restful -> Type -> Type -> Type
-newtype Horizontal r o a = Horizontal
-  { unHorizontal :: forall b. (o -> b) -> Cont (Signal (HState b)) a
+type role Horizontal nominal nominal representational representational
+type Horizontal :: Restful -> Type -> Type -> Type -> Type
+newtype Horizontal r i o a = Horizontal
+  { unHorizontal :: forall b. (o -> b) -> Cont (SF i (HState b)) a
   }
-  deriving (Functor, Applicative, Monad) via Yo (Compose Signal HState) o
-  deriving (Semigroup, Monoid) via Yo (Compose Signal HState) o a
-  deriving (Bifunctor) via Yo (Compose Signal HState)
+  deriving (Functor, Applicative, Monad) via Yo (Compose (SF i) HState) o
+  deriving (Semigroup, Monoid) via Yo (Compose (SF i) HState) o a
+  deriving (Bifunctor) via Yo (Compose (SF i) HState)
 
-mkHorizontal :: Signal o -> Time -> a -> Horizontal r o a
-mkHorizontal so t a = Horizontal $ \k -> cont $ switchS $ do
+mkHorizontal :: SF i o -> Time -> a -> Horizontal r i o a
+mkHorizontal so t a = Horizontal $ \k -> cont $ switch $ do
   o <- so
-  start <- atS 0 ()
-  stop <- atS t ()
-  ea <- atS t a
+  start <- at 0 ()
+  stop <- at t ()
+  ea <- at t a
   pure (HState (k o) start stop, ea)
 
-fill :: Time -> a -> Horizontal r a a
+fill :: Time -> a -> Horizontal r i a a
 fill t a = mkHorizontal (pure a) t a
 
-hit :: Time -> a -> Horizontal r a ()
+hit :: Time -> a -> Horizontal r i a ()
 hit t = void . fill t
 
-rest :: Time -> Horizontal HasRests a ()
-rest t = Horizontal $ const $ cont $ switchS $ do
-  stop <- atS 0 ()
-  ea <- atS t ()
+rest :: Time -> Horizontal HasRests i a ()
+rest t = Horizontal $ const $ cont $ switch $ do
+  stop <- at 0 ()
+  ea <- at t ()
   pure (HState (error "impossible: rest can't be sampled") NoEvent stop, ea)
 
 
-unsafeRunHorizontal :: Horizontal r o a -> (a -> Signal o) -> Signal (HState o)
+unsafeRunHorizontal :: Horizontal r i o a -> (a -> SF i o) -> SF i (HState o)
 unsafeRunHorizontal (Horizontal f) k =
   runCont (f id) $ \a -> do
-    stop <- atS 0 ()
+    stop <- at 0 ()
     o <- k a
     pure $ HState o NoEvent stop
 
-switchHorizontal :: (forall r. Horizontal r o a) -> (a -> Signal o) -> Signal (HState o)
+switchHorizontal :: (forall r. Horizontal r i o a) -> (a -> SF i o) -> SF i (HState o)
 switchHorizontal h = unsafeRunHorizontal h
 
-getHorizontal :: Horizontal r o a -> Signal (Event o)
+getHorizontal :: Horizontal r i o a -> SF i (Event o)
 getHorizontal = fmap (fmap getSpan) . horizontal
 
-horizontal :: Horizontal r o a -> Signal (Event (Span o))
-horizontal h
-  = flip runSF (unsafeRunHorizontal h $ const $ pure $ error "impossible: horizontal sampled too late")
-  $ proc (HState o starts stops) -> spanning -< (stops, o <$ starts)
+horizontal :: Horizontal r i o a -> SF i (Event (Span o))
+horizontal h = proc i -> do
+  HState o starts stops
+    <- unsafeRunHorizontal h
+         $ const
+         $ pure
+         $ error "impossible: horizontal sampled too late"
+    -< i
+  spanning -< (stops, o <$ starts)
 
-mapOut :: (o -> o') -> Horizontal r o a -> Horizontal r o' a
+mapOut :: (o -> o') -> Horizontal r i o a -> Horizontal r i o' a
 mapOut = flip bimap id
 

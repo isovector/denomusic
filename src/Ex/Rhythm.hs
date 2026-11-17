@@ -11,8 +11,8 @@ import FRP
 routing :: SF () a -> Signal a
 routing sf = runSF sf $ pure ()
 
-vls :: Signal (Event (VoiceLeading (Vertical 3) 7))
-vls = routing $ accum mempty <<< arr (fmap (<>)) <<<
+vls :: SF i (Event (VoiceLeading (Vertical 3) 7))
+vls = accum mempty <<< arr (fmap (<>)) <<<
   ( discrete
       [ (0, mempty)
       , (2, voiceLead 0 4)
@@ -22,14 +22,11 @@ vls = routing $ accum mempty <<< arr (fmap (<>)) <<<
       ]
   )
 
-beats :: Signal (Event ())
-beats = mop (\_ _ -> ((), rstack 3 <.> lfan 3)) vls
-
 song :: Signal (Event (Span (Vertical 3 (Note 7))))
 song = spanner $ routing $ proc _ -> do
-  evl <- constS vls
+  evl <- vls
   vl <- hold mempty -< evl
-  e <- constS beats
+  e <- mop (\_ _ -> ((), rstack 3 <.> lfan 3)) -< evl
   returnA -< applyVoiceLeading vl (chord triad) <$ (e <|> void evl)
 
 spanner :: Signal (Event a) -> Signal (Event (Span a))

@@ -46,9 +46,8 @@ determineDepth desired r
 
 mop
     :: (a -> a -> (b, Meter Rational))
-    -> Signal (Event a)
-    -> Signal (Event b)
-mop f = runSF $ evByEv $ \(t1, a1) (t2, a2) -> do
+    -> SF (Event a) (Event b)
+mop f = evByEv $ \(t1, a1) (t2, a2) -> do
   let (b, sh) = f a1 a2
       dur = t2 - t1
   fmap (, b) $ scanl (\t d -> (t + dur * Time d)) t1 $ toList sh
