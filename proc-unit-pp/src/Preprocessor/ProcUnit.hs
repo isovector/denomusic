@@ -1,3 +1,5 @@
+{-# LANGUAGE MultiWayIf #-}
+
 -- | A tiny source preprocessor for arrow @proc@ blocks.
 --
 -- Inside every @proc pat -> do@ block, a binding statement of the form
@@ -37,6 +39,8 @@ import Control.Monad (void)
 import Data.Char (isAlphaNum, isSpace)
 import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IM
+import Data.Set (Set)
+import qualified Data.Set as Set
 import Data.Void (Void)
 import System.Environment (getArgs)
 import System.Exit (exitFailure)
@@ -166,30 +170,69 @@ preprocess :: FilePath -> String -> Either String String
 preprocess fp src = do
   toks <- lexHaskell fp src
   let sig = filter (isSignificant . snd) $ zip [0 ..] toks
-      Edits ins = findProcs sig
+      Edits ins reps imps0 = findProcs sig
+      imps = Set.filter (not . alreadyImported (map snd sig)) imps0
       body = concat
-        [ tokText t <> IM.findWithDefault "" i ins
+        [ IM.findWithDefault (tokText t) i reps <> IM.findWithDefault "" i ins
         | (i, t) <- zip [0 ..] toks
         ]
   pure $
-    if IM.null ins
-      then body -- nothing rewritten: leave the module untouched
-      else insertImports fp toks (importSite (map snd sig)) body
+    if Set.null imps
+      then body -- no imports needed: leave the module header untouched
+      else insertImports fp toks (importSite (map snd sig)) (Set.toList imps) body
+
+-- | Is the module named by an @import qualified M@ line already imported in a
+-- way that brings every @M.x@ into scope (no import list, no @hiding@, no
+-- @as@)? If so, injecting it again would only produce a redundant-import
+-- warning.
+alreadyImported :: [Token] -> String -> Bool
+alreadyImported ts line = case words line of
+  ["import", "qualified", m] -> go m ts
+  _ -> False
+  where
+    go _ [] = False
+    go m (t : rest)
+      | tokText t == "import"
+      , (mt : after0) <- dropWhile ((== "qualified") . tokText) rest
+      , (name, after) <- modName mt after0
+      , name == m
+      , full mt (dropWhile ((== "qualified") . tokText) after)
+      = True
+      | otherwise = go m rest
+    -- the lexer splits @A.B.C@ into @A@ @.@ @B@ @.@ @C@; glue adjacent ones
+    modName mt (d : n : more)
+      | tokText d == ".", adjacent mt d, adjacent d n, tokKind n == TWord =
+          let (s, r) = modName n more in (tokText mt <> "." <> s, r)
+    modName mt more = (tokText mt, more)
+    full mt after = case after of
+      (n : _) | tokLine n == tokLine mt -> tokText n `notElem` ["as", "(", "hiding"]
+      _ -> True
+
+-- | What to feed a command that was written without @-<@.
+data Feed = Feed
+  { feedExpr :: String
+  , feedImports :: Set String
+  }
+
+-- | The default feed, used for ordinary @x <- cmd@ statements.
+defaultFeed :: Feed
+defaultFeed = Feed implicitInput (Set.fromList importLines)
+
+feedAfter :: Feed -> Int -> String -> Edits
+feedAfter f i prefix =
+  insertAfter i (prefix <> " -< " <> feedExpr f) <> needImports (feedImports f)
 
 -- | The expression fed to commands that were given no input.
 implicitInput :: String
-implicitInput =
-  "Data.Proxy.Proxy @(GHC.TypeError.Assert 'False (GHC.TypeError.Unsatisfiable ("
-    <> "'GHC.TypeError.Text \"Can't implicitly instantiate this arrow.\")))"
-
-feed :: String
-feed = " -< " <> implicitInput
+implicitInput = "()"
+  -- "Data.Proxy.Proxy @(GHC.TypeError.Assert 'False (GHC.TypeError.Unsatisfiable ("
+  --   <> "'GHC.TypeError.Text \"Can't implicitly instantiate this arrow.\")))"
 
 importLines :: [String]
-importLines =
-  [ "import qualified GHC.TypeError"
-  , "import qualified Data.Proxy"
-  ]
+importLines = mempty
+  -- [ "import qualified GHC.TypeError"
+  -- , "import qualified Data.Proxy"
+  -- ]
 
 -- | Where to put the injected imports: the @(line, column)@ of the first
 -- significant token of the module body. That is the first token after the
@@ -214,8 +257,8 @@ importSite ts = case ts of
 -- | Insert the import block before the given line, indented to the module
 -- body's layout column, followed by a @LINE@ pragma restoring numbering.
 -- Any CPP linemarker or @LINE@ pragma earlier in the input is honoured.
-insertImports :: FilePath -> [Token] -> Maybe (Int, Int) -> String -> String
-insertImports fp toks site body =
+insertImports :: FilePath -> [Token] -> Maybe (Int, Int) -> [String] -> String -> String
+insertImports fp toks site imps body =
   let ls = lines body
       (lineNo, col) = case site of
         Just s -> s
@@ -224,7 +267,7 @@ insertImports fp toks site body =
       indent = replicate (col - 1) ' '
       (origLine, origFile) = originalPos fp toks lineNo
       importBlock =
-        map (indent <>) importLines
+        map (indent <>) imps
           <> ["{-# LINE " <> show origLine <> " " <> show origFile <> " #-}"]
    in unlines (before <> importBlock <> after)
 
@@ -250,17 +293,26 @@ originalPos fp toks lineNo =
       | otherwise = Nothing
     unquote = filter (/= '"')
 
--- | Text to insert immediately after the token with the given index.
-newtype Edits = Edits (IntMap String)
+-- | Rewrites to apply to the token stream: text to insert immediately after
+-- a token; text to emit /instead of/ a token; and import lines the rewritten
+-- module needs.
+data Edits = Edits (IntMap String) (IntMap String) (Set String)
 
 instance Semigroup Edits where
-  Edits a <> Edits b = Edits (IM.unionWith (<>) a b)
+  Edits a r i <> Edits b s j =
+    Edits (IM.unionWith (<>) a b) (IM.union r s) (i <> j)
 
 instance Monoid Edits where
-  mempty = Edits mempty
+  mempty = Edits mempty mempty mempty
 
 insertAfter :: Int -> String -> Edits
-insertAfter i s = Edits (IM.singleton i s)
+insertAfter i s = Edits (IM.singleton i s) mempty mempty
+
+replaceTok :: Int -> String -> Edits
+replaceTok i s = Edits mempty (IM.singleton i s) mempty
+
+needImports :: Set String -> Edits
+needImports = Edits mempty mempty
 
 -- | Find every @proc ... -> do@ and collect the edits for its statements.
 findProcs :: Sig -> Edits
@@ -327,37 +379,89 @@ stmtEdit stmt@((_, t0) : rest)
   | tokText t0 == "rec", ((_, n) : _) <- rest = block (tokCol n) rest
   | tokText t0 == "let" = mempty
   | any ((== "proc") . tokText . snd) stmt = mempty -- handled by findProcs
-  | Just (_, cmd) <- splitTopBind stmt = cmdEdit True cmd
+  | Just (_, cmd) <- splitTopBind stmt = cmdEdit (Just defaultFeed) cmd
   -- A bare command statement: never feed it, but still look inside it for
   -- control forms and nested blocks.
-  | otherwise = cmdEdit False stmt
+  | otherwise = cmdEdit Nothing stmt
 
 -- | Rewrite a single command.
 --
 -- * @do@ blocks are processed as nested statement blocks.
 -- * Control-operator forms (see 'controlForms') have each of their command
 --   arguments rewritten recursively; the form itself is never fed.
--- * Otherwise, if @feedPlain@ is set and the command has no @-<@ / @-<<@,
---   the implicit input is appended (wrapping in parens if necessary).
-cmdEdit :: Bool -> Sig -> Edits
-cmdEdit feedPlain cmd
+-- * Otherwise, if a 'Feed' is given and the command has no @-<@ / @-<<@,
+--   that input is appended (wrapping in parens if necessary).
+cmdEdit :: Maybe Feed -> Sig -> Edits
+cmdEdit mfeed cmd
   | null content = mempty
   | ((_, d) : body@((_, b0) : _)) <- content
   , tokKind d == TWord, tokText d `elem` ["do", "mdo"]
   , tokText b0 /= "{"
   = block (tokCol b0) body
-  | forms@(_ : _) <- controlForms content = foldMap controlEdit forms
-  | not feedPlain = mempty
-  | any (isFeed . snd) content = mempty
-  | opensLayout content, ((startIx, _) : _) <- content =
-      insertAfter (startIx - 1) "(" <> insertAfter endIx (")" <> feed)
-  | otherwise = insertAfter endIx feed
+  | forms@(_ : _) <- controlForms content =
+      foldMap controlEdit forms <> wrapContext (map ctlSpan forms) content
+  | Nothing <- mfeed = mempty
+  | Just f <- mfeed = if
+      | any (isFeed . snd) content -> mempty
+      | opensLayout content, ((startIx, _) : _) <- content ->
+          insertAfter (startIx - 1) "(" <> feedAfter f endIx ")"
+      | otherwise -> feedAfter f endIx ""
   where
     content = dropWhileEnd' ((== ";") . tokText . snd) cmd
     endIx = fst (last content)
 
 isFeed :: Token -> Bool
 isFeed t = tokKind t == TSym && tokText t `elem` ["-<", "-<<"]
+
+-- | A command @E[F1, ..., Fn]@ in which control forms @Fi@ appear inside a
+-- larger expression @E@ is rewritten to
+--
+-- > (| (\h1 ... hn -> E[h1, ..., hn]) (F1) ... (Fn) |)
+--
+-- i.e. the surrounding expression becomes a control operator with holes,
+-- so the forms stay commands (with the proc environment in scope) while
+-- @E@ is an ordinary arrow-valued expression.
+--
+-- The forms stay in place, so their source locations are exact. The tokens
+-- of @E@ are blanked and re-emitted in the lambda at the start of the
+-- command (on the command's first line), so errors in @E@ point at the
+-- right line when @E@ is a single line, and at its first line otherwise.
+--
+-- If the forms already make up the whole command, or @E@ feeds itself an
+-- explicit input with @-<@, nothing is done.
+wrapContext :: [(Int, Int)] -> Sig -> Edits
+wrapContext spans content = case content of
+  ((startIx, _) : _)
+    | [(a, b)] <- spans, a == startIx, b == endIx -> mempty
+    | any (isFeed . snd) outside -> mempty
+    | otherwise ->
+        insertAfter (startIx - 1)
+          ("(| (\\" <> unwords holes <> " -> " <> lambdaBody <> ") ")
+          <> foldMap (\(i, _) -> replaceTok i "") outside
+          <> foldMap (\(a, b) -> insertAfter (a - 1) "(" <> insertAfter b ")") spans
+          <> insertAfter endIx " |)"
+  [] -> mempty
+  where
+    endIx = fst (last content)
+    inSpan i = any (\(a, b) -> a <= i && i <= b) spans
+    outside = filter (not . inSpan . fst) content
+    holes = ["_ppu'h" <> show k | k <- [0 .. length spans - 1]]
+    pieces = go content
+      where
+        go [] = []
+        go ((i, t) : xs) = case lookup i (zip (map fst spans) holes) of
+          Just h ->
+            let b = maybe i snd (lookup i [(a, s) | s@(a, _) <- spans])
+             in Left h : go (dropWhile ((<= b) . fst) xs)
+          Nothing -> Right t : go xs
+    lambdaBody = render pieces
+    render = \case
+      [] -> ""
+      [p] -> txt p
+      (p : q : ps) -> txt p <> sep p q <> render (q : ps)
+    txt = either id tokText
+    sep (Right a) (Right b) | adjacent a b = ""
+    sep _ _ = " "
 
 dropWhileEnd' :: (a -> Bool) -> [a] -> [a]
 dropWhileEnd' p = reverse . dropWhile p . reverse
@@ -372,32 +476,150 @@ dropWhileEnd' p = reverse . dropWhile p . reverse
 
 -- | A control operator applied to some commands.
 data Control = Control
-  { ctlArgs :: [Sig]
-    -- ^ the command arguments, without any delimiters
+  { ctlSpan :: (Int, Int)
+    -- ^ indices of the first and last token of the whole form
+  , ctlArgs :: [(Feed, Sig)]
+    -- ^ the command arguments (without delimiters), and what to feed each
+    -- one if it was written without @-<@
   , ctlDesugar :: Edits
     -- ^ edits needed to turn the surface syntax into valid GHC
   }
 
 controlEdit :: Control -> Edits
-controlEdit c = ctlDesugar c <> foldMap (cmdEdit True) (ctlArgs c)
+controlEdit c =
+  ctlDesugar c <> foldMap (\(f, a) -> cmdEdit (Just f) a) (ctlArgs c)
+
+-- | Indices of the first and last token of a non-empty group.
+spanOf :: Sig -> (Int, Int)
+spanOf g = (fst (headOr g), fst (headOr (reverse g)))
+  where
+    headOr (x : _) = x
+    headOr [] = (-1, Token TSpecial "" 0 0)
 
 -- | Find the control forms at the top level of a command.
---
--- Current syntax: GHC banana brackets, @(| op (cmd1) ... (cmdN) |)@. Each
--- parenthesised argument after the operator is a command; any other
--- argument (e.g. a bare variable naming a command) is left alone.
 controlForms :: Sig -> [Control]
-controlForms = foldMap banana . atoms
+controlForms = foldMap (\g -> banana g <> vecForm g) . atoms
+
+-- | GHC banana brackets, @(| op (cmd1) ... (cmdN) |)@. Each parenthesised
+-- argument after the operator is a command; any other argument (e.g. a bare
+-- variable naming a command) is left alone. No desugaring is needed.
+banana :: Sig -> [Control]
+banana g = case bananaInterior g of
+  Just inner | (_ : args) <- atoms inner ->
+    [Control (spanOf g) [(defaultFeed, a) | a <- concatMap parenInterior args] mempty]
+  _ -> []
   where
-    banana g = case bananaInterior g of
-      Just inner | (_ : args) <- atoms inner ->
-        [Control (concatMap parenInterior args) mempty]
-      _ -> []
-    parenInterior g = case g of
+    parenInterior x = case x of
       ((_, o) : xs@(_ : _))
-        | tokText o == "(", Just inner <- dropLast xs, Nothing <- bananaInterior g
+        | tokText o == "(", Just inner <- dropLast xs, Nothing <- bananaInterior x
         -> [inner]
       _ -> []
+
+-- | Vector commands, @[: pat <- xs | cmd1, ..., cmdN :]@ (the @pat <-@ is
+-- optional). Runs each command with @pat@ bound to the corresponding element
+-- of @xs :: Vec N a@; a command without @-<@ is fed that element. The result
+-- is a @Vec N b@. Desugars to
+--
+-- > (do { xs' <- returnA -< zipWith (\a _ -> a) (xs) (Cons () ... Nil)
+-- >     ; r1 <- (let { e = index_int xs' 0 ; pat = e } in (cmd1))
+-- >     ; ...
+-- >     ; returnA -< Cons r1 (... Nil) })
+--
+-- The @zipWith@ forces @xs@ to have exactly N elements. Every token of the
+-- original is kept or replaced in place, so line numbers are preserved.
+vecForm :: Sig -> [Control]
+vecForm g = case g of
+  ((o1i, o1) : (o2i, o2) : rest)
+    | tokText o1 == "[", tokText o2 == ":", adjacent o1 o2
+    , Just (inner, (c1i, c1), (c2i, c2)) <- lastTwo rest
+    , tokText c1 == ":", tokText c2 == "]", adjacent c1 c2
+    , (header, (bari, _) : body) <- splitTopOn (== "|") inner
+    , let elems = splitAllOn (== ",") body
+          n = length elems
+          (binder, startTok) = case splitTopBind' header of
+            Just (pat, arrowIx) -> (Just pat, arrowIx)
+            Nothing -> (Nothing, o2i)
+          binderText = unwords (maybe [] (map (tokText . snd)) binder)
+          binderVars = [tokText t | (_, t) <- concat binder, tokKind t == TWord]
+          -- only bind the pattern in elements that mention it, to avoid
+          -- unused-binding warnings
+          mentions k = case drop k elems of
+            (e : _) -> any (\(_, t) -> tokKind t == TWord && tokText t `elem` binderVars) e
+            [] -> False
+          elemOpen k =
+            name ("r" <> show k) <> " <- (let { " <> name "e" <> " = Data.Vec.index_int "
+              <> name "xs" <> " " <> show k
+              <> (if mentions k then " ; " <> binderText <> " = " <> name "e" else "")
+              <> " } in ("
+          elemClose = "))"
+          vec = foldr (\x acc -> "Data.Vec.Cons " <> x <> " (" <> acc <> ")") "Data.Vec.Nil"
+          delims = [i | (i, _) : _ <- drop 1 (splitAllOnDelims (== ",") body)]
+    -> [ Control
+           (spanOf g)
+           [(Feed (name "e") mempty, e) | e <- elems]
+           ( replaceTok o1i "(do { "
+             -- must come before the blanking below: 'replaceTok' is
+             -- left-biased, and without a binder startTok is the @:@ itself
+             <> replaceTok startTok
+                  (name "xs" <> " <- Control.Arrow.returnA -< Data.Vec.zipWith (\\a _ -> a) (")
+             <> foldMap (\(i, _) -> replaceTok i "") ((o2i, o2) : concat binder)
+             <> replaceTok bari (") (" <> vec (replicate n "()") <> ") ; " <> elemOpen (0 :: Int))
+             <> mconcat
+                  [ replaceTok i (elemClose <> " ; " <> elemOpen k)
+                  | (k, i) <- zip [1 :: Int ..] delims
+                  ]
+             <> replaceTok c1i
+                  ( elemClose <> " ; Control.Arrow.returnA -< "
+                      <> vec [name ("r" <> show k) | k <- [0 .. n - 1]] <> " }"
+                  )
+             <> replaceTok c2i ")"
+             <> needImports (Set.fromList ["import qualified Data.Vec", "import qualified Control.Arrow"])
+           )
+       ]
+  _ -> []
+  where
+    name s = "_ppu'" <> s
+    -- @pat <- xs@ at depth 0: returns the pattern tokens and the @<-@ index
+    splitTopBind' h = case splitTopOn (== "<-") h of
+      (pat@(_ : _), (i, _) : _) -> Just (pat, i)
+      _ -> Nothing
+
+lastTwo :: [a] -> Maybe ([a], a, a)
+lastTwo xs = case reverse xs of
+  (c : b : r) -> Just (reverse r, b, c)
+  _ -> Nothing
+
+-- | Split at the first token at bracket depth zero satisfying the predicate.
+-- The second component starts with that token.
+splitTopOn :: (String -> Bool) -> Sig -> (Sig, Sig)
+splitTopOn p = go (0 :: Int)
+  where
+    go _ [] = ([], [])
+    go d (x@(_, t) : ts)
+      | d == 0, tokKind t /= TString, tokKind t /= TChar, p (tokText t) = ([], x : ts)
+      | otherwise =
+          let d' = case tokKind t of
+                TOpen -> d + 1
+                TClose -> d - 1
+                _ -> d
+              (a, b) = go d' ts
+           in (x : a, b)
+
+-- | Split on every depth-zero delimiter, keeping each delimiter at the head
+-- of the following chunk.
+splitAllOnDelims :: (String -> Bool) -> Sig -> [Sig]
+splitAllOnDelims p xs = case splitTopOn p xs of
+  (a, []) -> [a]
+  (a, d : r) -> a : map' (splitAllOnDelims p r)
+    where
+      map' (c : cs) = (d : c) : cs
+      map' [] = [[d]]
+
+-- | Split on every depth-zero delimiter, dropping the delimiters.
+splitAllOn :: (String -> Bool) -> Sig -> [Sig]
+splitAllOn p xs = case splitAllOnDelims p xs of
+  (c : cs) -> c : map (drop 1) cs
+  [] -> []
 
 -- | If the group is @(| ... |)@, return what's between the delimiters.
 bananaInterior :: Sig -> Maybe Sig
@@ -408,10 +630,6 @@ bananaInterior g = case g of
     , tokText b' == "|", tokText c == ")", adjacent b' c
     -> Just inner
   _ -> Nothing
-  where
-    lastTwo xs = case reverse xs of
-      (c : b : r) -> Just (reverse r, b, c)
-      _ -> Nothing
 
 -- | Are two tokens immediately next to each other?
 adjacent :: Token -> Token -> Bool

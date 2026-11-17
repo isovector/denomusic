@@ -22,10 +22,12 @@ song = proc _ -> do
   vl <- msumE <<< getHorizontal divergence
   b <- fmap (fmap getSpan) $ horizontal $ stimes 12 $ hit 0.25 ()
   let ns = applyVoiceLeading vl (chord triad)
-  let (lo :> hi :> Nil) = ns
-  ehi' <- clampOctave (0, 7) 0.5 -< hi <$ b
-  elo' <- clampOctave (-9, 0) 0.5 -< lo <$ b
-  returnA -< fmap (\(lo', hi') -> Span 0.25 $ lo' :> hi' :> Nil) $ liftA2 (,) elo' ehi'
+  ns' <- arr fromV <<<
+    [: n <- ns
+     | clampOctave (-9, 0) 0.5 -< n <$ b
+     , clampOctave (0, 7)  0.5 -< n <$ b
+     :]
+  returnA -< fmap (Span 0.5) ns'
 
 
 main :: IO ()
