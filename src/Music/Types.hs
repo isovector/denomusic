@@ -6,7 +6,7 @@ module Music.Types
   ( module Music.Types
   , module Music.Types.Note
   , module Music.Types.Deg
-  , module Music.Types.Ornaments
+  , module Music.Types.Accidentals
   , module Music.Types.Scale
   , module Music.Types.Vertical
   ) where
@@ -30,7 +30,7 @@ import GHC.Generics
 import Music.Harmony
 import Music.Types.Deg
 import Music.Types.Note
-import Music.Types.Ornaments
+import Music.Types.Accidentals
 import Music.Types.Scale
 import Music.Types.Vertical
 import Prelude hiding (id, (.))

@@ -50,9 +50,9 @@ library
       Music.Harmony
       Music.TimeSig
       Music.Types
+      Music.Types.Accidentals
       Music.Types.Deg
       Music.Types.Note
-      Music.Types.Ornaments
       Music.Types.Rhythm
       Music.Types.Scale
       Music.Types.Vertical

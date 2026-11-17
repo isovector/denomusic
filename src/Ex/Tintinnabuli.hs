@@ -10,14 +10,14 @@ import DenoMusic.Notation
 
 
 dropMod :: Note s -> Note s
-dropMod (Note n (Ornaments os)) =
+dropMod (Note n (Accidentals os)) =
   case IM.lookupMin os of
     Just (_, x) | x < 0 -> Note (n - 1) mempty
     _ -> Note n mempty
 
 
 tintinnabuli :: forall c s. (KnownNat s, 1 <= c) => Scale c s -> Note c -> Note s -> Note s
-tintinnabuli sc c = applyScale sc . (+ c) . dropOrnament @s . applyScale (invertScaleAbove sc)
+tintinnabuli sc c = applyScale sc . (+ c) . dropAccidental @s . applyScale (invertScaleAbove sc)
 
 
 melody :: Horizontal r (Note 7) ()

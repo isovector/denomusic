@@ -10,7 +10,7 @@ import Data.Set qualified as S
 import GHC.TypeLits
 import Music.Types.Deg
 import Music.Types.Note
-import Music.Types.Ornaments
+import Music.Types.Accidentals
 import Prelude hiding (id, (.))
 
 
@@ -29,7 +29,7 @@ applyScale (Scale f) (Note (Deg dm) o)
   = knownInduction @m
   $ let (oct, pc) = divMod dm $ scaleSize @m
         (Note (Deg dn) o') = f $ toEnum pc
-        (o'', od) = decompOrnament @n o
+        (o'', od) = decompAccidental @n o
     in Note (od + Deg (dn + oct * scaleSize @n)) $ o' <> o''
 
 
@@ -89,7 +89,7 @@ invertScale
             -- How far (in steps of @b@) the requested pitch class is from
             -- the chosen candidate, accounting for any octave wraparound.
             diff = fromIntegral b - (fromIntegral b' + ox * scaleSize @b)
-        Note (da + Deg (ox * scaleSize @a)) $ os <> ornament @b diff
+        Note (da + Deg (ox * scaleSize @a)) $ os <> accidental @b diff
 
 
 -- | Build a chooser that prefers candidates satisfying @acceptable@, picking

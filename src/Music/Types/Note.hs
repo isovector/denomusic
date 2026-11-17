@@ -12,24 +12,24 @@ import Data.Semigroup (Sum(..))
 import GHC.Generics (Generic)
 import GHC.TypeLits
 import Music.Types.Deg
-import Music.Types.Ornaments
+import Music.Types.Accidentals
 
 
 type Note :: Nat -> Type
-data Note n = Note (Deg n) (Ornaments Int)
+data Note n = Note (Deg n) (Accidentals Int)
   deriving stock (Generic, Eq, Ord)
 
 instance Num (Note n) where
   fromInteger n = Note (fromInteger n) mempty
   Note a as + Note b bs = Note (a + b) $ as <> bs
   Note a as - Note b bs = Note (a - b) $ as <> fmap negate bs
-  Note a (Ornaments as) * Note b (Ornaments bs) =
-    Note (a * b) $ Ornaments $ IM.intersectionWith (*) as bs
+  Note a (Accidentals as) * Note b (Accidentals bs) =
+    Note (a * b) $ Accidentals $ IM.intersectionWith (*) as bs
   abs    (Note a as) = Note (abs a)    $ fmap abs    as
   signum (Note a as) = Note (signum a) $ fmap signum as
 
 instance Show (Note n) where
-  showsPrec p (Note n (Ornaments m))
+  showsPrec p (Note n (Accidentals m))
     | IM.null m = showsPrec p n
     | otherwise = showParen (p >= 11)
         $ showString "stepsIn "
@@ -50,15 +50,15 @@ stepIn :: forall c n. (KnownNat c, KnownNat n) => Int -> Note n -> Note n
 stepIn k (Note a as) =
   case scaleSize @c == scaleSize @n of
     True -> Note (a + Deg k) as
-    False -> Note a $ as <> ornament @c k
+    False -> Note a $ as <> accidental @c k
 
 
 stepsIn :: [(Int, Int)] -> Note n -> Note n
-stepsIn ks (Note a as) = Note a $ as <> Ornaments (IM.fromListWith (+) ks)
+stepsIn ks (Note a as) = Note a $ as <> Accidentals (IM.fromListWith (+) ks)
 
 
-dropOrnament :: forall c n. KnownNat c => Note n -> Note n
-dropOrnament (Note n o) = Note n $ fst $ decompOrnament @c o
+dropAccidental :: forall c n. KnownNat c => Note n -> Note n
+dropAccidental (Note n o) = Note n $ fst $ decompAccidental @c o
 
 
 newtype Octave = Octave
