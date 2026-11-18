@@ -1,15 +1,11 @@
 module Ex.Rhythm where
 
-import Control.Monad
 import DenoMusic.Notation
 import DenoMusic.Play
 import Music.Types.Rhythm
 import Music.Types
 import Music.Harmony
 import FRP
-
-routing :: SF () a -> Signal a
-routing sf = runSF sf $ pure ()
 
 vls :: SF i (Event (VoiceLeading (Vertical 3) 7))
 vls = accum mempty <<< arr (fmap (<>)) <<<
@@ -22,16 +18,12 @@ vls = accum mempty <<< arr (fmap (<>)) <<<
       ]
   )
 
-song :: Signal (Event (Span (Vertical 3 (Note 7))))
-song = spanner $ routing $ proc _ -> do
+song :: SF () (Event (Span (Vertical 3 (Note 7))))
+song = proc _ -> do
   evl <- vls
   vl <- hold mempty -< evl
   e <- mop (\_ _ -> ((), rstack 3 <.> lfan 3)) -< evl
-  returnA -< applyVoiceLeading vl (chord triad) <$ (e <|> void evl)
-
-spanner :: Signal (Event a) -> Signal (Event (Span a))
-spanner = runSF $ proc ea -> do
-  spanning -< (NoEvent, ea)
+  returnA -< fmap (applyVoiceLeading vl (chord triad) <$) $ e <|> Span 1 () <$ evl
 
 main :: IO ()
 main = do
