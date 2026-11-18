@@ -74,8 +74,9 @@ dropShorterThan dt = evByEv $ \(t, a) (t', _) ->
     True -> pure (t, a)
     False -> mempty
 
-clampOctave :: KnownNat s => (Note s, Note s) -> Time -> SF (Event (Note s)) (Event (Note s))
+clampOctave :: forall s. KnownNat s => (Note s, Note s) -> Time -> SF (Event (Note s)) (Event (Note s))
 clampOctave (lo, hi) dt = proc e -> do
+  let sz = max 1 $ round $ fromIntegral (getDeg $ noteDeg hi - noteDeg lo) / scaleSize @s
   t <- localTime -< ()
   ef <- futureE -< e
   rec
@@ -88,8 +89,8 @@ clampOctave (lo, hi) dt = proc e -> do
                 -- Only jump if no upcoming input note (within dt) would
                 -- cross back over the opposite bound under the new octave.
                 bool oprev o' $ all (ok . addOctave o') window
-              o | eprev <= hi && n0 > hi = tryJump (oprev <> Octave (-1)) (>= lo)
-                | eprev >= lo && n0 < lo = tryJump (oprev <> Octave 1)    (<= hi)
+              o | eprev <= hi && n0 > hi = tryJump (oprev <> Octave (-sz)) (>= lo)
+                | eprev >= lo && n0 < lo = tryJump (oprev <> Octave sz)    (<= hi)
                 | otherwise              = oprev
           (o, addOctave o n)
         e' = fmap snd eo
