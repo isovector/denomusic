@@ -8,6 +8,7 @@ module DenoMusic.Notation
   , Staves (..)
   , defaultNotationOptions
   , toPdf
+  , toPdf'
   ) where
 
 import DenoMusic.Types (Reg(..), PitchClass(..))
@@ -45,10 +46,15 @@ fromStupidEuterpeaPitchClass _ = error "stupid"
 
 -- | Generate lilypond code for a 'Score', and dump the resulting pdf to
 -- @\/tmp\/song.pdf@.
-toPdf :: E.ToMusic1 a => NotationOptions -> a -> IO ()
-toPdf opts m = do
+toPdf' :: E.ToMusic1 a => NotationOptions -> a -> IO ()
+toPdf' opts m = do
   let lp = finalizeLily $ makeScore opts $ fmap ((\(pc, o) -> Reg o $ fromStupidEuterpeaPitchClass pc) . fst) $ E.toMusic1 $ E.note 1 m
   writeFile "/tmp/out.lily" $ preamble opts <> header <> lp <> footer
   _ <- rawSystem "lilypond" ["-o", "/tmp/song", "/tmp/out.lily"]
   pure ()
 
+
+-- | Generate lilypond code for a 'Score', and dump the resulting pdf to
+-- @\/tmp\/song.pdf@.
+toPdf :: E.ToMusic1 a => a -> IO ()
+toPdf = toPdf' defaultNotationOptions

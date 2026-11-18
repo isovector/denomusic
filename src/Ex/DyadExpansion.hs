@@ -32,6 +32,6 @@ song = proc _ -> do
 
 main :: IO ()
 main = do
-  toPdf defaultNotationOptions $ toV $ fmap (toV . fmap toV) song
+  toPdf $ toV $ fmap (toV . fmap toV) song
   play song
 

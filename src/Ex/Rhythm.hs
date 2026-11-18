@@ -27,6 +27,6 @@ song = proc _ -> do
 
 main :: IO ()
 main = do
-  toPdf defaultNotationOptions song
+  toPdf song
   play song
 

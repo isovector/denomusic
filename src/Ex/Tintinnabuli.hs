@@ -28,6 +28,6 @@ song = horizontal harmonized
 
 main :: IO ()
 main = do
-  toPdf defaultNotationOptions song
+  toPdf song
   play song
 
