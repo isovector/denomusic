@@ -188,8 +188,7 @@ invertAround2
   -> Note n  -- ^ Fixed note 2
   -> Note n
   -> Note n
-invertAround2 fp1 fp2 = invertAround $ (deg fp1 + deg fp2) / 2
-  where deg = fromIntegral . getDeg . noteDeg
+invertAround2 fp1 fp2 x = fp1 + fp2 - x
 
 
 neoriemannian
@@ -199,55 +198,22 @@ neoriemannian
   -> Fin v
   -> VoiceLeading (Vertical v) s
 neoriemannian v1 v2 = VoiceLeading $ selfDual $ \v -> do
-  let sSize = scaleSize @s @Int
-      fp1 = view (voice v1) v
+  let fp1 = view (voice v1) v
       fp2 = view (voice v2) v
-      pcs = foldMap (S.singleton . normalizeNote) v
-      inv = normalizeNote . invertAround2 fp1 fp2
-      locate f =
-        let z = f (normalizeNote fp1) (normalizeNote fp2)
-          in ( inv z
-             , fromMaybe (error "neoriemannian: impossible")
-                 $ findIndex (== z)
-                 $ S.toList pcs
-             )
   case normalizeNote fp1 == normalizeNote fp2 of
     True ->
       fmap (invertAround2 fp1 fp2) v
         & voice v1 .~ fp1
         & voice v2 .~ fp2
     False ->
-      -- Convert the chord into an intrinsic scale. We don't care about the
-      -- transformation to get back, since we will compute our own.
-      intrinsic v $ \(Proxy @ins) _ -> knownInduction @ins $ do
-        let insSize = scaleSize @ins
-            ins = S.toList $ S.map inv pcs
-            (hiX, loOffset) = locate min
-            (loX, hiOffset) = locate max
-            cycled = ins <> fmap (+ fromIntegral sSize) cycled
-            cyclic
-              = filter (/= loX)
-              $ filter (/= hiX)
-              $ dropWhile ((/=) loX) cycled
-            indices
-              = take (insSize - 2)
-              $ filter ((/= hiOffset) . snd)
-              $ filter ((/= loOffset) . snd)
-              $ fmap (flip divMod insSize)
-              $ drop loOffset [0 ..]
-            placements
-              = IM.fromList
-              $ (loOffset, loX)
-              : (hiOffset, hiX)
-              : do
-                  ((d, m), note) <- zip indices cyclic
-                  pure
-                    ( m
-                    , note - fromIntegral (d * sSize)
-                    )
-        fmap $ applyScale $ mkExoticScale @ins $ do
-          index <- [0 .. insSize - 1]
-          pure $ placements IM.! index
+      intrinsic v $ \(Proxy @ins) sc v' -> knownInduction @ins $ do
+        let -- Reflect in chord-degree space so that the fixed points swap,
+            -- then reflect in pitch space so they swap back. The composite
+            -- fixes both chosen voices exactly and is monotone, so it maps
+            -- the chord onto its inversion voice-by-voice.
+            a = view (voice v1) v'
+            b = view (voice v2) v'
+        fmap (invertAround2 fp1 fp2 . sc . flip subtract (a + b)) v'
 
 
 -- | The @t@ operation in "Tonality"
