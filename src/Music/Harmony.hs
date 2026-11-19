@@ -9,15 +9,13 @@ module Music.Harmony
   , Group(..)
   ) where
 
+import Data.Functor
 import Control.Lens ((+~), (&), view, (-~), (.~))
 import Data.Bool
 import Data.Fin (knownInduction, Induction)
 import Data.Foldable
 import Data.Functor.Compose
-import Data.IntMap qualified as IM
 import Data.Iso
-import Data.List (findIndex)
-import Data.Maybe (fromMaybe)
 import Data.Monoid
 import Data.Proxy
 import Data.Ratio
@@ -85,52 +83,31 @@ lead (Deg from) (Deg to) =
    in T (fromIntegral sTrans) $ fromIntegral tLevel
 
 
-applyT :: T c s -> Scale c s -> Note c -> Note s
-applyT (T i e) sc n = applyScale sc (n + Note i mempty) + Note e mempty
-
-
-getIntrinsicScale
-  :: forall f c r
-   . (Foldable f, KnownNat c)
-  => f (Note c)
-  -> (forall ins. (Induction ins, ins <= c) => Proxy ins -> Scale ins c -> r)
-  -> r
-getIntrinsicScale voiced k = do
-  let notes = S.map normalizeNote $ S.fromList $ toList voiced
-  withSomeSNat (fromIntegral $ length notes) $ \case
-    Just (snat :: SNat ins) -> do
-      withKnownNat snat $ do
-        case cmpNat (Proxy @ins) (Proxy @c) of
-          LTI ->
-            knownInduction @ins $ do
-              let sc = mkScale @ins notes
-              k Proxy sc
-          EQI ->
-            knownInduction @ins $ do
-              let sc = mkScale @ins notes
-              k Proxy sc
-          GTI -> error "impossible!"
-    Nothing -> error "impossible"
+applyT :: T c s -> (Note c -> Note s) -> Note c -> Note s
+applyT (T i e) sc n = sc (n + Note i mempty) + Note e mempty
 
 
 intrinsic
   :: forall f c r
-   . (Foldable f, Functor f, KnownNat c)
+   . (Foldable f, Functor f, KnownNat c, 1 <= c)
   => f (Note c)
-  -> (forall ins. (Induction ins, ins <= c) => Proxy ins -> Scale ins c -> f (Note ins) -> r)
+  -> (forall ins. Induction ins => Proxy ins -> (Note ins -> Note c) -> f (Note ins) -> r)
   -> r
-intrinsic voiced k =
-  getIntrinsicScale voiced $ \(p :: Proxy ins) sc ->
-    case cmpNat (Proxy @0) (Proxy @ins) of
-      LTI -> hoistCompare @ins $ k p sc $ knownInduction @c $ fmap (applyScale $ invertScaleNearest sc) voiced
-      EQI -> k p sc $ error "impossible: empty functor!" <$ voiced
-      GTI -> error "impossible!"
-
-
-hoistCompare :: forall a r. Compare 0 a ~ LT => ((1 <= a) => r) -> r
-hoistCompare k =
-  case unsafeCoerce (Dict @(1 <= 1)) :: Dict (1 <= a) of
-    Dict -> k
+intrinsic voiced k = do
+  let pcSet = S.map normalizeNote $ S.fromList $ toList voiced
+      pcs = S.toList pcSet
+      n = length pcs
+  withSomeSNat (fromIntegral n) $ \case
+    Nothing -> error "impossble!"
+    Just (SNat :: SNat ins) ->
+      knownInduction @ins $
+        k
+          (Proxy @ins)
+          (applyScaleMap $ (pcs !!) . fromIntegral)
+          $ voiced <&> \x ->
+            Note
+              (Deg $ S.findIndex (normalizeNote x) pcSet + div (getDeg $ noteDeg x) (scaleSize @c) * n)
+              mempty
 
 
 newtype VoiceLeading f s = VoiceLeading
@@ -203,7 +180,7 @@ expandF x y v =
 
 invertAround :: Rational -> Note n -> Note n
 invertAround z (Note (Deg (fromIntegral -> d)) mods) =
-  Note (Deg $ floor $ negate (d - z) + z) mods
+  Note (Deg $ floor $ negate (d - z) + z) $ fmap negate mods
 
 
 invertAround2
@@ -278,10 +255,10 @@ chordalSteps :: (Foldable f, Functor f, KnownNat s, 1 <= s) => Int -> VoiceLeadi
 chordalSteps n = VoiceLeading $
   iso
     ( \c -> intrinsic c $ \(Proxy @ins) sc c' ->
-        fmap (applyScale sc . (+ fromIntegral n)) c'
+        fmap (sc . (+ fromIntegral n)) c'
     )
     ( \c -> intrinsic c $ \(Proxy @ins) sc c' ->
-        fmap (applyScale sc . (subtract $ fromIntegral n)) c'
+        fmap (sc . (subtract $ fromIntegral n)) c'
     )
 
 

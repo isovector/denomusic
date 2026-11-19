@@ -7,6 +7,7 @@ module Music.Types.Scale
   , invertScale
   , compScale
   , applyScale
+  , applyScaleMap
   , mkScale
   , mkSomeScale
   , spelled
@@ -84,18 +85,26 @@ compScale bc@Scale ab@Scale = Compose bc ab
   #-}
 
 
+applyScaleMap
+    :: forall m n
+     . (KnownNat m, KnownNat n)
+    => (Fin m -> Note n)
+    -> Note m
+    -> Note n
+applyScaleMap f (Note (Deg dm) o)
+  = knownInduction @m
+  $ let (oct, pc) = divMod dm $ scaleSize @m
+        (Note (Deg dn) o') = f $ toEnum pc
+        (o'', od) = decompAccidental @n o
+    in Note (od + Deg (dn + oct * scaleSize @n)) $ o' <> o''
+
+
 applyScale
     :: forall m n
      . Scale m n
     -> Note m
     -> Note n
-applyScale sc@Scale (Note (Deg dm) o)
-  = knownInduction @m
-  $ let f = spelled sc
-        (oct, pc) = divMod dm $ scaleSize @m
-        (Note (Deg dn) o') = f $ toEnum pc
-        (o'', od) = decompAccidental @n o
-    in Note (od + Deg (dn + oct * scaleSize @n)) $ o' <> o''
+applyScale sc@Scale = applyScaleMap $ spelled sc
 
 
 mkScale :: forall c s. (KnownNat c, KnownNat s, 1 <= s) => Set (Note s) -> Scale c s
