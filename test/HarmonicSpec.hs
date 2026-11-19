@@ -1,7 +1,9 @@
-{-# OPTIONS_GHC -Wno-orphans #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# OPTIONS_GHC -Wno-orphans     #-}
 
 module HarmonicSpec where
 
+import Data.IntMap qualified as IM
 import Control.Lens (view)
 import Music.Harmony
 import Music.Types
@@ -83,7 +85,20 @@ invertible vl c = do
   shouldBe (applyVoiceLeading (vl <> invert vl) c) c
   shouldBe (applyVoiceLeading (invert vl <> vl) c) c
 
-instance Arbitrary (Note n) where
-  arbitrary = fmap (flip Note mempty . Deg) arbitrary
-  shrink = fmap (flip Note mempty . Deg) . shrink . getDeg . noteDeg
+instance KnownNat n => Arbitrary (Note n) where
+  arbitrary = Note <$> fmap Deg arbitrary <*> arbitraryAccidentals @n
+  shrink (Note (Deg d) (Accidentals im)) = mconcat
+    [ Note <$> fmap Deg (shrink d) <*> pure (Accidentals im)
+    , Note (Deg d) <$> fmap (mkAccidentals (scaleSize @n)) (shrink im)
+    ]
+
+arbitraryAccidentals :: forall n. KnownNat n => Gen (Accidentals Int)
+arbitraryAccidentals = do
+  im <- arbitrary
+  let n = scaleSize @n
+  pure $ mkAccidentals n im
+
+mkAccidentals :: Int -> IM.IntMap Int -> Accidentals Int
+mkAccidentals n =
+  Accidentals . IM.filterWithKey (\k x -> k >= 1 && k <= n * 2 && k /= n && x /= 0)
 
