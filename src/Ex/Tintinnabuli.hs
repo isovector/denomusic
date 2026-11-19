@@ -1,7 +1,5 @@
 module Ex.Tintinnabuli where
 
-import GHC.TypeLits
-import Data.IntMap qualified as IM
 import DenoMusic.Play
 import FRP
 import Music.Harmony
@@ -9,8 +7,8 @@ import Music.Types
 import DenoMusic.Notation
 
 
-tintinnabuli :: forall c s. (KnownNat s, 1 <= c) => Scale c s -> Note c -> Note s -> Note s
-tintinnabuli sc c = applyScale sc . (+ c) . dropAccidental @s . applyScale (invertScaleAbove sc)
+tintinnabuli :: forall c s. Scale c s -> Note c -> Note s -> Note s
+tintinnabuli sc@Scale c = applyScale sc . (+ c) . dropAccidental @s . applyScale (invertScale Above sc)
 
 
 melody :: Horizontal r i (Note 7) ()

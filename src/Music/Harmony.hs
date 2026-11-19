@@ -9,7 +9,6 @@ module Music.Harmony
   , Group(..)
   ) where
 
-import Data.Constraint (Dict(..))
 import Control.Lens ((+~), (&), view, (-~), (.~))
 import Data.Bool
 import Data.Fin (knownInduction, Induction)
@@ -30,7 +29,6 @@ import Music.Types.Note
 import Music.Types.Scale
 import Music.Types.Vertical
 import Prelude hiding (id, (.))
-import Unsafe.Coerce
 
 
 triad :: Scale 3 7
@@ -152,7 +150,7 @@ instance (KnownNat v) => Show (VoiceLeading (Vertical v) s) where
      in show $ liftA2 (\x y -> unwords [show x, "→", show y]) v (applyVoiceLeading vl v)
 
 voiceLead
-    :: (Foldable f, Functor f, KnownNat s)
+    :: (Foldable f, Functor f, KnownNat s, 1 <= s)
     => Deg s
     -> Deg s
     -> VoiceLeading f s
@@ -219,7 +217,7 @@ invertAround2 fp1 fp2 = invertAround $ (deg fp1 + deg fp2) / 2
 
 neoriemannian
   :: forall s v
-   . (KnownNat v, KnownNat s)
+   . (KnownNat v, KnownNat s, 1 <= s)
   => Fin v
   -> Fin v
   -> VoiceLeading (Vertical v) s
@@ -276,7 +274,7 @@ neoriemannian v1 v2 = VoiceLeading $ selfDual $ \v -> do
 
 
 -- | The @t@ operation in "Tonality"
-chordalSteps :: (Foldable f, Functor f, KnownNat s) => Int -> VoiceLeading f s
+chordalSteps :: (Foldable f, Functor f, KnownNat s, 1 <= s) => Int -> VoiceLeading f s
 chordalSteps n = VoiceLeading $
   iso
     ( \c -> intrinsic c $ \(Proxy @ins) sc c' ->

@@ -28,6 +28,7 @@ library
       Data.Fin
       Data.Iso
       Data.Lilypond
+      Data.MVec
       Data.SNat
       Data.Vec
       DenoMusic.Notation

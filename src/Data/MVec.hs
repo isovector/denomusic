@@ -1,5 +1,6 @@
 module Data.MVec where
 
+import Data.Constraint
 import Data.Bifunctor (first)
 import Data.Fin
 import Data.Foldable
@@ -101,6 +102,10 @@ makeSomeMVec m = knownInduction @s $
             Nothing -> SomeMVec $ MSkip rest
             Just a -> SomeMVec $ MCons a rest
 
+mvecSizeC :: MVec s c a -> Dict (c <= s)
+mvecSizeC MNil = Dict
+mvecSizeC (MCons _ as) = case mvecSizeC as of Dict -> Dict
+mvecSizeC (MSkip as)   = case mvecSizeC as of Dict -> Dict
 
 
 unsafeMakeMVec :: forall c s a. (KnownNat s, KnownNat c) => Map (Fin s) a -> MVec s c a
