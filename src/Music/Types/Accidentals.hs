@@ -27,7 +27,12 @@ instance (Eq a, Num a) => Eq (Accidentals a) where
   (==) = on (==) (getAccidentals . normalizeAccidentals)
 
 instance (Ord a, Num a) => Ord (Accidentals a) where
-  compare = on compare (getAccidentals . normalizeAccidentals)
+  compare a b =
+    maybe EQ (flip compare 0 . snd)
+      $ IM.lookupMin
+      $ getAccidentals
+      $ normalizeAccidentals
+      $ a <> fmap negate b
 
 
 decompAccidental :: forall n. KnownNat n => Accidentals Int -> (Accidentals Int, Deg n)
