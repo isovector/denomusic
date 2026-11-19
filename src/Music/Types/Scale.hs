@@ -1,83 +1,106 @@
-module Music.Types.Scale where
+{-# OPTIONS_GHC -Wno-inline-rule-shadowing #-}
 
-import Data.Bool
+module Music.Types.Scale
+  ( Scale(..)
+  , Quantization(..)
+  , idScale
+  , compScale
+  , applyScale
+  , mkScale
+  , spelled
+  ) where
+
 import Data.Fin
-import Data.Iso
-import Data.List (find, minimumBy)
+import Data.Foldable
+import Data.Kind
+import Data.MVec
+import Data.Map qualified as M
 import Data.Ord (Down(..), comparing)
 import Data.Set (Set)
 import Data.Set qualified as S
-import GHC.TypeLits
+import GHC.TypeLits (Nat, type (<=))
+import Music.Types.Accidentals
 import Music.Types.Deg
 import Music.Types.Note
-import Music.Types.Accidentals
-import Prelude hiding (id, (.))
 
 
+data Quantization
+  = Below | Above | Nearest
+  deriving stock (Eq, Ord, Show, Enum, Bounded)
+
+type Scale :: Nat -> Nat -> Type
 data Scale a b where
-  Scale
-    :: (KnownNat a, KnownNat b)
-    => (Fin a -> Note b)
-    -> Scale a b
+  Embed :: MVec b a (Accidentals Int) -> Scale a b
+  Project :: Quantization -> MVec a b (Accidentals Int) -> Scale a b
+  Compose :: (KnownNat b, 1 <= b) => Scale b c -> Scale a b -> Scale a c
+
+deriving stock instance Show (Scale a b)
+
+invertScale :: Quantization -> Scale a b -> Scale b a
+invertScale q (Embed slots) = Project q slots
+invertScale _ (Project _ slots) = Embed slots
+invertScale q (Compose f g) = Compose (invertScale q g) (invertScale q f)
+
+spelled :: forall a b. (KnownNat a, KnownNat b, 1 <= b) => Scale a b -> Fin a -> Note b
+spelled (Embed slots) = \fa ->
+  let (fb, accs) = mlookup slots fa
+   in Note (fromIntegral $ toNatural fb) accs
+spelled (Compose g f) = applyScale g . spelled f
+spelled (Project q f) = inverting (choosing q) f
+
+
+idScale :: KnownNat a => Scale a a
+idScale = Embed $ pure mempty
+
+compScale :: (1 <= b, KnownNat b) => Scale b c -> Scale a b -> Scale a c
+compScale (Embed bc) (Embed ab) = Embed $ malign (<>) bc ab
+compScale bc ab = Compose bc ab
+
+{-# RULES
+  "comp/invert" forall sc q.
+    compScale (invertScale q sc) sc = invertScale q sc;
+  "comp/invert2" forall sc q.
+    compScale sc (invertScale q sc) = sc
+  #-}
+
 
 applyScale
     :: forall m n
-     . Scale m n
+     . (KnownNat m, KnownNat n, 1 <= n) => Scale m n
     -> Note m
     -> Note n
-applyScale (Scale f) (Note (Deg dm) o)
+applyScale sc (Note (Deg dm) o)
   = knownInduction @m
-  $ let (oct, pc) = divMod dm $ scaleSize @m
+  $ let f = spelled sc
+        (oct, pc) = divMod dm $ scaleSize @m
         (Note (Deg dn) o') = f $ toEnum pc
         (o'', od) = decompAccidental @n o
     in Note (od + Deg (dn + oct * scaleSize @n)) $ o' <> o''
 
 
--- | Generate a scale from a set of "generalized pitch classes." In particular,
--- this normalizes all notes to lie within a single octave, and then
--- deduplicates them. It then maps @0 :: Note s@ to be the least element in the
--- set.
-mkScale :: forall c s. (Induction c, KnownNat s) => Set (Note s) -> Scale c s
-mkScale = mkExoticScale . S.toList . S.map normalizeNote
+mkScale :: forall c s. (KnownNat c, KnownNat s) => Set (Note s) -> Scale c s
+mkScale ss = knownInduction @s $ do
+  Embed $ unsafeMakeMVec $ M.fromList $ do
+    Note (Deg d) as <- S.toList $ S.map normalizeNote ss
+    pure $ (fromIntegral @_ @(Fin s) d, as)
 
 
--- | Generate an "exotic" scale. Unlike 'mkScale', this function performs no
--- normalization/ordering/deduplication on the incoming list. Thus you can very
--- odd things like make a non-monotonic, non-bijective scale.
-mkExoticScale :: forall c s. (Induction c, KnownNat s) => [Note s] -> Scale c s
-mkExoticScale ds' = do
-  let n = length ds'
-  case n == scaleSize @c of
-    True -> Scale $ \c -> ds' !! fromIntegral c
-    False -> error $ unwords
-      [ "mkExoticScale: declared as chord size"
-      , show $ scaleSize @c
-      , "but given"
-      , show n
-      , "notes."
-      ]
-
-
-invertScale
+inverting
     :: forall a b
-     . (1 <= a)
-    => (forall x. Ord x => Induction b => Fin b -> [(Fin b, x)] -> (Int, x))
+     . (KnownNat a, KnownNat b, 1 <= a)
+    => (forall x. (Ord x, KnownNat b) => Fin b -> [(Fin b, x)] -> (Int, x))
        -- ^ Given the target pitch class and the (non-empty) image of the
        -- scale, choose a candidate along with an octave offset to apply to
        -- it. Parametricity in @x@ guarantees the result came from the image.
-    -> Scale a b
-    -> Scale b a
-invertScale
-    choose
-    (Scale f) = knownInduction @a $ knownInduction @b $ do
+    -> MVec b a (Accidentals Int)
+    -> Fin b -> Note a
+inverting choose sc = knownInduction @a $ knownInduction @b $ do
   let img :: [(Fin b, Note a)]
       img = do
         a <- [0 .. maxBound @(Fin a)]
-        let (Note (Deg db) os) = f a
-        let (o, pc) = divMod db $ scaleSize @b
-        let b = toEnum @(Fin b) pc
-        pure (b, Note (fromIntegral a - Deg (scaleSize @a * o)) $ fmap negate os)
-  Scale $ \b ->
+        let (b, accs) = mlookup sc a
+        pure (b, Note (fromIntegral a) $ fmap negate accs)
+  \b ->
     case lookup b img of
       Just a -> a
       Nothing -> do
@@ -108,23 +131,14 @@ directional acceptable getBest octOffset b img =
     [] -> (octOffset, snd $ getBest img)
     cs -> (0, snd $ getBest cs)
 
--- Invert a scale. If @a < b@, then the resulting scale must somehow map notes
--- from @b@ into @a@. It does this by rounding down in @a@ and choosing a note
--- above that.
-invertScaleAbove :: (1 <= a) => Scale a b -> Scale b a
-invertScaleAbove = invertScale $ directional (<=) maximum (-1)
 
--- Invert a scale. If @a < b@, then the resulting scale must somehow map notes
--- from @b@ into @a@. It does this by rounding up in @a@ and choosing a note
--- below that.
-invertScaleBelow :: (1 <= a) => Scale a b -> Scale b a
-invertScaleBelow = invertScale $ directional (>=) minimum 1
-
--- | Invert a scale, choosing the candidate (possibly in a neighbouring octave)
--- which requires the smallest ornamental offset. Ties prefer the candidate
--- below the target, as in 'invertScaleDown'.
-invertScaleNearest :: forall a b. (1 <= a, Induction b) => Scale a b -> Scale b a
-invertScaleNearest = invertScale $ \b img -> fmap snd $ do
+choosing
+  :: forall b
+   . Quantization
+  -> (forall x. (Ord x, KnownNat b) => Fin b -> [(Fin b, x)] -> (Int, x))
+choosing Below = directional (>=) minimum 1
+choosing Above = directional (<=) maximum (-1)
+choosing Nearest = \b img -> knownInduction @b $ fmap snd $ do
   let key (ox, (cb, n)) =
         let d = fromIntegral b - (fromIntegral cb + ox * scaleSize @b) :: Int
          in (abs d, d < 0, Down n)

@@ -246,6 +246,9 @@ indices _ = indicesI
 indicesI :: KnownNat n => Vec n (Fin n)
 indicesI = imap const (repeat ())
 
+build :: KnownNat n => (Fin n -> a) -> Vec n a
+build f = fmap f indicesI
+
 findIndex :: KnownNat n => (a -> Bool) -> Vec n a -> Maybe (Fin n)
 findIndex f = ifoldr (\i a b -> if f a then Just i else b) Nothing
 
