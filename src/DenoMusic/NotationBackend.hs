@@ -1,3 +1,4 @@
+{-# LANGUAGE GADTs                      #-}
 {-# OPTIONS_GHC -fno-warn-deprecations  #-}
 {-# OPTIONS_GHC -fno-warn-orphans       #-}
 
@@ -12,6 +13,7 @@ module DenoMusic.NotationBackend
   , footer
   , pPrint
   , toPitch
+  , note12ToReg
   ) where
 
 import Data.Ratio (denominator)
@@ -24,8 +26,12 @@ import Data.Maybe (isJust)
 import Data.Music.Lilypond.Pitch hiding (PitchName (..))
 import Data.Music.Lilypond.Pitch qualified as L
 import Data.Ord (Down (..))
+import Data.Proxy (Proxy (..))
 import DenoMusic.Types
 import Euterpea qualified as E
+import GHC.TypeLits (KnownNat, Nat, natVal)
+import Music.Types.Deg (Deg (..))
+import Music.Types.Note qualified as N
 import Text.PrettyPrint.HughesPJClass (pPrint)
 
 
@@ -33,35 +39,43 @@ import Text.PrettyPrint.HughesPJClass (pPrint)
 -- Options
 --------------------------------------------------------------------------------
 
--- | Options controlling how music is notated.
-data NotationOptions = NotationOptions
+-- | Options controlling how music of type @'N.Note' n@ is notated.
+data NotationOptions (n :: Nat) = NotationOptions
   { no_timesignature :: Maybe ()
     -- ^ When 'Nothing', every voice is put in @\\cadenzaOn@ mode and no
     -- barline\/beat-based tying or rest splitting is performed.
-  , no_staves :: Staves
+  , no_staves :: Staves n
     -- ^ How to lay the music out onto staves.
   }
   deriving (Eq, Show)
 
--- | Staff layouts.
-data Staves
-  = -- | A grand staff; notes are distributed between the upper and lower
-    -- staves by @\\autoChange@.
-    PianoStaff
-  | -- | A single staff, using whichever of treble or bass clef fits more
-    -- notes within its lines.
-    DiatonicStaff
-  | IntrinsicStaff Int
-  deriving (Eq, Show)
+-- | Staff layouts, indexed by the size of the scale whose notes they display.
+data Staves (n :: Nat) where
+  -- | A grand staff; notes are distributed between the upper and lower
+  -- staves by @\\autoChange@.
+  PianoStaff :: Staves 12
+  -- | A single staff, using whichever of treble or bass clef fits more
+  -- notes within its lines.
+  DiatonicStaff :: Staves 12
+  -- | A @\\finStaff@ for an @n@-note scale. Each scale degree occupies its
+  -- own staff position, with degree 0 on the bottom line (written as @c'@).
+  IntrinsicStaff :: KnownNat n => Staves n
 
-defaultNotationOptions :: NotationOptions
+deriving instance Eq (Staves n)
+deriving instance Show (Staves n)
+
+isPianoStaff :: Staves n -> Bool
+isPianoStaff PianoStaff = True
+isPianoStaff _          = False
+
+defaultNotationOptions :: NotationOptions 12
 defaultNotationOptions =
   NotationOptions
     { no_timesignature = Just ()
     , no_staves = PianoStaff
     }
 
-metered :: NotationOptions -> Bool
+metered :: NotationOptions n -> Bool
 metered = isJust . no_timesignature
 
 
@@ -93,6 +107,60 @@ pitchClassToPitchAndAccidental As = (L.A, 1)
 pitchClassToPitchAndAccidental B  = (L.B, 0)
 pitchClassToPitchAndAccidental Bf = (L.B, -1)
 
+-- | Spell a chromatic @'N.Note' 12@ (degree 0 is middle C) using sharps.
+-- Accidentals are ignored, matching 'DenoMusic.Play.play'.
+note12ToReg :: N.Note 12 -> Reg PitchClass
+note12ToReg n =
+  let d = getDeg (N.noteDeg n)
+   in Reg (div d 12 + 4) (spelling !! mod d 12)
+  where
+    spelling = [C, Cs, D, Ds, E, F, Fs, G, Gs, A, As, B]
+
+
+--------------------------------------------------------------------------------
+-- Staff pitches
+--
+-- Every staff layout first lowers its notes into a 'StaffPitch': a fully
+-- resolved description of how a single notehead is drawn. Everything after this
+-- point is agnostic to the original scale. To support new notational features
+-- (e.g. intrinsic accidentals), extend 'StaffPitch' and 'staffPitch', and teach
+-- 'spanToScore' to emit them.
+--------------------------------------------------------------------------------
+
+data StaffPitch = StaffPitch
+  { sp_pitch  :: Pitch
+    -- ^ The lilypond pitch that puts the notehead on the right staff position.
+  , sp_height :: Int
+    -- ^ A height used only to rank voices relative to one another.
+  }
+
+-- | Lower a note into its staff representation for the given layout.
+staffPitch :: Staves n -> N.Note n -> StaffPitch
+staffPitch PianoStaff     = chromaticStaffPitch
+staffPitch DiatonicStaff  = chromaticStaffPitch
+staffPitch IntrinsicStaff = intrinsicStaffPitch
+
+chromaticStaffPitch :: N.Note 12 -> StaffPitch
+chromaticStaffPitch n =
+  let r@(Reg o pc) = note12ToReg n
+   in StaffPitch (toPitch r) (o * 12 + fromEnum pc)
+
+-- | Degree @d@ sits @d@ staff steps above @c'@ (the bottom line of a
+-- @\\finStaff@). Accidentals are currently ignored.
+intrinsicStaffPitch :: N.Note n -> StaffPitch
+intrinsicStaffPitch n =
+  let d    = getDeg (N.noteDeg n)
+      step = diatonicStepOf (Pitch (L.C, 0, 5)) + d
+   in StaffPitch (fromDiatonicStep step) d
+
+-- | Diatonic step of a lilypond pitch, counting from C0 (so @c'@ is 28).
+diatonicStepOf :: Pitch -> Int
+diatonicStepOf (Pitch (pn, _, o)) = (o - 1) * 7 + fromEnum pn
+
+-- | Inverse of 'diatonicStepOf', for natural pitches.
+fromDiatonicStep :: Int -> Pitch
+fromDiatonicStep s = Pitch (toEnum (mod s 7), 0, div s 7 + 1)
+
 
 --------------------------------------------------------------------------------
 -- Intermediate representation
@@ -116,7 +184,7 @@ data Body
     Control Score
   | -- | One or more simultaneous pitches (a note or a chord) that share a
     -- single set of post events.
-    Notes [PostEvent] [Reg PitchClass]
+    Notes [PostEvent] [StaffPitch]
 
 -- | An event occupying the half-open time interval @[spanStart, spanEnd)@.
 data Span = Span
@@ -152,7 +220,7 @@ spanDur s = spanEnd s - spanStart s
 -- | Split a piece of music into its parallel voices. A top-level @:=:@ is read
 -- as parallel composition of voices; anything else is a single voice whose
 -- timeline is produced by 'musicToSpans'.
-musicToVoices :: E.Music (Reg PitchClass) -> [[Span]]
+musicToVoices :: E.Music StaffPitch -> [[Span]]
 musicToVoices = \case
   m1 E.:=: m2   -> musicToVoices m1 <> musicToVoices m2
   E.Modify _ m  -> musicToVoices m
@@ -161,7 +229,7 @@ musicToVoices = \case
 -- | Render a single (parallel-free, except for chords) voice into an
 -- absolute-time span timeline, starting at time @t@. Returns the end time
 -- alongside the spans so sequential composition can thread the clock through.
-musicToSpans :: Rational -> E.Music (Reg PitchClass) -> (Rational, [Span])
+musicToSpans :: Rational -> E.Music StaffPitch -> (Rational, [Span])
 musicToSpans t = \case
   E.Prim (E.Note d p)
     | d <= 0    -> (t, [])
@@ -399,8 +467,8 @@ spanToScore s = case spanBody s of
   Rest'         -> Rest (spanDur s) []
   Spacer        -> Skip (spanDur s) []
   Control sc    -> sc
-  Notes pes [p] -> Note (spanDur s) (NotePitch (toPitch p)) pes
-  Notes pes ps  -> Chord (fmap (NotePitch . toPitch) ps) (spanDur s) pes
+  Notes pes [p] -> Note (spanDur s) (NotePitch (sp_pitch p)) pes
+  Notes pes ps  -> Chord (fmap (NotePitch . sp_pitch) ps) (spanDur s) pes
 
 -- | Normalize a voice into a gapless, sorted sequence of 'Span's, with every
 -- silence made explicit as a 'Rest''. This is the first half of compilation;
@@ -412,7 +480,7 @@ normalizeVoice = fillRests . sortSpans
 -- | Compile a normalized span list all the way down to a lilypond expression,
 -- splitting over-long durations, generating tuplets, and tying everything into
 -- notatable note values.
-spansToScore :: NotationOptions -> [Span] -> Score
+spansToScore :: NotationOptions n -> [Span] -> Score
 spansToScore opts =
     tieLengths
   . splitRests
@@ -577,7 +645,7 @@ voiceSetter n =
 -- so that @\\autoChange@ can distribute its notes between the two staves of the
 -- piano. The @\\fixed c'@ block establishes the octave reference that our
 -- absolute pitches are notated against.
-wrapVoice :: NotationOptions -> Int -> Score -> Score
+wrapVoice :: NotationOptions n -> Int -> Score -> Score
 wrapVoice opts n music =
   New "Voice" Nothing $
     Sequential $
@@ -588,13 +656,8 @@ wrapVoice opts n music =
                ]
              | not (metered opts)
              ]
-        <> [ Command "autoChange" | no_staves opts == PianoStaff ]
+        <> [ Command "autoChange" | isPianoStaff (no_staves opts) ]
         <> [ Fixed (Pitch (L.C, 0, 4)) music ]
-
--- | Approximate absolute height of a single pitch, in semitones, used only to
--- compare voices against one another.
-pitchHeight :: Reg PitchClass -> Int
-pitchHeight (Reg o pc) = o * 12 + fromEnum pc
 
 -- | A voice's average pitch height, used to rank voices from high to low.
 -- Voices with no sounding notes sort to the bottom.
@@ -604,7 +667,7 @@ voiceHeight v =
     [] -> -1 / 0
     hs -> fromIntegral (sum hs) / fromIntegral (length hs)
   where
-    pitchesOf (Span _ _ (Notes _ ps)) = fmap pitchHeight ps
+    pitchesOf (Span _ _ (Notes _ ps)) = fmap sp_height ps
     pitchesOf _                       = []
 
 -- | Reorder voices into the order LilyPond expects for numbered voices:
@@ -623,7 +686,7 @@ voiceOrder = interleave . sortOn (Down . voiceHeight)
 
 -- | The upper staff. Every voice lives here; @\\autoChange@ relocates the low
 -- notes to the "down" staff automatically.
-upStaff :: NotationOptions -> [Score] -> Score
+upStaff :: NotationOptions n -> [Score] -> Score
 upStaff opts voices =
   New "Staff" (Just "up") $
     Simultaneous False $
@@ -641,7 +704,7 @@ downStaff =
       ]
 
 -- | A single staff holding every voice, beginning with the given clef command.
-singleStaff :: NotationOptions -> Score -> [Score] -> Score
+singleStaff :: NotationOptions n -> Score -> [Score] -> Score
 singleStaff opts clef voices =
   New "Staff" Nothing $
     Simultaneous False $
@@ -652,11 +715,6 @@ singleStaff opts clef voices =
       ]
         <> zipWith (wrapVoice opts) [0 ..] voices
 
--- | Diatonic step of a pitch, counting from C0 (so middle C, @Reg 4 C@, is 28).
-diatonicStep :: Reg PitchClass -> Int
-diatonicStep (Reg o pc) =
-  o * 7 + fromEnum (fst (pitchClassToPitchAndAccidental pc))
-
 -- | Pick whichever of treble (E4..F5) or bass (G2..A3) clef places more of the
 -- given notes within the staff lines. Ties go to treble.
 chooseClef :: [[Span]] -> Clef
@@ -664,14 +722,14 @@ chooseClef voices =
   if inRange 18 26 > inRange 30 38 then Bass else Treble
   where
     steps =
-      [ diatonicStep p
+      [ diatonicStepOf (sp_pitch p)
       | v <- voices
       , Span _ _ (Notes _ ps) <- v
       , p <- ps
       ]
     inRange lo hi = length (filter (\s -> lo <= s && s <= hi) steps)
 
-makeScore :: NotationOptions -> E.Music (Reg PitchClass) -> Score
+makeScore :: NotationOptions n -> E.Music (N.Note n) -> Score
 makeScore opts music =
   case no_staves opts of
     PianoStaff ->
@@ -682,12 +740,16 @@ makeScore opts music =
           ]
     DiatonicStaff ->
       singleStaff opts (Clef (chooseClef sharedVoices)) scores
-    IntrinsicStaff _ ->
+    IntrinsicStaff ->
       singleStaff opts (Command "intrinsicClef") scores
   where
     scores = fmap (spansToScore opts) sharedVoices
     sharedVoices =
-      shareRests (fmap normalizeVoice (voiceOrder (musicToVoices music)))
+      shareRests $
+        fmap normalizeVoice $
+          voiceOrder $
+            musicToVoices $
+              fmap (staffPitch (no_staves opts)) music
 
 
 --------------------------------------------------------------------------------
@@ -706,9 +768,10 @@ header =
 
 -- | Top-level definitions required by the chosen 'NotationOptions'; must be
 -- emitted before the score.
-preamble :: NotationOptions -> String
+preamble :: forall n. NotationOptions n -> String
 preamble opts = case no_staves opts of
-  IntrinsicStaff n ->
+  IntrinsicStaff ->
+    let n = natVal (Proxy @n) in
     finPreamble
       <> unlines
         [ "intrinsicClef = {"
