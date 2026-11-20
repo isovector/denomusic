@@ -26,6 +26,6 @@ song = horizontal harmonized
 
 main :: IO ()
 main = do
-  toPdf' defaultNotationOptions {no_staves = IntrinsicStaff @12}  song
+  toPdf' defaultNotationOptions {no_staves = IntrinsicStaff @7}  song
   play song
 

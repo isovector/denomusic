@@ -1,4 +1,5 @@
 {-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE MultiWayIf                 #-}
 {-# OPTIONS_GHC -fno-warn-deprecations  #-}
 {-# OPTIONS_GHC -fno-warn-orphans       #-}
 
@@ -729,7 +730,84 @@ chooseClef voices =
       ]
     inRange lo hi = length (filter (\s -> lo <= s && s <= hi) steps)
 
-makeScore :: NotationOptions n -> E.Music (N.Note n) -> Score
+-- | Insert @\\finOttava@s into a voice on an @n@-note @\\finStaff@, so that
+-- music far off the staff is drawn back onto it.
+--
+-- Each note (or chord) first picks its own ideal octave shift: the one that
+-- best recenters it on the staff, or 0 if it lies within four ledger lines.
+-- Runs of fewer than four notes are absorbed into a neighbouring run of the
+-- same direction (or dropped back to 0), and an ottava change is emitted at
+-- every boundary between runs. A passage that descends steadily therefore
+-- becomes e.g. @-3@, @-2@, @-1@ rather than one compromise block.
+--
+-- Rests and controls never change the shift. Assumes 'sp_height' is the
+-- scale degree, with degree 0 on the bottom line, as produced by
+-- 'intrinsicStaffPitch'.
+--
+-- Note that ottava is a staff-wide setting, so overlapping runs in different
+-- voices of one staff will fight with one another.
+finOttavas :: Int -> [Span] -> [Span]
+finOttavas n spans = emit 0 spans smoothed
+  where
+    -- Staff lines sit on even degrees 0, 2, .., top.
+    top    = 2 * (n `div` 2 + 1)
+    center = fromIntegral top / 2 :: Double
+    ledger = 3 -- four ledger lines, two degrees apart
+    minRun = 4
+
+    heights s = case spanBody s of
+      Notes _ ps@(_ : _) -> Just (fmap sp_height ps)
+      _                  -> Nothing
+
+    -- The ideal shift for a single note or chord. Chords that reach far off
+    -- both sides at once can't be fixed by an ottava, so they stay at 0.
+    ideal hs =
+      let above = any (>= top + ledger) hs
+          below = any (<= negate ledger) hs
+          mid   = fromIntegral (minimum hs + maximum hs) / 2
+          k     = round ((mid - center) / fromIntegral n) :: Int
+       in if | above && not below -> max 1 k
+             | below && not above -> min (-1) k
+             | otherwise          -> 0
+
+    noteShifts = [ideal hs | Just hs <- fmap heights spans]
+
+    -- Smooth the per-note shifts so every nonzero run is at least 'minRun'
+    -- notes long.
+    smoothed = concat (absorb 0 (groupBy (==) noteShifts))
+
+    absorb :: Int -> [[Int]] -> [[Int]]
+    absorb _ [] = []
+    absorb _ ([] : rs) = absorb 0 rs
+    absorb prev (r@(k : _) : rs)
+      | k == 0 || length r >= minRun = r : absorb k rs
+      | otherwise =
+          let next = case rs of
+                (r'@(k'' : _) : _) | length r' >= minRun -> k''
+                _                                        -> 0
+              sameSign x = x /= 0 && signum x == signum k
+              k' | sameSign prev = prev
+                 | sameSign next = next
+                 | otherwise     = 0
+           in fmap (const k') r : absorb k' rs
+
+    -- Walk the spans alongside the smoothed per-note shifts, emitting an
+    -- ottava change whenever the shift changes, and closing any open ottava
+    -- after the final note.
+    emit :: Int -> [Span] -> [Int] -> [Span]
+    emit _ [] _ = []
+    emit cur (s : rest) ks
+      | isJust (heights s), (k : ks') <- ks =
+          let pre   = [ottava (spanStart s) k | k /= cur]
+              close = [ottava (spanEnd s) 0 | k /= 0, null ks']
+           in pre <> (s : close) <> emit k rest ks'
+      | otherwise = s : emit cur rest ks
+
+    ottava t k =
+      Span t t $ Control $
+        Raw $ "\\finOttava #" <> show n <> " #" <> show k
+
+makeScore :: forall n. NotationOptions n -> E.Music (N.Note n) -> Score
 makeScore opts music =
   case no_staves opts of
     PianoStaff ->
@@ -741,7 +819,9 @@ makeScore opts music =
     DiatonicStaff ->
       singleStaff opts (Clef (chooseClef sharedVoices)) scores
     IntrinsicStaff ->
-      singleStaff opts (Command "intrinsicClef") scores
+      let size = fromInteger (natVal (Proxy @n))
+       in singleStaff opts (Command "intrinsicClef") $
+            fmap (spansToScore opts . finOttavas size) sharedVoices
   where
     scores = fmap (spansToScore opts) sharedVoices
     sharedVoices =
