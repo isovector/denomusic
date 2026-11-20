@@ -12,7 +12,7 @@ tintinnabuli sc@Scale c = applyScale sc . (+ c) . dropAccidental @s . applyScale
 
 
 melody :: Horizontal r i (Note 7) ()
-melody = foldMap (hit 0.25) $ fmap fromInteger [-12 .. 12]
+melody = foldMap (hit 0.25) $ fmap (stepIn @12 1 . fromInteger) [-12 .. 12]
 
 harmonized :: Horizontal r i (Vertical 2 (Note 7)) ()
 harmonized = flip mapOut melody $ \m -> do

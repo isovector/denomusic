@@ -21,6 +21,7 @@ import Data.Ratio (denominator)
 import Data.Bits ((.&.))
 import Data.Containers.ListUtils (nubOrd)
 import Data.Function (on)
+import Data.IntMap qualified as IM
 import Data.Lilypond
 import Data.List (groupBy, sortOn, unsnoc)
 import Data.Maybe (isJust)
@@ -31,6 +32,7 @@ import Data.Proxy (Proxy (..))
 import DenoMusic.Types
 import Euterpea qualified as E
 import GHC.TypeLits (KnownNat, Nat, natVal)
+import Music.Types.Accidentals (getAccidentals)
 import Music.Types.Deg (Deg (..))
 import Music.Types.Note qualified as N
 import Text.PrettyPrint.HughesPJClass (pPrint)
@@ -133,7 +135,15 @@ data StaffPitch = StaffPitch
     -- ^ The lilypond pitch that puts the notehead on the right staff position.
   , sp_height :: Int
     -- ^ A height used only to rank voices relative to one another.
+  , sp_accs   :: [(Int, Int)]
+    -- ^ Generalized accidentals as @(scale size, steps)@, rendered with
+    -- @\\acc@. Empty for conventionally-spelled pitches.
   }
+
+staffNote :: StaffPitch -> Note
+staffNote p = case sp_accs p of
+  [] -> NotePitch (sp_pitch p)
+  as -> NoteAcc as (sp_pitch p)
 
 -- | Lower a note into its staff representation for the given layout.
 staffPitch :: Staves n -> N.Note n -> StaffPitch
@@ -144,15 +154,17 @@ staffPitch IntrinsicStaff = intrinsicStaffPitch
 chromaticStaffPitch :: N.Note 12 -> StaffPitch
 chromaticStaffPitch n =
   let r@(Reg o pc) = note12ToReg n
-   in StaffPitch (toPitch r) (o * 12 + fromEnum pc)
+   in StaffPitch (toPitch r) (o * 12 + fromEnum pc) []
 
 -- | Degree @d@ sits @d@ staff steps above @c'@ (the bottom line of a
--- @\\finStaff@). Accidentals are currently ignored.
+-- @\\finStaff@). Accidentals are emitted as @\\acc@ annotations, which the
+-- preamble's @Deno_accidental_engraver@ tracks and draws.
 intrinsicStaffPitch :: N.Note n -> StaffPitch
-intrinsicStaffPitch n =
+intrinsicStaffPitch n@(N.Note _ as) =
   let d    = getDeg (N.noteDeg n)
       step = diatonicStepOf (Pitch (L.C, 0, 5)) + d
-   in StaffPitch (fromDiatonicStep step) d
+      accs = IM.toList $ IM.filter (/= 0) $ getAccidentals as
+   in StaffPitch (fromDiatonicStep step) d accs
 
 -- | Diatonic step of a lilypond pitch, counting from C0 (so @c'@ is 28).
 diatonicStepOf :: Pitch -> Int
@@ -468,8 +480,8 @@ spanToScore s = case spanBody s of
   Rest'         -> Rest (spanDur s) []
   Spacer        -> Skip (spanDur s) []
   Control sc    -> sc
-  Notes pes [p] -> Note (spanDur s) (NotePitch (sp_pitch p)) pes
-  Notes pes ps  -> Chord (fmap (NotePitch . sp_pitch) ps) (spanDur s) pes
+  Notes pes [p] -> Note (spanDur s) (staffNote p) pes
+  Notes pes ps  -> Chord (fmap staffNote ps) (spanDur s) pes
 
 -- | Normalize a voice into a gapless, sorted sequence of 'Span's, with every
 -- silence made explicit as a 'Rest''. This is the first half of compilation;
@@ -853,6 +865,7 @@ preamble opts = case no_staves opts of
   IntrinsicStaff ->
     let n = natVal (Proxy @n) in
     finPreamble
+      <> accPreamble
       <> unlines
         [ "intrinsicClef = {"
         , "  \\finStaff #" <> show n
@@ -969,6 +982,194 @@ finPreamble =
     , "                  (if (> displacement 0) \"+\" \"\")"
     , "                  displacement)"
     , "     #}))"
+    , ""
+    ]
+
+-- | LilyPond machinery for generalized accidentals. Notes are annotated with
+-- @\\acc #'((scale . steps) ...)@; the pitch itself carries no alteration.
+-- @Deno_accidental_engraver@ tracks, per staff and per staff position, the
+-- accidental stack in force for the current bar. Whenever any part of a
+-- note's stack changes, the whole stack is drawn: changed entries plainly,
+-- unchanged ones parenthesized. A stack that resets entirely is drawn as a
+-- natural sign.
+accPreamble :: String
+accPreamble =
+  unlines
+    [ "#(define (deno-normalize alist)"
+    , "   (sort (filter (lambda (kv) (not (zero? (cdr kv)))) alist)"
+    , "         (lambda (a b) (< (car a) (car b)))))"
+    , ""
+    , "#(define (deno-diff prev cur)"
+    , "   ;; every scale whose value changed, with its new value (0 = reset)"
+    , "   (let* ((scales (delete-duplicates (map car (append prev cur))))"
+    , "          (get (lambda (al k) (let ((p (assv k al))) (if p (cdr p) 0)))))"
+    , "     (sort"
+    , "      (filter-map"
+    , "       (lambda (k)"
+    , "         (let ((old (get prev k)) (new (get cur k)))"
+    , "           (and (not (= old new)) (cons k new))))"
+    , "       scales)"
+    , "      (lambda (a b) (< (car a) (car b))))))"
+    , ""
+    , "#(define (Deno_accidental_engraver context)"
+    , "   (let ((state (make-hash-table)))"
+    , "     (make-engraver"
+    , "      ((start-translation-timestep engraver)"
+    , "       (let ((mp (ly:context-property context 'measurePosition #f)))"
+    , "         (if (and mp (zero? (ly:moment-main mp)))"
+    , "             (hash-clear! state))))"
+    , "      (listeners"
+    , "       ((note-event engraver event)"
+    , "        (let* ((pitch (ly:event-property event 'pitch))"
+    , "               (key (cons (ly:pitch-octave pitch) (ly:pitch-notename pitch)))"
+    , "               (cur (deno-normalize"
+    , "                     (ly:event-property event 'deno-accidentals '())))"
+    , "               (prev (hash-ref state key '())))"
+    , "          (hash-set! state key cur)"
+    , "          (let ((diff (deno-diff prev cur)))"
+    , "            (if (pair? diff)"
+    , "                ;; display entries: (scale steps changed?)"
+    , "                ;; = every entry still in force, plus any resets to 0"
+    , "                (let* ((resets (filter (lambda (kv) (zero? (cdr kv))) diff))"
+    , "                       (shown (sort (append cur resets)"
+    , "                                    (lambda (a b) (< (car a) (car b)))))"
+    , "                       (display"
+    , "                        (map (lambda (kv)"
+    , "                               (list (car kv) (cdr kv)"
+    , "                                     (and (assv (car kv) diff) #t)))"
+    , "                             shown)))"
+    , "                  (ly:event-set-property! event 'deno-display"
+    , "                    (if (null? cur) 'natural display))"
+    , "                  (ly:event-set-property! event 'force-accidental #t))))))))))"
+    , ""
+    , "%% ---- Tweakable layout parameters (staff spaces unless noted) -------------"
+    , "#(define deno-whiteout-thickness 1.1)    % outline whiteout behind digits"
+    , "#(define deno-scripts-raise -0.8)        % vertical offset of sub/super block"
+    , "#(define deno-super-raise -0.25)         % extra vertical offset of superscript"
+    , "#(define deno-single-digit-dx -0.2)      % nudge for 1-digit subscripts"
+    , "#(define deno-sharp-dx 0.35)             % scripts after a sharp"
+    , "#(define deno-natural-dx 0.45)           % scripts after a natural"
+    , "#(define deno-flat-dx 0)                 % scripts after a flat"
+    , "#(define deno-stack-padding 0.15)        % padding around the whole stack"
+    , "#(define deno-stack-fontsize -2)         % font size of the whole stack"
+    , ""
+    , "%% 'below: scale size centred under the glyph, step count centred above it."
+    , "%% 'right: scripts to the right of the glyph."
+    , "#(define deno-script-layout 'below)"
+    , "#(define deno-below-gap 0.1)             % glyph bottom -> subscript top"
+    , "#(define deno-above-gap 0.1)             % glyph top -> superscript bottom"
+    , "#(define deno-below-script-size -3)      % relative fontsize of below scripts"
+    , "#(define deno-sharp-below-dx 0)          % horizontal nudges under each glyph"
+    , "#(define deno-flat-below-dx -0.15)       % (flat's bowl is left of its box centre)"
+    , "#(define deno-natural-below-dx 0)"
+    , ""
+    , "#(define (deno-glyph n k)"
+    , "   (cond"
+    , "    ((zero? k) (make-natural-markup))"
+    , "    (else (if (> k 0) (make-sharp-markup) (make-flat-markup)))))"
+    , ""
+    , "#(define (deno-whiteout m)"
+    , "   (make-override-markup (cons 'thickness deno-whiteout-thickness)"
+    , "     (make-whiteout-markup m)))"
+    , ""
+    , "%% Place `scripts` just right of `glyph`, offset by (dx, dy). The scripts are"
+    , "%% added after the glyph so their whiteout is drawn on top of it."
+    , "#(define-markup-command (deno-glyph-scripts layout props glyph scripts dx dy)"
+    , "   (markup? markup? number? number?)"
+    , "   (let* ((g (interpret-markup layout props glyph))"
+    , "          (s (interpret-markup layout props scripts))"
+    , "          (w (cdr (ly:stencil-extent g X))))"
+    , "     (ly:stencil-add g (ly:stencil-translate s (cons (+ w dx) dy)))))"
+    , ""
+    , "%% Centre `sub` under `glyph` and `super` (may be #f) above it. The scripts"
+    , "%% are added last so their whiteout covers the glyph where they touch."
+    , "#(define-markup-command (deno-glyph-below layout props glyph sub super dx)"
+    , "   (markup? markup? scheme? number?)"
+    , "   (let* ((g  (interpret-markup layout props glyph))"
+    , "          (gx (ly:stencil-extent g X))"
+    , "          (gy (ly:stencil-extent g Y))"
+    , "          (cx (+ (interval-center gx) dx))"
+    , "          (place"
+    , "           (lambda (m above?)"
+    , "             (let* ((s  (interpret-markup layout props m))"
+    , "                    (sx (ly:stencil-extent s X))"
+    , "                    (sy (ly:stencil-extent s Y))"
+    , "                    (x  (- cx (interval-center sx)))"
+    , "                    (y  (if above?"
+    , "                            (- (+ (cdr gy) deno-above-gap) (car sy))"
+    , "                            (- (- (car gy) deno-below-gap) (cdr sy)))))"
+    , "               (ly:stencil-translate s (cons x y)))))"
+    , "          (out (ly:stencil-add g (place sub #f))))"
+    , "     (if super (ly:stencil-add out (place super #t)) out)))"
+    , ""
+    , "#(define (deno-acc-markup entry)"
+    , "   (let* ((n (car entry)) (k (cadr entry)) (changed? (caddr entry))"
+    , "          (count (abs k))"
+    , "          (sub (make-sub-markup"
+    , "                (deno-whiteout (number->string n))))"
+    , "          (scripts"
+    , "           (if (> count 1)"
+    , "               (make-left-align-markup"
+    , "                (make-overlay-markup"
+    , "                 (list (make-center-align-markup"
+    , "                        (make-translate-markup (cons 0 deno-super-raise)"
+    , "                          (make-super-markup"
+    , "                           (deno-whiteout (number->string count)))))"
+    , "                       (make-center-align-markup sub))))"
+    , "               sub))"
+    , "          (dx (+ (if (< n 10) deno-single-digit-dx 0)"
+    , "                 (cond ((> k 0) deno-sharp-dx)"
+    , "                       ((zero? k) deno-natural-dx)"
+    , "                       (else deno-flat-dx))))"
+    , "          (m (if (eq? deno-script-layout 'below)"
+    , "                 (make-deno-glyph-below-markup"
+    , "                  (deno-glyph n k)"
+    , "                  (make-fontsize-markup deno-below-script-size"
+    , "                    (deno-whiteout (number->string n)))"
+    , "                  (and (> count 1)"
+    , "                       (make-fontsize-markup deno-below-script-size"
+    , "                         (deno-whiteout (number->string count))))"
+    , "                  (cond ((> k 0) deno-sharp-below-dx)"
+    , "                        ((zero? k) deno-natural-below-dx)"
+    , "                        (else deno-flat-below-dx)))"
+    , "                 (make-deno-glyph-scripts-markup"
+    , "                  (deno-glyph n k) scripts dx deno-scripts-raise))))"
+    , "     (if changed? m (make-parenthesize-markup m))))"
+    , ""
+    , "#(define (deno-accidental-stencil grob)"
+    , "   (let* ((ev (event-cause grob))"
+    , "          (diff (and ev (ly:event-property ev 'deno-display '()))))"
+    , "     (cond"
+    , "      ((eq? diff 'natural)"
+    , "       (grob-interpret-markup grob (markup #:natural)))"
+    , "      ((pair? diff)"
+    , "       (grob-interpret-markup grob"
+    , "         ;; no vcenter: keep each glyph's native origin so it sits on the"
+    , "         ;; note's staff position regardless of the scripts above/below it"
+    , "         (markup #:pad-markup deno-stack-padding"
+    , "                 #:sans #:fontsize deno-stack-fontsize"
+    , "                 (make-line-markup (map deno-acc-markup diff)))))"
+    , "      (else (ly:accidental-interface::print grob)))))"
+    , ""
+    , "%% \\acc #'((7 . 1) (12 . -1)) c4"
+    , "acc ="
+    , "#(define-music-function (alist note) (list? ly:music?)"
+    , "   (set! (ly:music-property note 'deno-accidentals) alist)"
+    , "   note)"
+    , ""
+    , "\\layout {"
+    , "  \\context {"
+    , "    \\Staff"
+    , "    \\consists #Deno_accidental_engraver"
+    , "    \\override Accidental.stencil = #deno-accidental-stencil"
+    , "    \\override AccidentalCautionary.stencil = #deno-accidental-stencil"
+    , "    %% Stack chord accidentals by their actual ink, not bounding boxes."
+    , "    \\override Accidental.horizontal-skylines ="
+    , "      #ly:grob::horizontal-skylines-from-stencil"
+    , "    \\override AccidentalCautionary.horizontal-skylines ="
+    , "      #ly:grob::horizontal-skylines-from-stencil"
+    , "  }"
+    , "}"
     , ""
     ]
 

@@ -190,6 +190,9 @@ data Markup
 
 data Note
     = NotePitch Pitch
+    -- | A pitch carrying generalized accidentals, as @(scale size, steps)@
+    -- pairs. Rendered via the @\\acc@ music function from the preamble.
+    | NoteAcc [(Int, Int)] Pitch
     deriving stock (Eq, Show, Ord)
 
 
@@ -306,6 +309,11 @@ instance Pretty Score where
 
 instance Pretty Note where
     pPrint (NotePitch p)         = pPrint p
+    pPrint (NoteAcc [] p)        = pPrint p
+    pPrint (NoteAcc as p)        =
+      ("\\acc #'(" <> hsep (fmap accPair as) <> ")") <+> pPrint p
+      where
+        accPair (k, v) = text $ "(" <> show k <> " . " <> show v <> ")"
     pPrintList _                   = hsep . fmap pPrint
 
 instance Pretty Clef where
